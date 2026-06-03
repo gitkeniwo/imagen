@@ -28,6 +28,8 @@ const zh: Dict = {
 
   tray_label: "参考图片（上传新图或从图库引用，顺序可拖拽调整）",
   tray_upload: "＋ 拖拽/点击上传",
+  tray_drop_title: "松开即可上传图片",
+  tray_drop_hint: "图片会加入当前参考图列表",
 
   prompt: "Prompt",
   prompt_placeholder: "描述你想要的编辑/生成，例如：把这三张产品图合成一张暖色调的海报…",
@@ -124,6 +126,8 @@ const en: Dict = {
   tray_label:
     "Reference images (upload new ones or pick from the library; drag to reorder)",
   tray_upload: "＋ Drag / click to upload",
+  tray_drop_title: "Drop images to upload",
+  tray_drop_hint: "Images will be added to the current reference list",
 
   prompt: "Prompt",
   prompt_placeholder:

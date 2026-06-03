@@ -51,8 +51,8 @@ export default function Generate({
 
   const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
 
-  // Submit: snapshot the composer into the queue, then free the prompt for the
-  // next task (references + options stay, so variations are quick to fire).
+  // Submit: snapshot the composer into the queue. Keep the prompt in place so
+  // repeated generations and small edits don't require retyping it.
   const submit = () => {
     enqueue({
       prompt,
@@ -62,7 +62,6 @@ export default function Generate({
       format,
       inputs: [...tray],
     });
-    setPrompt("");
   };
 
   return (
