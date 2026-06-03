@@ -9,6 +9,7 @@ application-default login). Results are normalized into GeminiResult:
 """
 import asyncio
 import random
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,8 +19,13 @@ from google.genai import errors, types
 # Models that support the imageConfig.image_size (1K/2K/4K) knob.
 PRO_MODELS = {"gemini-3-pro-image-preview"}
 
-MAX_ATTEMPTS = 6
+MAX_ATTEMPTS = 30
+MAX_NON_429_ATTEMPTS = 6
 RETRYABLE_CODES = {429, 500, 502, 503, 504}
+MIN_VERTEX_ATTEMPT_SPACING = 4.0
+
+_retry_gate_lock = asyncio.Lock()
+_next_vertex_attempt_at = 0.0
 
 # Relax every *configurable* safety category to OFF, matching the official
 # Vertex AI Studio sample, to minimize censorship for this self-use app. This
@@ -174,10 +180,42 @@ def _api_error_message(code: Optional[int], detail: str) -> str:
     return f"{base}：{detail}" if detail else base
 
 
-def _retry_delay(attempt: int) -> float:
-    # Truncated exponential backoff with jitter. Attempt is zero-based.
-    base = min(60.0, 5.0 * (2 ** attempt))
-    return base + random.uniform(0.0, min(3.0, base * 0.25))
+def _max_attempts_for(code: Optional[int]) -> int:
+    return MAX_ATTEMPTS if code == 429 else MAX_NON_429_ATTEMPTS
+
+
+def _retry_delay(attempt: int, code: Optional[int]) -> float:
+    # Full-ish jitter avoids a batch of tasks waking up and retrying together.
+    if code == 429:
+        base = min(180.0, 8.0 * (1.7 ** attempt))
+    else:
+        base = min(60.0, 2.0 * (2 ** attempt))
+    return (base * 0.5) + random.uniform(0.0, base * 0.5)
+
+
+async def _wait_for_vertex_attempt_slot() -> None:
+    """Process-wide pacing for outbound Vertex attempts.
+
+    This is intentionally lightweight: it smooths bursts from the local app
+    without introducing a durable queue.
+    """
+    global _next_vertex_attempt_at
+    async with _retry_gate_lock:
+        now = time.monotonic()
+        wait = max(0.0, _next_vertex_attempt_at - now)
+        if wait:
+            await asyncio.sleep(wait)
+        _next_vertex_attempt_at = time.monotonic() + MIN_VERTEX_ATTEMPT_SPACING
+
+
+async def _schedule_retry(attempt: int, code: Optional[int]) -> None:
+    global _next_vertex_attempt_at
+    delay = _retry_delay(attempt, code)
+    async with _retry_gate_lock:
+        _next_vertex_attempt_at = max(
+            _next_vertex_attempt_at,
+            time.monotonic() + delay,
+        )
 
 
 def _error_code(e: Exception) -> Optional[int]:
@@ -208,37 +246,45 @@ async def generate(
     config = build_config(model, aspect_ratio, resolution, output_mime)
 
     last_exc: Optional[Exception] = None
+    retries_done = 0
     for attempt in range(MAX_ATTEMPTS):
         try:
+            await _wait_for_vertex_attempt_slot()
             resp = await client.aio.models.generate_content(
                 model=model, contents=contents, config=config
             )
             return parse_response(resp)
         except errors.ServerError as e:
             last_exc = e
-            if attempt == MAX_ATTEMPTS - 1:
+            code = _error_code(e) or 500
+            if attempt >= _max_attempts_for(code) - 1:
                 break
-            await asyncio.sleep(_retry_delay(attempt))
+            retries_done += 1
+            await _schedule_retry(attempt, code)
             continue
         except errors.ClientError as e:
-            if _is_retryable_api_error(e) and attempt < MAX_ATTEMPTS - 1:
+            code = _error_code(e)
+            if _is_retryable_api_error(e) and attempt < _max_attempts_for(code) - 1:
                 last_exc = e
-                await asyncio.sleep(_retry_delay(attempt))
+                retries_done += 1
+                await _schedule_retry(attempt, code)
                 continue
             return GeminiResult(
                 status="error",
-                message=_api_error_message(_error_code(e), str(getattr(e, "message", e))),
-                raw_finish=str(_error_code(e) or ""),
+                message=_api_error_message(code, str(getattr(e, "message", e))),
+                raw_finish=str(code or ""),
             )
         except errors.APIError as e:
-            if _is_retryable_api_error(e) and attempt < MAX_ATTEMPTS - 1:
+            code = _error_code(e)
+            if _is_retryable_api_error(e) and attempt < _max_attempts_for(code) - 1:
                 last_exc = e
-                await asyncio.sleep(_retry_delay(attempt))
+                retries_done += 1
+                await _schedule_retry(attempt, code)
                 continue
             return GeminiResult(
                 status="error",
-                message=_api_error_message(_error_code(e), str(getattr(e, "message", e))),
-                raw_finish=str(_error_code(e) or ""),
+                message=_api_error_message(code, str(getattr(e, "message", e))),
+                raw_finish=str(code or ""),
             )
         except Exception as e:  # network / unexpected / credentials
             if "default credentials" in str(e).lower() or "DefaultCredentials" in type(e).__name__:
@@ -249,15 +295,16 @@ async def generate(
                             "`gcloud auth application-default set-quota-project <项目ID>`。",
                 )
             last_exc = e
-            if attempt == MAX_ATTEMPTS - 1:
+            if attempt >= MAX_NON_429_ATTEMPTS - 1:
                 break
-            await asyncio.sleep(_retry_delay(attempt))
+            retries_done += 1
+            await _schedule_retry(attempt, None)
             continue
 
     code = _error_code(last_exc) if last_exc else None
     detail = str(getattr(last_exc, "message", last_exc)) if last_exc else ""
     return GeminiResult(
         status="error",
-        message=f"{_api_error_message(code, detail)}；已自动重试 {MAX_ATTEMPTS - 1} 次。",
+        message=f"{_api_error_message(code, detail)}；已自动排期重试 {retries_done} 次。",
         raw_finish=str(code or ""),
     )
