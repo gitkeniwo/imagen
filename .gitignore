@@ -1,0 +1,44 @@
+# Python
+backend/.venv/
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# App data (local images + sqlite)
+backend/data/
+
+# Node / build
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/tsconfig.tsbuildinfo
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local config / secrets
+.env
+.env.*
+!.env.example
+*.local
+.claude/settings.local.json
+.codex/
+.agents/
+
+# Misc
+.DS_Store
+Thumbs.db
