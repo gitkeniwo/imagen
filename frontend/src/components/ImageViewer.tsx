@@ -1,0 +1,114 @@
+import { useEffect, useState } from "react";
+import { api, ImageRow, imgFileUrl } from "../api";
+import { useI18n } from "../i18n";
+import TagPicker from "./TagPicker";
+
+// Full-screen lightbox: big image + metadata + inline tag editing + actions.
+// `list` (optional) enables prev/next navigation within the surrounding grid.
+export default function ImageViewer({
+  image,
+  list,
+  onClose,
+  onAddToTray,
+  onTagsChanged,
+}: {
+  image: ImageRow;
+  list: ImageRow[];
+  onClose: () => void;
+  onAddToTray: (img: ImageRow) => void;
+  onTagsChanged: () => void;
+}) {
+  const { t } = useI18n();
+  const items = list.length ? list : [image];
+  const [idx, setIdx] = useState(
+    Math.max(0, items.findIndex((i) => i.id === image.id)),
+  );
+  const current = items[Math.min(idx, items.length - 1)] ?? image;
+  const [tagIds, setTagIds] = useState<number[]>(
+    (current.tags ?? []).map((x) => x.id),
+  );
+
+  // Reset editable tags when navigating to another image.
+  useEffect(() => {
+    setTagIds((current.tags ?? []).map((x) => x.id));
+  }, [current.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
+      else if (e.key === "ArrowRight")
+        setIdx((i) => Math.min(items.length - 1, i + 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [items.length, onClose]);
+
+  const applyTags = async (next: number[]) => {
+    const added = next.filter((x) => !tagIds.includes(x));
+    const removed = tagIds.filter((x) => !next.includes(x));
+    setTagIds(next);
+    if (added.length) await api.batchTag([current.id], added, "add");
+    if (removed.length) await api.batchTag([current.id], removed, "remove");
+    onTagsChanged();
+  };
+
+  const multi = items.length > 1;
+
+  return (
+    <div className="viewer-overlay" onClick={onClose}>
+      <button className="viewer-close" title={t("close")} onClick={onClose}>
+        ×
+      </button>
+      {multi && (
+        <button
+          className="viewer-nav prev"
+          disabled={idx === 0}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIdx((i) => Math.max(0, i - 1));
+          }}
+        >
+          ‹
+        </button>
+      )}
+
+      <div className="viewer-body" onClick={(e) => e.stopPropagation()}>
+        <div className="viewer-stage">
+          <img src={imgFileUrl(current.id)} alt={current.filename} />
+        </div>
+        <div className="viewer-side">
+          <div className="viewer-name">{current.filename}</div>
+          <div className="muted small">
+            {current.width}×{current.height} ·{" "}
+            {current.source === "upload" ? t("tag_upload") : t("tag_generated")}
+            {multi && ` · ${idx + 1}/${items.length}`}
+          </div>
+
+          <label style={{ marginTop: 16 }}>{t("tags_label")}</label>
+          <TagPicker selected={tagIds} onChange={applyTags} />
+
+          <div className="row" style={{ marginTop: 16 }}>
+            <button onClick={() => onAddToTray(current)}>{t("add_to_input")}</button>
+            <a href={imgFileUrl(current.id)} download>
+              <button style={{ width: "100%" }}>{t("download")}</button>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {multi && (
+        <button
+          className="viewer-nav next"
+          disabled={idx === items.length - 1}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIdx((i) => Math.min(items.length - 1, i + 1));
+          }}
+        >
+          ›
+        </button>
+      )}
+    </div>
+  );
+}

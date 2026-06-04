@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import ReferenceTray from "../components/ReferenceTray";
 import OptionBar from "../components/OptionBar";
 import QueueList from "../components/QueueList";
+import TagPicker from "../components/TagPicker";
 
 export default function Generate({
   tray,
@@ -18,6 +19,7 @@ export default function Generate({
   enqueue,
   removeTask,
   clearDone,
+  onOpenViewer,
 }: {
   tray: ImageRow[];
   prefill: Prefill | null;
@@ -30,6 +32,7 @@ export default function Generate({
   enqueue: (task: Omit<QueueTask, "id" | "status">) => void;
   removeTask: (id: string) => void;
   clearDone: () => void;
+  onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
 }) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState("");
@@ -37,6 +40,7 @@ export default function Generate({
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [resolution, setResolution] = useState("1K");
   const [format, setFormat] = useState("image/jpeg");
+  const [tagIds, setTagIds] = useState<number[]>([]);
 
   // Apply a "reuse" prefill coming from the History tab.
   useEffect(() => {
@@ -61,6 +65,7 @@ export default function Generate({
       resolution: isPro ? resolution : null,
       format,
       inputs: [...tray],
+      tagIds: [...tagIds],
     });
   };
 
@@ -93,6 +98,10 @@ export default function Generate({
             setFormat={setFormat}
           />
         </div>
+        <div style={{ marginTop: 16 }}>
+          <label>{t("archive_to")}</label>
+          <TagPicker selected={tagIds} onChange={setTagIds} />
+        </div>
         <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
           <button
             className="primary"
@@ -113,6 +122,7 @@ export default function Generate({
         onRemove={removeTask}
         onClearDone={clearDone}
         onUseAsRef={(img) => addManyToTray([img])}
+        onOpenViewer={onOpenViewer}
       />
     </div>
   );

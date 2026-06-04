@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from .. import gemini, storage
+from .. import gemini, storage, tagging
 from ..db import get_conn
 from ..models import GenerateRequest
 from .settings import read_vertex
@@ -73,7 +73,13 @@ async def generate(body: GenerateRequest):
                 "VALUES (?, ?, ?)",
                 (gen_id, img_id, pos),
             )
+        # Auto-archive into chosen tags only on success: output + input images.
+        if body.tagIds and output_image:
+            targets = [*ordered_ids, output_image["id"]]
+            tagging.apply_tags(conn, targets, body.tagIds)
         conn.commit()
+        if output_image:
+            tagging.attach_tags(conn, [output_image])
         generation = dict(
             conn.execute("SELECT * FROM generations WHERE id = ?", (gen_id,)).fetchone()
         )

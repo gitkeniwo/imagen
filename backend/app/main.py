@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import init_storage
-from .routes import generate, generations, images, settings
+from .routes import generate, generations, images, settings, tags
 
 app = FastAPI(title="Nano Banana Studio")
 
@@ -34,6 +34,7 @@ app.include_router(settings.router)
 app.include_router(images.router)
 app.include_router(generate.router)
 app.include_router(generations.router)
+app.include_router(tags.router)
 
 # Serve the production build of the frontend if present.
 DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

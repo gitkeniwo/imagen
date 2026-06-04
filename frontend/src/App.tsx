@@ -5,6 +5,7 @@ import Generate from "./pages/Generate";
 import Library from "./pages/Library";
 import History from "./pages/History";
 import SettingsModal from "./components/SettingsModal";
+import ImageViewer from "./components/ImageViewer";
 
 export type SidebarPanel = "library" | "history";
 
@@ -15,7 +16,12 @@ export interface Prefill {
   resolution: string | null;
 }
 
-const MAX_CONCURRENT_GENERATIONS = 10;
+// Keep this well under the browser's ~6 HTTP/1.1 connections-per-host limit.
+// Each /api/generate is long-lived (server-side retry/backoff can hold it open
+// for minutes), so too many in flight starve the connection pool and the whole
+// UI (sidebar, thumbnails) stops loading. A small cap also cuts self-inflicted
+// 429s from hitting Vertex with many simultaneous calls.
+const MAX_CONCURRENT_GENERATIONS = 3;
 const SIDEBAR_WIDTH_KEY = "imagen-sidebar-width";
 const DEFAULT_SIDEBAR_WIDTH = 340;
 const MIN_SIDEBAR_WIDTH = 260;
@@ -39,6 +45,14 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  // Image viewer (lightbox) + a bump counter to refresh data after tag edits.
+  const [viewer, setViewer] = useState<{ image: ImageRow; list: ImageRow[] } | null>(
+    null,
+  );
+  const [dataVersion, setDataVersion] = useState(0);
+  const openViewer = (image: ImageRow, list: ImageRow[] = []) =>
+    setViewer({ image, list });
+  const bumpData = () => setDataVersion((v) => v + 1);
 
   const refreshConfig = () =>
     api.getVertex().then((r) => setConfigured(r.configured));
@@ -120,6 +134,7 @@ export default function App() {
           outputFormat: task.format,
           inputImageIds: task.inputs.map((i) => i.id),
           uploadImageIds: [],
+          tagIds: task.tagIds,
         })
         .then((res) =>
           setQueue((q) =>
@@ -176,9 +191,9 @@ export default function App() {
     });
   };
 
-  const completedRefreshKey = queue.filter(
-    (task) => task.status !== "pending" && task.status !== "running",
-  ).length;
+  const completedRefreshKey =
+    queue.filter((task) => task.status !== "pending" && task.status !== "running")
+      .length + dataVersion;
 
   return (
     <div className="app">
@@ -222,12 +237,14 @@ export default function App() {
                 addToTray={addToTray}
                 compact
                 refreshKey={completedRefreshKey}
+                onOpenViewer={openViewer}
               />
             ) : (
               <History
                 onReuse={reuse}
                 compact
                 refreshKey={completedRefreshKey}
+                onOpenViewer={openViewer}
               />
             )}
           </div>
@@ -262,6 +279,7 @@ export default function App() {
             enqueue={enqueue}
             removeTask={removeTask}
             clearDone={clearDone}
+            onOpenViewer={openViewer}
           />
         </main>
       </div>
@@ -270,6 +288,16 @@ export default function App() {
         <SettingsModal
           onClose={() => setShowSettings(false)}
           onSaved={refreshConfig}
+        />
+      )}
+
+      {viewer && (
+        <ImageViewer
+          image={viewer.image}
+          list={viewer.list}
+          onClose={() => setViewer(null)}
+          onAddToTray={addToTray}
+          onTagsChanged={bumpData}
         />
       )}
     </div>

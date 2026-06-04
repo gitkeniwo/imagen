@@ -53,6 +53,22 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS tags (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT UNIQUE,
+    color           TEXT,
+    cover_image_id  INTEGER REFERENCES images(id) ON DELETE SET NULL,
+    created_at      TEXT
+);
+
+-- many-to-many: an image may belong to several tags (union, idempotent)
+CREATE TABLE IF NOT EXISTS image_tags (
+    image_id   INTEGER REFERENCES images(id) ON DELETE CASCADE,
+    tag_id     INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+    created_at TEXT,
+    PRIMARY KEY (image_id, tag_id)
+);
 """
 
 

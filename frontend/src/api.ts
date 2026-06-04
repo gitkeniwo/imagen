@@ -1,5 +1,17 @@
 // Thin fetch wrapper around the FastAPI backend.
 
+export interface TagRef {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
+export interface Tag extends TagRef {
+  cover_image_id: number | null;
+  count: number;
+  created_at: string;
+}
+
 export interface ImageRow {
   id: number;
   filename: string;
@@ -9,6 +21,7 @@ export interface ImageRow {
   source: "upload" | "generated";
   starred: number;
   created_at: string;
+  tags?: TagRef[];
 }
 
 export interface Generation {
@@ -42,6 +55,7 @@ export interface QueueTask {
   resolution: string | null;
   format: string;
   inputs: ImageRow[];
+  tagIds: number[];
   status: TaskStatus;
   message?: string | null;
   text?: string | null;
@@ -66,6 +80,7 @@ export interface GenerateBody {
   outputFormat: string;
   inputImageIds: number[];
   uploadImageIds: number[];
+  tagIds?: number[];
 }
 
 export const imgFileUrl = (id: number) => `/api/images/${id}/file`;
@@ -112,11 +127,13 @@ export const api = {
     limit?: number;
     offset?: number;
     source?: string;
+    tag?: number;
   } = {}): Promise<{ images: ImageRow[]; total: number }> {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     if (params.source) q.set("source", params.source);
+    if (params.tag) q.set("tag", String(params.tag));
     return handle(await fetch(`/api/images?${q.toString()}`));
   },
   async patchImage(id: number, body: { starred?: boolean; filename?: string }) {
@@ -141,12 +158,49 @@ export const api = {
     );
   },
   async listGenerations(
-    params: { limit?: number; offset?: number } = {},
+    params: { limit?: number; offset?: number; tag?: number } = {},
   ): Promise<{ generations: Generation[]; total: number }> {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
+    if (params.tag) q.set("tag", String(params.tag));
     return handle(await fetch(`/api/generations?${q.toString()}`));
+  },
+  async listTags(): Promise<{ tags: Tag[] }> {
+    return handle(await fetch("/api/tags"));
+  },
+  async createTag(name: string, color?: string): Promise<Tag> {
+    return handle(
+      await fetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, color }),
+      }),
+    );
+  },
+  async updateTag(
+    id: number,
+    body: { name?: string; color?: string; coverImageId?: number },
+  ): Promise<Tag> {
+    return handle(
+      await fetch(`/api/tags/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  },
+  async deleteTag(id: number) {
+    return handle(await fetch(`/api/tags/${id}`, { method: "DELETE" }));
+  },
+  async batchTag(imageIds: number[], tagIds: number[], op: "add" | "remove") {
+    return handle(
+      await fetch("/api/tags/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageIds, tagIds, op }),
+      }),
+    );
   },
 };
 

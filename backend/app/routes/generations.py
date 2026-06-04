@@ -1,6 +1,7 @@
 """Generation history with lineage (input images + output image)."""
 from fastapi import APIRouter, HTTPException, Query
 
+from .. import tagging
 from ..db import get_conn
 
 router = APIRouter(prefix="/api/generations", tags=["generations"])
@@ -14,7 +15,7 @@ def _inputs_for(conn, gen_id: int) -> list[dict]:
            ORDER BY gi.position""",
         (gen_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return tagging.attach_tags(conn, [dict(r) for r in rows])
 
 
 def _output_for(conn, output_image_id) -> dict | None:
@@ -23,20 +24,33 @@ def _output_for(conn, output_image_id) -> dict | None:
     row = conn.execute(
         "SELECT * FROM images WHERE id = ?", (output_image_id,)
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    return tagging.attach_tags(conn, [dict(row)])[0]
 
 
 @router.get("")
 def list_generations(
     limit: int = Query(40, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    tag: int | None = None,
 ):
+    # Filter by the output image's tag (i.e. generations archived into that tag).
+    where, params = "", []
+    if tag is not None:
+        where = (
+            "WHERE output_image_id IN "
+            "(SELECT image_id FROM image_tags WHERE tag_id = ?)"
+        )
+        params = [tag]
     with get_conn() as conn:
         gens = conn.execute(
-            "SELECT * FROM generations ORDER BY id DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM generations {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset),
         ).fetchall()
-        total = conn.execute("SELECT COUNT(*) c FROM generations").fetchone()["c"]
+        total = conn.execute(
+            f"SELECT COUNT(*) c FROM generations {where}", params
+        ).fetchone()["c"]
         out = []
         for g in gens:
             g = dict(g)

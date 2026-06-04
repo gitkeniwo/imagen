@@ -4,7 +4,13 @@
     {
       "name": "backend",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "uvicorn", "app.main:app", "--port", "8000"],
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "app.main:app",
+        "--port",
+        "8000"
+      ],
       "cwd": "backend",
       "port": 8000
     }

@@ -17,11 +17,13 @@ export default function QueueList({
   onRemove,
   onClearDone,
   onUseAsRef,
+  onOpenViewer,
 }: {
   queue: QueueTask[];
   onRemove: (id: string) => void;
   onClearDone: () => void;
   onUseAsRef: (img: ImageRow) => void;
+  onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
 }) {
   const { t } = useI18n();
   const [columns, setColumns] = useState(initialQueueColumns);
@@ -69,6 +71,7 @@ export default function QueueList({
             task={task}
             onRemove={onRemove}
             onUseAsRef={onUseAsRef}
+            onOpenViewer={onOpenViewer}
           />
         ))}
       </div>
@@ -80,10 +83,12 @@ function QueueItem({
   task,
   onRemove,
   onUseAsRef,
+  onOpenViewer,
 }: {
   task: QueueTask;
   onRemove: (id: string) => void;
   onUseAsRef: (img: ImageRow) => void;
+  onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
 }) {
   const { t, reason } = useI18n();
   const [promptExpanded, setPromptExpanded] = useState(false);
@@ -141,9 +146,13 @@ function QueueItem({
 
         {task.status === "success" && task.outputImage && (
           <div className="q-result">
-            <a href={imgFileUrl(task.outputImage.id)} target="_blank" rel="noreferrer">
-              <img src={imgFileUrl(task.outputImage.id)} alt="result" />
-            </a>
+            <img
+              src={imgFileUrl(task.outputImage.id)}
+              alt="result"
+              className="q-result-img"
+              title={t("open_viewer")}
+              onClick={() => onOpenViewer(task.outputImage!, [])}
+            />
             <div className="row" style={{ marginTop: 10 }}>
               <button onClick={() => onUseAsRef(task.outputImage!)}>{t("use_as_ref")}</button>
               <a href={imgFileUrl(task.outputImage.id)} download>

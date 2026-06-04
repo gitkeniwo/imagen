@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import storage
+from .. import storage, tagging
 from ..db import get_conn
 from ..models import ImagePatch
 
@@ -28,6 +28,7 @@ async def upload_images(files: list[UploadFile] = File(...)):
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             out.append(row)
+        tagging.attach_tags(conn, out)
     return {"images": out}
 
 
@@ -37,6 +38,7 @@ def list_images(
     offset: int = Query(0, ge=0),
     source: str | None = None,
     starred: bool | None = None,
+    tag: int | None = None,
 ):
     clauses, params = [], []
     if source:
@@ -45,17 +47,21 @@ def list_images(
     if starred is not None:
         clauses.append("starred = ?")
         params.append(1 if starred else 0)
+    if tag is not None:
+        clauses.append("id IN (SELECT image_id FROM image_tags WHERE tag_id = ?)")
+        params.append(tag)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sql = (
         f"SELECT * FROM images {where} "
         "ORDER BY starred DESC, id DESC LIMIT ? OFFSET ?"
     )
     with get_conn() as conn:
-        rows = conn.execute(sql, (*params, limit, offset)).fetchall()
+        rows = [dict(r) for r in conn.execute(sql, (*params, limit, offset)).fetchall()]
+        tagging.attach_tags(conn, rows)
         total = conn.execute(
             f"SELECT COUNT(*) c FROM images {where}", params
         ).fetchone()["c"]
-    return {"images": [dict(r) for r in rows], "total": total}
+    return {"images": rows, "total": total}
 
 
 @router.get("/{image_id}/file")
