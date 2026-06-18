@@ -1,0 +1,15 @@
+**/__pycache__/
+*.pyc
+backend/.venv/
+backend/data/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+.git/
+.claude/
+.codex/
+.agents/
+.DS_Store
+*.local
+.env
+.env.*

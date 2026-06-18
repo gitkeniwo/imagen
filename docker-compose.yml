@@ -1,0 +1,16 @@
+services:
+  imagen:
+    build: .
+    image: nano-banana-studio
+    container_name: nano-banana-studio
+    ports:
+      - "8000:8000"
+    environment:
+      IMAGEN_DATA_DIR: /data
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/adc.json
+    volumes:
+      # 持久化真实数据（app.db + images/ + thumbs/）
+      - ./backend/data:/data
+      # 只读挂载宿主机 ADC 凭据（gcloud auth application-default login 生成）
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcloud/adc.json:ro
+    restart: unless-stopped
