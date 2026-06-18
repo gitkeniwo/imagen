@@ -30,7 +30,7 @@ export interface Generation {
   model: string;
   aspect_ratio: string | null;
   resolution: string | null;
-  status: "success" | "blocked" | "error";
+  status: "success" | "blocked" | "error" | "aborted";
   error_message: string | null;
   raw_finish: string | null;
   output_image_id: number | null;
@@ -44,7 +44,8 @@ export type TaskStatus =
   | "running"
   | "success"
   | "blocked"
-  | "error";
+  | "error"
+  | "aborted";
 
 // A client-side queued generation task (snapshot of the composer at submit time).
 export interface QueueTask {
@@ -57,6 +58,10 @@ export interface QueueTask {
   inputs: ImageRow[];
   tagIds: number[];
   status: TaskStatus;
+  // When (ms epoch) this task may actually be dispatched to the backend. Until
+  // then it sits in the "undo send" countdown window and can be cancelled with
+  // a guaranteed no-charge (the request is never sent).
+  dispatchAt: number;
   message?: string | null;
   text?: string | null;
   rawFinish?: string | null;
@@ -152,12 +157,13 @@ export const api = {
   async deleteImage(id: number) {
     return handle(await fetch(`/api/images/${id}`, { method: "DELETE" }));
   },
-  async generate(body: GenerateBody): Promise<GenerateResult> {
+  async generate(body: GenerateBody, signal?: AbortSignal): Promise<GenerateResult> {
     return handle(
       await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal,
       }),
     );
   },

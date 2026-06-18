@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import storage, tagging
-from ..db import get_conn
+from ..db import IMAGES_DIR, THUMBS_DIR, get_conn
 from ..models import ImagePatch
 
 router = APIRouter(prefix="/api/images", tags=["images"])
@@ -88,7 +88,11 @@ def _serve(image_id: int, col: str):
         row = storage.get_image(conn, image_id)
     if not row:
         raise HTTPException(status_code=404, detail="Image not found")
-    path = Path(row[col])
+    # Resolve by basename within the *current* data dir; stored paths may be
+    # absolute from another host/mount (e.g. when the data dir is moved or
+    # bind-mounted into a container at a different prefix).
+    base_dir = IMAGES_DIR if col == "file_path" else THUMBS_DIR
+    path = base_dir / Path(row[col]).name
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing on disk")
     return FileResponse(path, media_type=row["mime"])
@@ -136,10 +140,10 @@ def delete_image(image_id: int):
             )
         conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
         conn.commit()
-    # Best-effort file cleanup.
-    for col in ("file_path", "thumb_path"):
+    # Best-effort file cleanup (resolve by basename within current data dir).
+    for col, base in (("file_path", IMAGES_DIR), ("thumb_path", THUMBS_DIR)):
         try:
-            Path(row[col]).unlink(missing_ok=True)
+            (base / Path(row[col]).name).unlink(missing_ok=True)
         except OSError:
             pass
     return {"deleted": image_id}

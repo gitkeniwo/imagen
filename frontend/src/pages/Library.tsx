@@ -263,16 +263,18 @@ export default function Library({
             ))}
           </div>
         )}
-        <button
-          className={`select-toggle${selectMode ? " on" : ""}`}
-          onClick={() => {
-            setSelectMode((v) => !v);
-            setSelected(new Set());
-            setBatchMode(null);
-          }}
-        >
-          {selectMode ? t("done") : t("select_mode")}
-        </button>
+        {!selectMode && (
+          <button
+            className="select-toggle"
+            onClick={() => {
+              setSelectMode(true);
+              setSelected(new Set());
+              setBatchMode(null);
+            }}
+          >
+            <i className="fa-solid fa-square-check" /> {t("select_mode")}
+          </button>
+        )}
       </div>
 
       {/* Tag filter bar (collection-style) */}
@@ -310,30 +312,42 @@ export default function Library({
             disabled={images.length === 0 || allSelected}
             onClick={selectAllOnPage}
           >
-            {t("select_all")}
+            <i className="fa-solid fa-check-double" /> {t("select_all")}
           </button>
           {selected.size > 0 && (
-            <button onClick={() => setSelected(new Set())}>{t("deselect_all")}</button>
+            <button onClick={() => setSelected(new Set())}>
+              <i className="fa-regular fa-square" /> {t("deselect_all")}
+            </button>
           )}
           <button
             className={batchMode === "add" ? "on" : ""}
             disabled={selected.size === 0}
             onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
           >
-            {t("batch_add_tag")}
+            <i className="fa-solid fa-tag" /> {t("batch_add_tag")}
           </button>
           <button
             className={batchMode === "remove" ? "on" : ""}
             disabled={selected.size === 0}
             onClick={() => setBatchMode(batchMode === "remove" ? null : "remove")}
           >
-            {t("batch_remove_tag")}
+            <i className="fa-solid fa-eraser" /> {t("batch_remove_tag")}
           </button>
           <button
             disabled={selected.size === 0}
             onClick={downloadSelected}
           >
-            {t("batch_download")}
+            <i className="fa-solid fa-download" /> {t("batch_download")}
+          </button>
+          <button
+            className="batch-done"
+            onClick={() => {
+              setSelectMode(false);
+              setSelected(new Set());
+              setBatchMode(null);
+            }}
+          >
+            <i className="fa-solid fa-check" /> {t("done")}
           </button>
         </div>
       )}
@@ -447,7 +461,7 @@ export default function Library({
                 </div>
               )}
               <div className="meta">
-                <span className="tag">
+                <span className={`tag tag-${img.source}`}>
                   {img.source === "upload" ? t("tag_upload") : t("tag_generated")}
                 </span>
                 <span className="card-actions">

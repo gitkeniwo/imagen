@@ -18,8 +18,13 @@ export default function Generate({
   queue,
   enqueue,
   removeTask,
+  abortTask,
   clearDone,
   onOpenViewer,
+  now,
+  concurrency,
+  setConcurrency,
+  maxConcurrency,
 }: {
   tray: ImageRow[];
   prefill: Prefill | null;
@@ -29,10 +34,15 @@ export default function Generate({
   moveInTray: (from: number, to: number) => void;
   keyConfigured: boolean;
   queue: QueueTask[];
-  enqueue: (task: Omit<QueueTask, "id" | "status">) => void;
+  enqueue: (task: Omit<QueueTask, "id" | "status" | "dispatchAt">) => void;
   removeTask: (id: string) => void;
+  abortTask: (id: string) => void;
   clearDone: () => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  now: number;
+  concurrency: number;
+  setConcurrency: (n: number) => void;
+  maxConcurrency: number;
 }) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState("");
@@ -120,9 +130,14 @@ export default function Generate({
       <QueueList
         queue={queue}
         onRemove={removeTask}
+        onAbort={abortTask}
         onClearDone={clearDone}
         onUseAsRef={(img) => addManyToTray([img])}
         onOpenViewer={onOpenViewer}
+        now={now}
+        concurrency={concurrency}
+        setConcurrency={setConcurrency}
+        maxConcurrency={maxConcurrency}
       />
     </div>
   );

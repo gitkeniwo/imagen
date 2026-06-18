@@ -5,9 +5,13 @@ import { useI18n } from "../i18n";
 export default function SettingsModal({
   onClose,
   onSaved,
+  undoSeconds,
+  setUndoSeconds,
 }: {
   onClose: () => void;
   onSaved: () => void;
+  undoSeconds: number;
+  setUndoSeconds: (n: number) => void;
 }) {
   const { t } = useI18n();
   const [project, setProject] = useState("");
@@ -59,6 +63,21 @@ export default function SettingsModal({
 
         <p className="muted small" style={{ marginTop: 12 }}>
           {t("settings_adc_hint")}
+        </p>
+
+        <label style={{ marginTop: 12 }}>{t("undo_send_seconds")}</label>
+        <input
+          type="number"
+          min={0}
+          max={60}
+          value={undoSeconds}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v)) setUndoSeconds(Math.min(60, Math.max(0, Math.round(v))));
+          }}
+        />
+        <p className="muted small" style={{ marginTop: 6 }}>
+          {t("undo_send_seconds_hint")}
         </p>
 
         {err && (

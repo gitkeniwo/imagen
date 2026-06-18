@@ -1,8 +1,9 @@
 """Generation entry point: assemble inputs, call Gemini, persist lineage."""
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from .. import gemini, storage, tagging
 from ..db import get_conn
@@ -16,8 +17,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def _watch_disconnect(request: Request) -> None:
+    """Resolve once the client closes the connection (e.g. user hit cancel)."""
+    while not await request.is_disconnected():
+        await asyncio.sleep(0.3)
+
+
 @router.post("/generate")
-async def generate(body: GenerateRequest):
+async def generate(body: GenerateRequest, request: Request):
     project, location = read_vertex()
     if not project:
         raise HTTPException(status_code=400, detail="尚未设置 Vertex 项目，请先在设置中填写 Project ID。")
@@ -37,16 +44,40 @@ async def generate(body: GenerateRequest):
             data = Path(row["file_path"]).read_bytes()
             input_images.append(gemini.InputImage(data=data, mime=row["mime"]))
 
-    result = await gemini.generate(
-        project=project,
-        location=location,
-        prompt=body.prompt,
-        model=body.model,
-        aspect_ratio=body.aspectRatio,
-        resolution=body.resolution,
-        images=input_images,
-        output_mime=body.outputFormat,
+    # Race the generation against the client connection. If the client
+    # disconnects (user pressed cancel / AbortController.abort), cancel the whole
+    # generation coroutine — CancelledError unwinds every await point, including
+    # the in-flight generate_content call and any retry/backoff sleep, so we stop
+    # hammering Vertex (and stop future billable attempts). A generation Vertex
+    # already finished may still be billed; disconnecting cannot un-charge it.
+    gen_task = asyncio.ensure_future(
+        gemini.generate(
+            project=project,
+            location=location,
+            prompt=body.prompt,
+            model=body.model,
+            aspect_ratio=body.aspectRatio,
+            resolution=body.resolution,
+            images=input_images,
+            output_mime=body.outputFormat,
+        )
     )
+    watch_task = asyncio.ensure_future(_watch_disconnect(request))
+    done, _ = await asyncio.wait(
+        {gen_task, watch_task}, return_when=asyncio.FIRST_COMPLETED
+    )
+    if gen_task in done:
+        watch_task.cancel()
+        result = gen_task.result()
+    else:
+        gen_task.cancel()
+        try:
+            await gen_task
+        except asyncio.CancelledError:
+            pass
+        result = gemini.GeminiResult(
+            status="aborted", message="用户取消生成。", raw_finish="ABORTED"
+        )
 
     output_image = None
     with get_conn() as conn:

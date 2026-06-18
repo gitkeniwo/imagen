@@ -330,9 +330,11 @@ body.resizing-sidebar {
 .badge.error { background: var(--badge-error-bg); color: var(--badge-error-text); border-color: var(--badge-error-border); }
 .badge.pending { background: var(--badge-pending-bg); color: var(--badge-pending-text); border-color: var(--badge-pending-border); }
 .badge.running { background: var(--badge-running-bg); color: var(--badge-running-text); border-color: var(--badge-running-border); }
+.badge.aborted { background: var(--badge-pending-bg); color: var(--badge-pending-text); border-color: var(--badge-pending-border); }
 .notice { border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; }
 .notice.blocked { background: var(--badge-blocked-bg); border: 1px solid var(--badge-blocked-border); color: var(--badge-blocked-text); }
 .notice.error { background: var(--badge-error-bg); border: 1px solid var(--badge-error-border); color: var(--badge-error-text); }
+.notice.aborted { background: var(--badge-pending-bg); border: 1px solid var(--badge-pending-border); color: var(--badge-pending-text); }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .library-panel.compact { padding: 12px; }
@@ -412,7 +414,14 @@ body.resizing-sidebar {
 @media (hover: none) {
   .card .star { opacity: 1; }
 }
-.card .tag { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.card .tag { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); border: 1px solid transparent; }
+/* Source label colors: uploaded = pink, generated = green. */
+.card .tag.tag-upload {
+  background: rgba(236, 72, 153, 0.14); color: #db2777; border-color: rgba(236, 72, 153, 0.32);
+}
+.card .tag.tag-generated {
+  background: rgba(34, 197, 94, 0.15); color: #16a34a; border-color: rgba(34, 197, 94, 0.32);
+}
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .pager button { padding: 6px 10px; flex: 0 0 auto; }
 .pager span { text-align: center; }
@@ -488,6 +497,16 @@ body.resizing-sidebar {
 .q-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .q-x { background: none; border: none; font-size: 20px; line-height: 1; padding: 0 6px; min-height: 0; color: var(--muted); box-shadow: none; }
 .q-x:hover { color: var(--danger); background: transparent; border-color: transparent; }
+.q-undo {
+  font-size: 12px; font-weight: 600; padding: 3px 10px; min-height: 0;
+  border-radius: 999px; background: var(--badge-running-bg);
+  color: var(--badge-running-text); border: 1px solid var(--badge-running-border);
+}
+.q-cancel {
+  font-size: 12px; font-weight: 600; padding: 3px 10px; min-height: 0;
+  border-radius: 999px; background: var(--badge-error-bg);
+  color: var(--badge-error-text); border: 1px solid var(--badge-error-border);
+}
 .q-prompt-wrap { margin: 8px 0 10px; }
 .q-prompt {
   margin: 0; white-space: pre-wrap; line-height: 1.45;
@@ -591,6 +610,11 @@ body.resizing-sidebar {
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
 }
 .batch-bar button.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.batch-bar .batch-done {
+  margin-left: auto; background: var(--accent); color: var(--accent-fg); border-color: var(--accent);
+}
+.batch-bar .batch-done:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+.batch-bar button i, .select-toggle i { margin-right: 4px; font-size: 0.9em; }
 .batch-tags { margin-bottom: 10px; }
 .select-toggle.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 
@@ -647,9 +671,11 @@ body.resizing-sidebar {
   border: 1px solid var(--border); display: block; }
 
 /* ===== fullscreen Library/History manager (sits below the lightbox) ===== */
+.side-tabs-row { display: flex; gap: 8px; align-items: stretch; margin-bottom: 10px; }
+.side-tabs-row .side-tabs { flex: 1; margin-bottom: 0; }
 .side-expand {
-  margin-left: 6px; flex: 0 0 auto; min-height: 34px; padding: 0 10px;
-  font-size: 15px; line-height: 1;
+  flex: 0 0 auto; width: 42px; padding: 0; font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
 }
 .manager-overlay {
   position: fixed; inset: 0; z-index: 90; background: var(--bg);

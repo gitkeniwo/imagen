@@ -138,7 +138,11 @@ export default function ReferenceTray({
             key={img.id}
             className="chip"
             draggable
-            onDragStart={() => (dragIdx.current = i)}
+            onDragStart={(e) => {
+              dragIdx.current = i;
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", String(i));
+            }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => {
               if (dragIdx.current !== null && dragIdx.current !== i) {
@@ -148,7 +152,7 @@ export default function ReferenceTray({
             }}
             title={img.filename}
           >
-            <img src={imgThumbUrl(img.id)} alt={img.filename} />
+            <img src={imgThumbUrl(img.id)} alt={img.filename} draggable={false} />
             <span className="pos">{i + 1}</span>
             <button className="x" onClick={() => onRemove(img.id)}>
               ×

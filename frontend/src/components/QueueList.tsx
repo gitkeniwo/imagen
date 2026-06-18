@@ -15,15 +15,25 @@ function initialQueueColumns() {
 export default function QueueList({
   queue,
   onRemove,
+  onAbort,
   onClearDone,
   onUseAsRef,
   onOpenViewer,
+  now,
+  concurrency,
+  setConcurrency,
+  maxConcurrency,
 }: {
   queue: QueueTask[];
   onRemove: (id: string) => void;
+  onAbort: (id: string) => void;
   onClearDone: () => void;
   onUseAsRef: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  now: number;
+  concurrency: number;
+  setConcurrency: (n: number) => void;
+  maxConcurrency: number;
 }) {
   const { t } = useI18n();
   const [columns, setColumns] = useState(initialQueueColumns);
@@ -44,6 +54,18 @@ export default function QueueList({
         <h3 style={{ margin: 0 }}>{t("queue_title")}</h3>
         <span className="muted small">{queue.length}</span>
         <div className="spacer" style={{ flex: 1 }} />
+        <span className="muted small queue-density-label">{t("concurrency")}</span>
+        <div className="seg density-seg queue-density" title={t("concurrency_hint")}>
+          {Array.from({ length: maxConcurrency }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              className={concurrency === n ? "on" : ""}
+              onClick={() => setConcurrency(n)}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
         <span className="muted small queue-density-label">{t("columns_per_row")}</span>
         <div className="seg density-seg queue-density">
           {QUEUE_COLUMN_OPTIONS.map((n) => (
@@ -70,8 +92,10 @@ export default function QueueList({
             key={task.id}
             task={task}
             onRemove={onRemove}
+            onAbort={onAbort}
             onUseAsRef={onUseAsRef}
             onOpenViewer={onOpenViewer}
+            now={now}
           />
         ))}
       </div>
@@ -82,13 +106,17 @@ export default function QueueList({
 function QueueItem({
   task,
   onRemove,
+  onAbort,
   onUseAsRef,
   onOpenViewer,
+  now,
 }: {
   task: QueueTask;
   onRemove: (id: string) => void;
+  onAbort: (id: string) => void;
   onUseAsRef: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  now: number;
 }) {
   const { t, reason } = useI18n();
   const [promptExpanded, setPromptExpanded] = useState(false);
@@ -96,6 +124,11 @@ function QueueItem({
   const promptNeedsToggle =
     task.prompt.length > PROMPT_PREVIEW_CHARS ||
     task.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES;
+  // Seconds left in the undo-send window (0 once it has been/should be sent).
+  const undoLeft =
+    task.status === "pending"
+      ? Math.max(0, Math.ceil((task.dispatchAt - now) / 1000))
+      : 0;
 
   return (
     <div className="qcard">
@@ -113,7 +146,25 @@ function QueueItem({
           <span className="muted small">· {task.aspectRatio}</span>
           {task.resolution && <span className="muted small">· {task.resolution}</span>}
           <div className="spacer" style={{ flex: 1 }} />
-          {task.status !== "running" && (
+          {undoLeft > 0 && (
+            <button
+              className="q-undo"
+              title={t("undo_send_hint")}
+              onClick={() => onRemove(task.id)}
+            >
+              {t("undo_send", { n: undoLeft })}
+            </button>
+          )}
+          {task.status === "running" && (
+            <button
+              className="q-cancel"
+              title={t("cancel_running_hint")}
+              onClick={() => onAbort(task.id)}
+            >
+              {t("cancel_running")}
+            </button>
+          )}
+          {task.status !== "running" && undoLeft === 0 && (
             <button className="q-x" title={t("remove_task")} onClick={() => onRemove(task.id)}>
               ×
             </button>
@@ -168,6 +219,10 @@ function QueueItem({
               task.message ||
               (task.status === "blocked" ? t("blocked_fallback") : t("error_fallback"))}
           </div>
+        )}
+
+        {task.status === "aborted" && (
+          <div className="notice aborted">{task.message || t("aborted_fallback")}</div>
         )}
       </div>
     </div>

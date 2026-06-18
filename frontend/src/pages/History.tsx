@@ -270,7 +270,15 @@ export default function History({
                       )}
                     </div>
                   ) : (
-                    <div className={`notice ${g.status === "blocked" ? "blocked" : "error"} small`}>
+                    <div
+                      className={`notice ${
+                        g.status === "blocked"
+                          ? "blocked"
+                          : g.status === "aborted"
+                          ? "aborted"
+                          : "error"
+                      } small`}
+                    >
                       {reason(g.raw_finish) || g.error_message || t("no_output")}
                     </div>
                   )}

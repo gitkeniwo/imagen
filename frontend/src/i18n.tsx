@@ -102,7 +102,20 @@ const zh: Dict = {
   status_error: "出错",
   status_pending: "排队中",
   status_running: "生成中",
+  status_aborted: "已取消",
   queue_title: "队列",
+  concurrency: "并发",
+  concurrency_hint:
+    "同时发起的生成数。跑 Pro（preview 模型）建议设为 1：并发会互相挤占低配额导致都卡 429。",
+  undo_send: "撤销发送 ({n})",
+  undo_send_hint: "倒计时内取消，请求尚未发出，保证不计费。",
+  cancel_running: "取消",
+  cancel_running_hint:
+    "停止重试并断开连接。注意：若 Vertex 已生成完成，这次仍可能计费。",
+  undo_send_seconds: "发送延迟（秒）",
+  undo_send_seconds_hint:
+    "提交后先倒计时再真正调用 Vertex；窗口内取消 = 不计费。填 0 表示立即发送。",
+  aborted_fallback: "已取消。",
   clear_done: "清除已完成",
   remove_task: "移除",
   reuse: "复用",
@@ -231,7 +244,20 @@ const en: Dict = {
   status_error: "Error",
   status_pending: "Queued",
   status_running: "Generating",
+  status_aborted: "Cancelled",
   queue_title: "Queue",
+  concurrency: "Parallel",
+  concurrency_hint:
+    "Number of generations run at once. For Pro (a preview model), 1 is recommended: parallel requests starve the low quota and all stall on 429.",
+  undo_send: "Undo send ({n})",
+  undo_send_hint: "Cancel within the countdown — the request hasn't been sent, so no charge.",
+  cancel_running: "Cancel",
+  cancel_running_hint:
+    "Stops retries and disconnects. Note: if Vertex already finished generating, this may still be billed.",
+  undo_send_seconds: "Send delay (seconds)",
+  undo_send_seconds_hint:
+    "Counts down before actually calling Vertex; cancelling within the window = no charge. 0 = send immediately.",
+  aborted_fallback: "Cancelled.",
   clear_done: "Clear finished",
   remove_task: "Remove",
   reuse: "Reuse",
