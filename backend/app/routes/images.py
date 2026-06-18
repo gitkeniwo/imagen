@@ -39,6 +39,7 @@ def list_images(
     source: str | None = None,
     starred: bool | None = None,
     tag: int | None = None,
+    q: str | None = None,
 ):
     clauses, params = [], []
     if source:
@@ -50,6 +51,14 @@ def list_images(
     if tag is not None:
         clauses.append("id IN (SELECT image_id FROM image_tags WHERE tag_id = ?)")
         params.append(tag)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        clauses.append(
+            "(filename LIKE ? OR id IN ("
+            "SELECT it.image_id FROM image_tags it "
+            "JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ?))"
+        )
+        params.extend([like, like])
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sql = (
         f"SELECT * FROM images {where} "

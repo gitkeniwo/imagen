@@ -336,12 +336,60 @@ body.resizing-sidebar {
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .library-panel.compact { padding: 12px; }
-.library-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-.library-filters { flex: none; }
-.library-hint { flex: none; margin-left: auto; }
-.library-density { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.library-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: -12px -12px 12px; padding: 12px;
+  position: sticky; top: 0; z-index: 5;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.library-source-seg { flex: 0 0 auto; }
+.library-toolbar .searchbox { flex: 1 1 140px; min-width: 120px; }
+.star-filter { flex: 0 0 auto; cursor: pointer; padding: 5px 11px; }
+.star-filter.on { background: var(--warning); border-color: var(--warning); color: #fff; }
+
+/* density popover (folded out of the toolbar) */
+.density-wrap { position: relative; flex: 0 0 auto; }
+.density-trigger { padding: 6px 9px; min-height: 0; line-height: 1; }
+.density-trigger.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.density-popover {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px); box-shadow: var(--shadow-lg);
+  padding: 8px; min-width: 160px;
+}
 .density-seg { flex: 0 0 auto; }
-.density-seg button { min-width: 34px; padding: 6px 8px; }
+.density-seg button { min-width: 30px; padding: 6px 8px; }
+
+/* search box */
+.searchbox {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px);
+  background: var(--panel); box-shadow: var(--input-shadow);
+}
+.searchbox:focus-within { border-color: var(--focus-border); }
+.searchbox-icon { font-size: 12px; opacity: 0.6; flex: 0 0 auto; }
+.searchbox input {
+  flex: 1; min-width: 0; border: none; background: none; box-shadow: none;
+  padding: 7px 0; min-height: 0;
+}
+.searchbox input:focus { outline: none; box-shadow: none; }
+.searchbox-clear {
+  flex: 0 0 auto; border: none; background: none; box-shadow: none;
+  color: var(--muted); font-size: 13px; padding: 2px 4px; min-height: 0;
+}
+.searchbox-clear:hover { color: var(--text); background: transparent; border-color: transparent; }
+
+/* batch tagging sections (clearer hierarchy) */
+.batch-section { margin-bottom: 10px; }
+.batch-section:last-child { margin-bottom: 0; }
+.batch-section-title {
+  display: block; font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px;
+}
+
+/* empty state with a clear-filters action */
+.empty-state { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .library-grid { grid-template-columns: repeat(var(--library-columns, 3), minmax(0, 1fr)); }
 .library-grid.compact { grid-template-columns: repeat(var(--library-columns, 2), minmax(0, 1fr)); gap: 10px; }
 .card {
@@ -353,17 +401,54 @@ body.resizing-sidebar {
   padding: 7px 8px; font-size: 12px; display: flex; justify-content: space-between;
   align-items: center; gap: 4px; flex-wrap: wrap; overflow: visible;
 }
-.card .star { background: none; border: none; padding: 2px 4px; min-height: 0; font-size: 14px; box-shadow: none; }
+.card-actions { display: flex; gap: 2px; }
+.card .star {
+  background: none; border: none; padding: 2px 4px; min-height: 0; font-size: 14px;
+  box-shadow: none; opacity: 0; transition: opacity 0.12s;
+}
+/* Reveal actions on hover; keep an already-starred star always visible. */
+.card:hover .star { opacity: 1; }
+.card .star.is-starred { opacity: 1; }
+@media (hover: none) {
+  .card .star { opacity: 1; }
+}
 .card .tag { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .pager button { padding: 6px 10px; flex: 0 0 auto; }
 .pager span { text-align: center; }
 
-.history-list.compact .history-panel { padding: 12px; margin-bottom: 12px; }
+.history-list.compact .history-panel { padding: 12px; margin-bottom: 0; }
 .history-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .history-list.compact .history-meta { gap: 6px; }
 .history-list.compact .history-meta .muted.small { max-width: 125px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.history-list.compact p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.history-toolbar {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--bg); padding-bottom: 8px; margin-bottom: 2px;
+}
+.history-toolbar-row { display: flex; align-items: center; gap: 8px; }
+.history-toolbar-row .searchbox { flex: 1; min-width: 0; }
+.history-cols-seg { flex: 0 0 auto; }
+
+.history-list {
+  display: grid;
+  grid-template-columns: repeat(var(--history-columns, 2), minmax(0, 1fr));
+  gap: 12px; align-items: start;
+}
+.history-list .history-panel { margin-bottom: 0; }
+/* In 2-column mode the cards are narrow, so stack the input→output row
+   vertically (inputs wrap on top, arrow points down, output below). */
+.history-list[style*="--history-columns: 2"] .gen-row {
+  flex-direction: column; align-items: flex-start; gap: 8px;
+}
+.history-list[style*="--history-columns: 2"] .arrow {
+  align-self: center; transform: rotate(90deg); font-size: 16px;
+}
+.history-prompt-wrap { margin: 0 0 8px; }
+.history-prompt { margin: 0; white-space: pre-wrap; line-height: 1.45; }
+.history-prompt:not(.expanded) {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.history-prompt-toggle { margin-top: 4px; font-size: 13px; }
 .gen-row { display: flex; gap: 16px; align-items: flex-start; }
 .gen-inputs { display: flex; gap: 6px; flex-wrap: wrap; }
 .gen-inputs img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); cursor: pointer; }
@@ -436,8 +521,6 @@ body.resizing-sidebar {
 }
 
 @media (max-width: 520px) {
-  .library-toolbar { align-items: stretch; flex-direction: column; }
-  .library-hint { margin-left: 0; }
   .seg { overflow-x: auto; }
   .queue-head { flex-wrap: wrap; }
   .queue-grid { grid-template-columns: 1fr; }
@@ -562,3 +645,41 @@ body.resizing-sidebar {
 .viewer-name { font-weight: 600; word-break: break-all; }
 .q-result-img { cursor: zoom-in; max-width: 320px; width: 100%; border-radius: 8px;
   border: 1px solid var(--border); display: block; }
+
+/* ===== fullscreen Library/History manager (sits below the lightbox) ===== */
+.side-expand {
+  margin-left: 6px; flex: 0 0 auto; min-height: 34px; padding: 0 10px;
+  font-size: 15px; line-height: 1;
+}
+.manager-overlay {
+  position: fixed; inset: 0; z-index: 90; background: var(--bg);
+  display: flex; flex-direction: column;
+}
+.manager-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.manager-tabs { flex: 0 0 auto; width: 280px; }
+.manager-header .spacer { flex: 1; }
+.manager-close {
+  margin-left: auto; flex: 0 0 auto; width: 38px; height: 38px;
+  font-size: 22px; line-height: 1; border-radius: 50%;
+}
+.manager-body { flex: 1; overflow: auto; padding: 20px 24px 48px; }
+/* The hosted panels run in non-compact mode; their sticky toolbars stick to
+   the scrolling manager-body, and the panel surface should be transparent. */
+.manager-body .library-panel,
+.manager-body .panel.library-panel { box-shadow: none; border: none; padding: 0; background: transparent; }
+.manager-body .library-toolbar,
+.manager-body .history-toolbar { background: var(--bg); }
+.manager-body .library-toolbar { margin: 0 0 14px; padding: 12px 0; }
+
+.library-grid.full {
+  grid-template-columns: repeat(auto-fill, minmax(var(--thumb-min, 170px), 1fr));
+  gap: 12px;
+}
+.thumb-size-seg { flex: 0 0 auto; }
+.thumb-size-seg button { min-width: 32px; padding: 6px 8px; }
+
+body.manager-open { overflow: hidden; }

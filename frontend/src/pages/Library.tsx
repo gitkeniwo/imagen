@@ -1,15 +1,25 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { api, ImageRow, Tag, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import SearchBox from "../components/SearchBox";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
 const GRID_COLUMNS_KEY = "imagen-library-columns";
 const GRID_COLUMN_OPTIONS = [1, 2, 3, 4, 5];
+const THUMB_SIZE_KEY = "imagen-library-thumb";
+const THUMB_SIZES = ["s", "m", "l"] as const;
+type ThumbSize = (typeof THUMB_SIZES)[number];
+const THUMB_MIN: Record<ThumbSize, string> = { s: "120px", m: "170px", l: "240px" };
 
 function initialGridColumns() {
   const saved = Number(localStorage.getItem(GRID_COLUMNS_KEY));
   return GRID_COLUMN_OPTIONS.includes(saved) ? saved : 2;
+}
+
+function initialThumbSize(): ThumbSize {
+  const saved = localStorage.getItem(THUMB_SIZE_KEY) as ThumbSize | null;
+  return saved && THUMB_SIZES.includes(saved) ? saved : "m";
 }
 
 export default function Library({
@@ -28,11 +38,16 @@ export default function Library({
   const [tags, setTags] = useState<Tag[]>([]);
   const [source, setSource] = useState<string>("");
   const [tagFilter, setTagFilter] = useState<number | null>(null);
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [query, setQuery] = useState("");
+  const [densityOpen, setDensityOpen] = useState(false);
+  const densityRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [added, setAdded] = useState<number | null>(null);
   const [columns, setColumns] = useState(initialGridColumns);
+  const [thumbSize, setThumbSize] = useState<ThumbSize>(initialThumbSize);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [batchMode, setBatchMode] = useState<"add" | "remove" | null>(null);
@@ -47,6 +62,8 @@ export default function Library({
         offset: page * pageSize,
         source: source || undefined,
         tag: tagFilter ?? undefined,
+        starred: starredOnly || undefined,
+        q: query || undefined,
       }),
       api.listTags(),
     ])
@@ -61,11 +78,36 @@ export default function Library({
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [source, tagFilter, page, pageSize, refreshKey]);
+  useEffect(load, [source, tagFilter, starredOnly, query, page, pageSize, refreshKey]);
 
   useEffect(() => {
     localStorage.setItem(GRID_COLUMNS_KEY, String(columns));
   }, [columns]);
+
+  useEffect(() => {
+    localStorage.setItem(THUMB_SIZE_KEY, thumbSize);
+  }, [thumbSize]);
+
+  // Close the density popover on outside click.
+  useEffect(() => {
+    if (!densityOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!densityRef.current?.contains(e.target as Node)) setDensityOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [densityOpen]);
+
+  const hasActiveFilters =
+    !!query || starredOnly || !!source || tagFilter !== null;
+
+  const clearFilters = () => {
+    setQuery("");
+    setStarredOnly(false);
+    setSource("");
+    setTagFilter(null);
+    setPage(0);
+  };
 
   const toggleStar = async (img: ImageRow) => {
     await api.patchImage(img.id, { starred: !img.starred });
@@ -87,6 +129,12 @@ export default function Library({
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+
+  const allSelected =
+    images.length > 0 && images.every((img) => selected.has(img.id));
+
+  const selectAllOnPage = () =>
+    setSelected((s) => new Set([...s, ...images.map((img) => img.id)]));
 
   const onCardClick = (img: ImageRow) => {
     if (selectMode) toggleSelect(img.id);
@@ -140,26 +188,81 @@ export default function Library({
   return (
     <div className={`panel library-panel${compact ? " compact" : ""}`}>
       <div className="library-toolbar">
-        <div className="library-filters">
-          <div className="seg">
-            {[
-              ["", t("filter_all")],
-              ["upload", t("filter_upload")],
-              ["generated", t("filter_generated")],
-            ].map(([val, label]) => (
+        <div className="seg library-source-seg">
+          {[
+            ["", t("filter_all")],
+            ["upload", t("filter_upload")],
+            ["generated", t("filter_generated")],
+          ].map(([val, label]) => (
+            <button
+              key={val}
+              className={source === val ? "on" : ""}
+              onClick={() => {
+                setSource(val);
+                setPage(0);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          className={`tag-chip star-filter${starredOnly ? " on" : ""}`}
+          title={t("star")}
+          onClick={() => {
+            setStarredOnly((v) => !v);
+            setPage(0);
+          }}
+        >
+          {starredOnly ? "★" : "☆"} {t("star")}
+        </button>
+        <SearchBox
+          value={query}
+          onChange={(q) => {
+            setQuery(q);
+            setPage(0);
+          }}
+          placeholder={t("search_placeholder_library")}
+        />
+        {compact ? (
+          <div className="density-wrap" ref={densityRef}>
+            <button
+              className={`density-trigger${densityOpen ? " on" : ""}`}
+              title={t("density")}
+              onClick={() => setDensityOpen((v) => !v)}
+            >
+              ▦
+            </button>
+            {densityOpen && (
+              <div className="density-popover">
+                <span className="muted small">{t("columns_per_row")}</span>
+                <div className="seg density-seg">
+                  {GRID_COLUMN_OPTIONS.map((n) => (
+                    <button
+                      key={n}
+                      className={columns === n ? "on" : ""}
+                      onClick={() => setColumns(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="seg density-seg thumb-size-seg" title={t("thumb_size")}>
+            {THUMB_SIZES.map((s) => (
               <button
-                key={val}
-                className={source === val ? "on" : ""}
-                onClick={() => {
-                  setSource(val);
-                  setPage(0);
-                }}
+                key={s}
+                className={thumbSize === s ? "on" : ""}
+                onClick={() => setThumbSize(s)}
               >
-                {label}
+                {s.toUpperCase()}
               </button>
             ))}
           </div>
-        </div>
+        )}
         <button
           className={`select-toggle${selectMode ? " on" : ""}`}
           onClick={() => {
@@ -204,6 +307,15 @@ export default function Library({
         <div className="batch-bar">
           <span className="small">{t("selected_n", { n: selected.size })}</span>
           <button
+            disabled={images.length === 0 || allSelected}
+            onClick={selectAllOnPage}
+          >
+            {t("select_all")}
+          </button>
+          {selected.size > 0 && (
+            <button onClick={() => setSelected(new Set())}>{t("deselect_all")}</button>
+          )}
+          <button
             className={batchMode === "add" ? "on" : ""}
             disabled={selected.size === 0}
             onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
@@ -223,42 +335,45 @@ export default function Library({
           >
             {t("batch_download")}
           </button>
-          {selected.size > 0 && (
-            <button onClick={() => setSelected(new Set())}>{t("clear_sel")}</button>
-          )}
         </div>
       )}
       {selectMode && batchMode && selected.size > 0 && (
         <div className="batch-tags">
-          <div className="tag-chip-row">
-            {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
-            {tags.map((tag) => (
-              <button
-                key={tag.id}
-                className="tag-chip"
-                onClick={() => applyBatch(tag.id)}
-              >
-                {batchMode === "add" ? "＋" : "－"} {tag.name}
-                <span className="tag-count">{tag.count}</span>
-              </button>
-            ))}
+          <div className="batch-section">
+            <span className="batch-section-title">{t("apply_to_selected")}</span>
+            <div className="tag-chip-row">
+              {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
+              {tags.map((tag) => (
+                <button
+                  key={tag.id}
+                  className="tag-chip"
+                  onClick={() => applyBatch(tag.id)}
+                >
+                  {batchMode === "add" ? "＋" : "－"} {tag.name}
+                  <span className="tag-count">{tag.count}</span>
+                </button>
+              ))}
+            </div>
           </div>
           {batchMode === "add" && (
-            <div className="tag-create">
-              <input
-                value={draft}
-                placeholder={t("new_tag_placeholder")}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    createAndApply();
-                  }
-                }}
-              />
-              <button onClick={createAndApply} disabled={!draft.trim()}>
-                {t("create")}
-              </button>
+            <div className="batch-section">
+              <span className="batch-section-title">{t("create_new_tag")}</span>
+              <div className="tag-create">
+                <input
+                  value={draft}
+                  placeholder={t("new_tag_placeholder")}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      createAndApply();
+                    }
+                  }}
+                />
+                <button onClick={createAndApply} disabled={!draft.trim()}>
+                  {t("create")}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -266,31 +381,30 @@ export default function Library({
 
       {pager}
 
-      <div className="library-density">
-        <span className="muted small">{t("columns_per_row")}</span>
-        <div className="seg density-seg">
-          {GRID_COLUMN_OPTIONS.map((n) => (
-            <button
-              key={n}
-              className={columns === n ? "on" : ""}
-              onClick={() => setColumns(n)}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {loading ? (
         <p className="muted">
           <span className="spinner" /> {t("loading")}
         </p>
       ) : images.length === 0 ? (
-        <p className="muted">{t("lib_empty")}</p>
+        hasActiveFilters ? (
+          <div className="empty-state">
+            <p className="muted">{t("no_results")}</p>
+            <button onClick={clearFilters}>{t("clear_filters")}</button>
+          </div>
+        ) : (
+          <p className="muted">{t("lib_empty")}</p>
+        )
       ) : (
         <div
-          className={`grid library-grid${compact ? " compact" : ""}`}
-          style={{ "--library-columns": columns } as CSSProperties}
+          className={`grid library-grid${compact ? " compact" : " full"}`}
+          style={
+            (compact
+              ? { "--library-columns": columns }
+              : { "--thumb-min": THUMB_MIN[thumbSize] }) as Record<
+              string,
+              string | number
+            > as CSSProperties
+          }
         >
           {images.map((img) => (
             <div
@@ -336,11 +450,15 @@ export default function Library({
                 <span className="tag">
                   {img.source === "upload" ? t("tag_upload") : t("tag_generated")}
                 </span>
-                <span style={{ display: "flex", gap: 2 }}>
-                  <button className="star" title={t("star")} onClick={() => toggleStar(img)}>
+                <span className="card-actions">
+                  <button
+                    className={`star${img.starred ? " is-starred" : ""}`}
+                    title={t("star")}
+                    onClick={() => toggleStar(img)}
+                  >
                     {img.starred ? "★" : "☆"}
                   </button>
-                  <button className="star" title={t("delete")} onClick={() => remove(img)}>
+                  <button className="star delete-btn" title={t("delete")} onClick={() => remove(img)}>
                     🗑
                   </button>
                 </span>

@@ -34,15 +34,21 @@ def list_generations(
     limit: int = Query(40, ge=1, le=200),
     offset: int = Query(0, ge=0),
     tag: int | None = None,
+    q: str | None = None,
 ):
-    # Filter by the output image's tag (i.e. generations archived into that tag).
-    where, params = "", []
+    # Filter by the output image's tag (i.e. generations archived into that tag),
+    # and/or by a substring of the prompt.
+    clauses, params = [], []
     if tag is not None:
-        where = (
-            "WHERE output_image_id IN "
+        clauses.append(
+            "output_image_id IN "
             "(SELECT image_id FROM image_tags WHERE tag_id = ?)"
         )
-        params = [tag]
+        params.append(tag)
+    if q and q.strip():
+        clauses.append("prompt LIKE ?")
+        params.append(f"%{q.strip()}%")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with get_conn() as conn:
         gens = conn.execute(
             f"SELECT * FROM generations {where} ORDER BY id DESC LIMIT ? OFFSET ?",

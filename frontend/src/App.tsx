@@ -6,6 +6,7 @@ import Library from "./pages/Library";
 import History from "./pages/History";
 import SettingsModal from "./components/SettingsModal";
 import ImageViewer from "./components/ImageViewer";
+import FullscreenManager from "./components/FullscreenManager";
 
 export type SidebarPanel = "library" | "history";
 
@@ -37,6 +38,7 @@ function initialSidebarWidth() {
 export default function App() {
   const { t, lang, setLang } = useI18n();
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>("library");
+  const [managerOpen, setManagerOpen] = useState(false);
   const [tray, setTray] = useState<ImageRow[]>([]);
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -230,6 +232,13 @@ export default function App() {
                 {t(`tab_${panel}`)}
               </button>
             ))}
+            <button
+              className="side-expand"
+              title={t("fullscreen_manage")}
+              onClick={() => setManagerOpen(true)}
+            >
+              ⛶
+            </button>
           </div>
           <div className="side-scroll">
             {sidebarPanel === "library" ? (
@@ -288,6 +297,17 @@ export default function App() {
         <SettingsModal
           onClose={() => setShowSettings(false)}
           onSaved={refreshConfig}
+        />
+      )}
+
+      {managerOpen && (
+        <FullscreenManager
+          initialPanel={sidebarPanel}
+          onClose={() => setManagerOpen(false)}
+          addToTray={addToTray}
+          onOpenViewer={openViewer}
+          onReuse={reuse}
+          refreshKey={completedRefreshKey}
         />
       )}
 

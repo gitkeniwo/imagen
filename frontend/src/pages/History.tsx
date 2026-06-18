@@ -1,9 +1,20 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow, Tag, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import SearchBox from "../components/SearchBox";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
+const PROMPT_PREVIEW_CHARS = 160;
+const PROMPT_PREVIEW_LINES = 3;
+const HISTORY_COLUMNS_KEY = "imagen-history-columns";
+const HISTORY_COLUMN_OPTIONS = [1, 2];
+const HISTORY_COLUMN_OPTIONS_FULL = [1, 2, 3];
+
+function initialHistoryColumns() {
+  const saved = Number(localStorage.getItem(HISTORY_COLUMNS_KEY));
+  return HISTORY_COLUMN_OPTIONS_FULL.includes(saved) ? saved : 2;
+}
 
 export default function History({
   onReuse,
@@ -20,6 +31,9 @@ export default function History({
   const [gens, setGens] = useState<Generation[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [columns, setColumns] = useState(initialHistoryColumns);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -32,6 +46,7 @@ export default function History({
         limit: pageSize,
         offset: page * pageSize,
         tag: tagFilter ?? undefined,
+        q: query || undefined,
       }),
       api.listTags(),
     ])
@@ -44,7 +59,18 @@ export default function History({
         }
       })
       .finally(() => setLoading(false));
-  }, [page, pageSize, tagFilter, refreshKey]);
+  }, [page, pageSize, tagFilter, query, refreshKey]);
+
+  useEffect(() => {
+    localStorage.setItem(HISTORY_COLUMNS_KEY, String(columns));
+  }, [columns]);
+
+  const toggleExpand = (id: number) =>
+    setExpanded((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const hasPages = total > pageSize;
@@ -112,7 +138,30 @@ export default function History({
 
   return (
     <div>
-      {tagBar}
+      <div className="history-toolbar">
+        <div className="history-toolbar-row">
+          <SearchBox
+            value={query}
+            onChange={(q) => {
+              setQuery(q);
+              setPage(0);
+            }}
+            placeholder={t("search_placeholder_history")}
+          />
+          <div className="seg density-seg history-cols-seg" title={t("columns_per_row")}>
+            {(compact ? HISTORY_COLUMN_OPTIONS : HISTORY_COLUMN_OPTIONS_FULL).map((n) => (
+              <button
+                key={n}
+                className={columns === n ? "on" : ""}
+                onClick={() => setColumns(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+        {tagBar}
+      </div>
       {pager}
 
       {loading ? (
@@ -121,10 +170,28 @@ export default function History({
         </div>
       ) : gens.length === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
-          {t("history_empty")}
+          {query || tagFilter !== null ? (
+            <div className="empty-state">
+              <span>{t("no_results")}</span>
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setTagFilter(null);
+                  setPage(0);
+                }}
+              >
+                {t("clear_filters")}
+              </button>
+            </div>
+          ) : (
+            t("history_empty")
+          )}
         </div>
       ) : (
-        <div className={`history-list${compact ? " compact" : ""}`}>
+        <div
+          className={`history-list${compact ? " compact" : ""}`}
+          style={{ "--history-columns": columns } as CSSProperties}
+        >
           {gens.map((g) => (
             <div className="panel history-panel" key={g.id}>
               <div className="history-meta">
@@ -136,7 +203,26 @@ export default function History({
                 <button onClick={() => onReuse(g)}>{t("reuse")}</button>
               </div>
 
-              {g.prompt && <p style={{ marginTop: 0 }}>{g.prompt}</p>}
+              {g.prompt && (
+                <div className="history-prompt-wrap">
+                  <p
+                    className={`history-prompt${
+                      expanded.has(g.id) ? " expanded" : ""
+                    }`}
+                  >
+                    {g.prompt}
+                  </p>
+                  {(g.prompt.length > PROMPT_PREVIEW_CHARS ||
+                    g.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES) && (
+                    <button
+                      className="link-btn history-prompt-toggle"
+                      onClick={() => toggleExpand(g.id)}
+                    >
+                      {expanded.has(g.id) ? t("show_less") : t("show_more")}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {genTags(g).length > 0 && (
                 <div className="card-tags" style={{ marginBottom: 8 }}>
