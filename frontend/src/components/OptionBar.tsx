@@ -1,5 +1,6 @@
 import { ASPECT_RATIOS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "../api";
 import { useI18n } from "../i18n";
+import CustomSelect from "./CustomSelect";
 
 export default function OptionBar({
   model,
@@ -28,13 +29,11 @@ export default function OptionBar({
       <div className="row">
         <div>
           <label>{t("model")}</label>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            {MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+          <CustomSelect
+            value={model}
+            onChange={setModel}
+            options={MODELS.map((m) => ({ id: m.id, label: m.label }))}
+          />
         </div>
         <div>
           <label>

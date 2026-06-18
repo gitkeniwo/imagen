@@ -82,6 +82,7 @@ const zh: Dict = {
   selected_n: "已选 {n}",
   batch_add_tag: "批量加 tag",
   batch_remove_tag: "批量移 tag",
+  batch_download: "下载",
   clear_sel: "清空选择",
 
   status_success: "成功",
@@ -198,6 +199,7 @@ const en: Dict = {
   selected_n: "{n} selected",
   batch_add_tag: "Add tag",
   batch_remove_tag: "Remove tag",
+  batch_download: "Download",
   clear_sel: "Clear",
 
   status_success: "Success",

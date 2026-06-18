@@ -40,40 +40,44 @@ export default function ReferenceTray({
     }
   }, [onAdd]);
 
+  // Use a counter pattern for reliable drag enter/leave detection.
+  // Every child element fires its own dragenter/dragleave, so a simple
+  // boolean flickers. The counter stays positive while the drag is anywhere
+  // inside the window, and only hits 0 when the pointer truly leaves.
+  const dragCounter = useRef(0);
+
   useEffect(() => {
-    const showDropOverlay = (e: DragEvent) => {
+    const onEnter = (e: DragEvent) => {
+      if (!isFileDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      dragCounter.current++;
+      if (dragCounter.current === 1) setPageDrag(true);
+    };
+    const onOver = (e: DragEvent) => {
       if (!isFileDrag(e.dataTransfer)) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      setPageDrag(true);
     };
-
-    const hideWhenLeavingWindow = (e: DragEvent) => {
-      if (
-        e.clientX <= 0 ||
-        e.clientY <= 0 ||
-        e.clientX >= window.innerWidth ||
-        e.clientY >= window.innerHeight
-      ) {
-        setPageDrag(false);
-      }
+    const onLeave = (_e: DragEvent) => {
+      dragCounter.current = Math.max(0, dragCounter.current - 1);
+      if (dragCounter.current === 0) setPageDrag(false);
     };
-
-    const preventBrowserOpen = (e: DragEvent) => {
+    const onDrop = (e: DragEvent) => {
       if (!isFileDrag(e.dataTransfer)) return;
       e.preventDefault();
+      dragCounter.current = 0;
       setPageDrag(false);
     };
 
-    window.addEventListener("dragenter", showDropOverlay);
-    window.addEventListener("dragover", showDropOverlay);
-    window.addEventListener("dragleave", hideWhenLeavingWindow);
-    window.addEventListener("drop", preventBrowserOpen);
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
     return () => {
-      window.removeEventListener("dragenter", showDropOverlay);
-      window.removeEventListener("dragover", showDropOverlay);
-      window.removeEventListener("dragleave", hideWhenLeavingWindow);
-      window.removeEventListener("drop", preventBrowserOpen);
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
     };
   }, []);
 
@@ -86,9 +90,20 @@ export default function ReferenceTray({
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
           }}
+          onDragLeave={(e) => {
+            // Dismiss if the pointer exits this overlay (= leaves the window
+            // or moves to a non-child element outside). The counter handles
+            // the cross-element noise, but this provides the safety net for
+            // the overlay itself.
+            if (e.currentTarget === e.target) {
+              dragCounter.current = 0;
+              setPageDrag(false);
+            }
+          }}
           onDrop={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            dragCounter.current = 0;
             setPageDrag(false);
             setDrag(false);
             if (e.dataTransfer.files.length) upload(e.dataTransfer.files);

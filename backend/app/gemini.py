@@ -8,13 +8,26 @@ application-default login). Results are normalized into GeminiResult:
   status = "error"   -> API/network failure, message explains why
 """
 import asyncio
+import logging
 import random
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Optional
 
 from google import genai
 from google.genai import errors, types
+
+# Dedicated logger so generation debug info shows up on the backend terminal at
+# INFO level without dragging in google-genai / grpc noise (own handler, no
+# propagation to root).
+logger = logging.getLogger("nano-banana.gemini")
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [gemini] %(message)s"))
+    logger.addHandler(_h)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 # Models that support the imageConfig.image_size (1K/2K/4K) knob.
 PRO_MODELS = {"gemini-3-pro-image-preview"}
@@ -23,6 +36,12 @@ MAX_ATTEMPTS = 30
 MAX_NON_429_ATTEMPTS = 6
 RETRYABLE_CODES = {429, 500, 502, 503, 504}
 MIN_VERTEX_ATTEMPT_SPACING = 4.0
+
+# Heartbeat watchdog: while a single generate_content attempt is in flight, log
+# only if it stays unanswered past these thresholds. Normal fast generations
+# print nothing; a genuinely stuck Gemini call surfaces here.
+HEARTBEAT_FIRST_S = 20.0
+HEARTBEAT_INTERVAL_S = 30.0
 
 _retry_gate_lock = asyncio.Lock()
 _next_vertex_attempt_at = 0.0
@@ -208,7 +227,7 @@ async def _wait_for_vertex_attempt_slot() -> None:
         _next_vertex_attempt_at = time.monotonic() + MIN_VERTEX_ATTEMPT_SPACING
 
 
-async def _schedule_retry(attempt: int, code: Optional[int]) -> None:
+async def _schedule_retry(attempt: int, code: Optional[int]) -> float:
     global _next_vertex_attempt_at
     delay = _retry_delay(attempt, code)
     async with _retry_gate_lock:
@@ -216,6 +235,32 @@ async def _schedule_retry(attempt: int, code: Optional[int]) -> None:
             _next_vertex_attempt_at,
             time.monotonic() + delay,
         )
+    return delay
+
+
+async def _await_with_heartbeat(coro, tid: str, attempt: int, model: str):
+    """Await an in-flight attempt, logging a heartbeat if Gemini goes quiet.
+
+    The watchdog only logs once an attempt exceeds HEARTBEAT_FIRST_S, so fast
+    generations stay silent; a hung call keeps surfacing every interval.
+    """
+    start = time.monotonic()
+
+    async def _beat():
+        first = True
+        while True:
+            await asyncio.sleep(HEARTBEAT_FIRST_S if first else HEARTBEAT_INTERVAL_S)
+            first = False
+            logger.warning(
+                "[%s] attempt %d 仍在等待 Gemini 返回（%s），已 %.0fs 未响应",
+                tid, attempt + 1, model, time.monotonic() - start,
+            )
+
+    watcher = asyncio.create_task(_beat())
+    try:
+        return await coro
+    finally:
+        watcher.cancel()
 
 
 def _error_code(e: Exception) -> Optional[int]:
@@ -238,37 +283,68 @@ async def generate(
     images: list[InputImage],
     output_mime: Optional[str] = None,
 ) -> GeminiResult:
+    tid = uuid.uuid4().hex[:6]
+    start_ts = time.monotonic()
     try:
         client = genai.Client(vertexai=True, project=project, location=location)
     except Exception as e:  # ADC / config resolution failure at construct time
+        logger.warning("[%s] 无法初始化 Vertex 客户端：%s", tid, e)
         return GeminiResult(status="error", message=f"无法初始化 Vertex 客户端：{e}")
     contents = build_contents(prompt, images)
     config = build_config(model, aspect_ratio, resolution, output_mime)
+    logger.info(
+        "[%s] 开始生成 model=%s project=%s 输入图 %d 张",
+        tid, model, project, len(images),
+    )
 
     last_exc: Optional[Exception] = None
     retries_done = 0
     for attempt in range(MAX_ATTEMPTS):
         try:
             await _wait_for_vertex_attempt_slot()
-            resp = await client.aio.models.generate_content(
-                model=model, contents=contents, config=config
+            resp = await _await_with_heartbeat(
+                client.aio.models.generate_content(
+                    model=model, contents=contents, config=config
+                ),
+                tid, attempt, model,
             )
-            return parse_response(resp)
+            result = parse_response(resp)
+            elapsed = time.monotonic() - start_ts
+            if result.status == "success":
+                logger.info("[%s] 成功，总耗时 %.1fs，重试 %d 次", tid, elapsed, retries_done)
+            else:
+                logger.info(
+                    "[%s] 被拦截（%s），总耗时 %.1fs，重试 %d 次",
+                    tid, result.raw_finish or "?", elapsed, retries_done,
+                )
+            return result
         except errors.ServerError as e:
             last_exc = e
             code = _error_code(e) or 500
             if attempt >= _max_attempts_for(code) - 1:
                 break
             retries_done += 1
-            await _schedule_retry(attempt, code)
+            delay = await _schedule_retry(attempt, code)
+            logger.warning(
+                "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
+                tid, attempt + 1, code, delay, retries_done,
+            )
             continue
         except errors.ClientError as e:
             code = _error_code(e)
             if _is_retryable_api_error(e) and attempt < _max_attempts_for(code) - 1:
                 last_exc = e
                 retries_done += 1
-                await _schedule_retry(attempt, code)
+                delay = await _schedule_retry(attempt, code)
+                logger.warning(
+                    "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
+                    tid, attempt + 1, code, delay, retries_done,
+                )
                 continue
+            logger.warning(
+                "[%s] 失败 code=%s（不可重试），总耗时 %.1fs",
+                tid, code, time.monotonic() - start_ts,
+            )
             return GeminiResult(
                 status="error",
                 message=_api_error_message(code, str(getattr(e, "message", e))),
@@ -279,8 +355,16 @@ async def generate(
             if _is_retryable_api_error(e) and attempt < _max_attempts_for(code) - 1:
                 last_exc = e
                 retries_done += 1
-                await _schedule_retry(attempt, code)
+                delay = await _schedule_retry(attempt, code)
+                logger.warning(
+                    "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
+                    tid, attempt + 1, code, delay, retries_done,
+                )
                 continue
+            logger.warning(
+                "[%s] 失败 code=%s（不可重试），总耗时 %.1fs",
+                tid, code, time.monotonic() - start_ts,
+            )
             return GeminiResult(
                 status="error",
                 message=_api_error_message(code, str(getattr(e, "message", e))),
@@ -288,6 +372,7 @@ async def generate(
             )
         except Exception as e:  # network / unexpected / credentials
             if "default credentials" in str(e).lower() or "DefaultCredentials" in type(e).__name__:
+                logger.warning("[%s] 未找到 ADC 凭据", tid)
                 return GeminiResult(
                     status="error",
                     message="未找到 ADC 凭据。请在本机运行 "
@@ -298,11 +383,19 @@ async def generate(
             if attempt >= MAX_NON_429_ATTEMPTS - 1:
                 break
             retries_done += 1
-            await _schedule_retry(attempt, None)
+            delay = await _schedule_retry(attempt, None)
+            logger.warning(
+                "[%s] attempt %d 失败（%s），将在约 %.0fs 后重试（累计重试 %d 次）",
+                tid, attempt + 1, type(e).__name__, delay, retries_done,
+            )
             continue
 
     code = _error_code(last_exc) if last_exc else None
     detail = str(getattr(last_exc, "message", last_exc)) if last_exc else ""
+    logger.warning(
+        "[%s] 失败 code=%s，总耗时 %.1fs，重试 %d 次",
+        tid, code, time.monotonic() - start_ts, retries_done,
+    )
     return GeminiResult(
         status="error",
         message=f"{_api_error_message(code, detail)}；已自动排期重试 {retries_done} 次。",

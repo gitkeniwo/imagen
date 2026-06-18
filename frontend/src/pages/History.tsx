@@ -54,6 +54,23 @@ export default function History({
     .map((g) => g.outputImage)
     .filter((o): o is ImageRow => !!o);
 
+  const pager = hasPages ? (
+    <div className="pager">
+      <button disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
+        {t("prev_page")}
+      </button>
+      <span className="muted small">
+        {t("page_status", { page: page + 1, pages: pageCount, total })}
+      </span>
+      <button
+        disabled={page >= pageCount - 1 || loading}
+        onClick={() => setPage((p) => p + 1)}
+      >
+        {t("next_page")}
+      </button>
+    </div>
+  ) : null;
+
   const tagBar = (
     <div className="tag-filter-row">
       <button
@@ -82,9 +99,21 @@ export default function History({
     </div>
   );
 
+  // Collect unique tags from all images in a generation (inputs + output).
+  const genTags = (g: Generation) => {
+    const all = [...(g.inputs ?? []), ...(g.outputImage ? [g.outputImage] : [])];
+    const seen = new Set<number>();
+    return all.flatMap((im) => im.tags ?? []).filter((tg) => {
+      if (seen.has(tg.id)) return false;
+      seen.add(tg.id);
+      return true;
+    });
+  };
+
   return (
     <div>
       {tagBar}
+      {pager}
 
       {loading ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
@@ -108,6 +137,16 @@ export default function History({
               </div>
 
               {g.prompt && <p style={{ marginTop: 0 }}>{g.prompt}</p>}
+
+              {genTags(g).length > 0 && (
+                <div className="card-tags" style={{ marginBottom: 8 }}>
+                  {genTags(g).map((tg) => (
+                    <span key={tg.id} className="card-tag">
+                      {tg.name}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div className="gen-row">
                 <div className="gen-inputs">
@@ -156,22 +195,7 @@ export default function History({
         </div>
       )}
 
-      {hasPages && (
-        <div className="pager">
-          <button disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
-            {t("prev_page")}
-          </button>
-          <span className="muted small">
-            {t("page_status", { page: page + 1, pages: pageCount, total })}
-          </span>
-          <button
-            disabled={page >= pageCount - 1 || loading}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {t("next_page")}
-          </button>
-        </div>
-      )}
+      {pager}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, ImageRow, Tag, imgThumbUrl } from "../api";
+import { api, ImageRow, Tag, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 
 const COMPACT_PAGE_SIZE = 24;
@@ -99,6 +99,15 @@ export default function Library({
     load();
   };
 
+  const downloadSelected = () => {
+    for (const id of selected) {
+      const a = document.createElement("a");
+      a.href = imgFileUrl(id);
+      a.download = "";
+      a.click();
+    }
+  };
+
   const createAndApply = async () => {
     const name = draft.trim();
     if (!name) return;
@@ -110,6 +119,23 @@ export default function Library({
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const hasPages = total > pageSize;
+
+  const pager = hasPages ? (
+    <div className="pager">
+      <button disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
+        {t("prev_page")}
+      </button>
+      <span className="muted small">
+        {t("page_status", { page: page + 1, pages: pageCount, total })}
+      </span>
+      <button
+        disabled={page >= pageCount - 1 || loading}
+        onClick={() => setPage((p) => p + 1)}
+      >
+        {t("next_page")}
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className={`panel library-panel${compact ? " compact" : ""}`}>
@@ -191,6 +217,12 @@ export default function Library({
           >
             {t("batch_remove_tag")}
           </button>
+          <button
+            disabled={selected.size === 0}
+            onClick={downloadSelected}
+          >
+            {t("batch_download")}
+          </button>
           {selected.size > 0 && (
             <button onClick={() => setSelected(new Set())}>{t("clear_sel")}</button>
           )}
@@ -231,6 +263,8 @@ export default function Library({
           )}
         </div>
       )}
+
+      {pager}
 
       <div className="library-density">
         <span className="muted small">{t("columns_per_row")}</span>
@@ -315,22 +349,7 @@ export default function Library({
           ))}
         </div>
       )}
-      {hasPages && (
-        <div className="pager">
-          <button disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
-            {t("prev_page")}
-          </button>
-          <span className="muted small">
-            {t("page_status", { page: page + 1, pages: pageCount, total })}
-          </span>
-          <button
-            disabled={page >= pageCount - 1 || loading}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            {t("next_page")}
-          </button>
-        </div>
-      )}
+      {pager}
     </div>
   );
 }
