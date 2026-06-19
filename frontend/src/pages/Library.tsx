@@ -189,213 +189,215 @@ export default function Library({
 
   return (
     <div className={`panel library-panel${compact ? " compact" : ""}`}>
-      <div className="library-toolbar">
-        <div className="seg library-source-seg">
-          {[
-            ["", t("filter_all")],
-            ["upload", t("filter_upload")],
-            ["generated", t("filter_generated")],
-          ].map(([val, label]) => (
+      <div className="library-sticky">
+        <div className="library-toolbar">
+          <div className="seg library-source-seg">
+            {[
+              ["", t("filter_all")],
+              ["upload", t("filter_upload")],
+              ["generated", t("filter_generated")],
+            ].map(([val, label]) => (
+              <button
+                key={val}
+                className={source === val ? "on" : ""}
+                onClick={() => {
+                  setSource(val);
+                  setPage(0);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            className={`tag-chip star-filter${starredOnly ? " on" : ""}`}
+            title={t("star")}
+            onClick={() => {
+              setStarredOnly((v) => !v);
+              setPage(0);
+            }}
+          >
+            {starredOnly ? "★" : "☆"} {t("star")}
+          </button>
+          <SearchBox
+            value={query}
+            onChange={(q) => {
+              setQuery(q);
+              setPage(0);
+            }}
+            placeholder={t("search_placeholder_library")}
+          />
+          {compact ? (
+            <div className="density-wrap" ref={densityRef}>
+              <button
+                className={`density-trigger${densityOpen ? " on" : ""}`}
+                title={t("density")}
+                onClick={() => setDensityOpen((v) => !v)}
+              >
+                ▦
+              </button>
+              {densityOpen && (
+                <div className="density-popover">
+                  <span className="muted small">{t("columns_per_row")}</span>
+                  <div className="seg density-seg">
+                    {GRID_COLUMN_OPTIONS.map((n) => (
+                      <button
+                        key={n}
+                        className={columns === n ? "on" : ""}
+                        onClick={() => setColumns(n)}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="seg density-seg thumb-size-seg" title={t("thumb_size")}>
+              {THUMB_SIZES.map((s) => (
+                <button
+                  key={s}
+                  className={thumbSize === s ? "on" : ""}
+                  onClick={() => setThumbSize(s)}
+                >
+                  {s.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
+          {!selectMode && (
             <button
-              key={val}
-              className={source === val ? "on" : ""}
+              className="select-toggle"
               onClick={() => {
-                setSource(val);
+                setSelectMode(true);
+                setSelected(new Set());
+                setBatchMode(null);
+              }}
+            >
+              <i className="fa-solid fa-square-check" /> {t("select_mode")}
+            </button>
+          )}
+        </div>
+
+        {/* Tag filter bar (collection-style) */}
+        <div className="tag-filter-row">
+          <button
+            className={`tag-chip${tagFilter === null ? " on" : ""}`}
+            onClick={() => {
+              setTagFilter(null);
+              setPage(0);
+            }}
+          >
+            {t("tags_all")}
+          </button>
+          {tags.map((tag) => (
+            <button
+              key={tag.id}
+              className={`tag-chip${tagFilter === tag.id ? " on" : ""}`}
+              style={tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined}
+              onClick={() => {
+                setTagFilter(tag.id);
                 setPage(0);
               }}
             >
-              {label}
+              {tag.name}
+              <span className="tag-count">{tag.count}</span>
             </button>
           ))}
         </div>
-        <button
-          className={`tag-chip star-filter${starredOnly ? " on" : ""}`}
-          title={t("star")}
-          onClick={() => {
-            setStarredOnly((v) => !v);
-            setPage(0);
-          }}
-        >
-          {starredOnly ? "★" : "☆"} {t("star")}
-        </button>
-        <SearchBox
-          value={query}
-          onChange={(q) => {
-            setQuery(q);
-            setPage(0);
-          }}
-          placeholder={t("search_placeholder_library")}
-        />
-        {compact ? (
-          <div className="density-wrap" ref={densityRef}>
+
+        {/* Batch tagging bar (only in select mode with a selection) */}
+        {selectMode && (
+          <div className="batch-bar">
+            <span className="small">{t("selected_n", { n: selected.size })}</span>
             <button
-              className={`density-trigger${densityOpen ? " on" : ""}`}
-              title={t("density")}
-              onClick={() => setDensityOpen((v) => !v)}
+              disabled={images.length === 0 || allSelected}
+              onClick={selectAllOnPage}
             >
-              ▦
+              <i className="fa-solid fa-check-double" /> {t("select_all")}
             </button>
-            {densityOpen && (
-              <div className="density-popover">
-                <span className="muted small">{t("columns_per_row")}</span>
-                <div className="seg density-seg">
-                  {GRID_COLUMN_OPTIONS.map((n) => (
-                    <button
-                      key={n}
-                      className={columns === n ? "on" : ""}
-                      onClick={() => setColumns(n)}
-                    >
-                      {n}
-                    </button>
-                  ))}
+            {selected.size > 0 && (
+              <button onClick={() => setSelected(new Set())}>
+                <i className="fa-regular fa-square" /> {t("deselect_all")}
+              </button>
+            )}
+            <button
+              className={batchMode === "add" ? "on" : ""}
+              disabled={selected.size === 0}
+              onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
+            >
+              <i className="fa-solid fa-tag" /> {t("batch_add_tag")}
+            </button>
+            <button
+              className={batchMode === "remove" ? "on" : ""}
+              disabled={selected.size === 0}
+              onClick={() => setBatchMode(batchMode === "remove" ? null : "remove")}
+            >
+              <i className="fa-solid fa-eraser" /> {t("batch_remove_tag")}
+            </button>
+            <button
+              disabled={selected.size === 0}
+              onClick={downloadSelected}
+            >
+              <i className="fa-solid fa-download" /> {t("batch_download")}
+            </button>
+            <button
+              className="batch-done"
+              onClick={() => {
+                setSelectMode(false);
+                setSelected(new Set());
+                setBatchMode(null);
+              }}
+            >
+              <i className="fa-solid fa-check" /> {t("done")}
+            </button>
+          </div>
+        )}
+        {selectMode && batchMode && selected.size > 0 && (
+          <div className="batch-tags">
+            <div className="batch-section">
+              <span className="batch-section-title">{t("apply_to_selected")}</span>
+              <div className="tag-chip-row">
+                {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
+                {tags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    className="tag-chip"
+                    onClick={() => applyBatch(tag.id)}
+                  >
+                    {batchMode === "add" ? "＋" : "－"} {tag.name}
+                    <span className="tag-count">{tag.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {batchMode === "add" && (
+              <div className="batch-section">
+                <span className="batch-section-title">{t("create_new_tag")}</span>
+                <div className="tag-create">
+                  <input
+                    value={draft}
+                    placeholder={t("new_tag_placeholder")}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        createAndApply();
+                      }
+                    }}
+                  />
+                  <button onClick={createAndApply} disabled={!draft.trim()}>
+                    {t("create")}
+                  </button>
                 </div>
               </div>
             )}
           </div>
-        ) : (
-          <div className="seg density-seg thumb-size-seg" title={t("thumb_size")}>
-            {THUMB_SIZES.map((s) => (
-              <button
-                key={s}
-                className={thumbSize === s ? "on" : ""}
-                onClick={() => setThumbSize(s)}
-              >
-                {s.toUpperCase()}
-              </button>
-            ))}
-          </div>
         )}
-        {!selectMode && (
-          <button
-            className="select-toggle"
-            onClick={() => {
-              setSelectMode(true);
-              setSelected(new Set());
-              setBatchMode(null);
-            }}
-          >
-            <i className="fa-solid fa-square-check" /> {t("select_mode")}
-          </button>
-        )}
+
+        {pager}
       </div>
-
-      {/* Tag filter bar (collection-style) */}
-      <div className="tag-filter-row">
-        <button
-          className={`tag-chip${tagFilter === null ? " on" : ""}`}
-          onClick={() => {
-            setTagFilter(null);
-            setPage(0);
-          }}
-        >
-          {t("tags_all")}
-        </button>
-        {tags.map((tag) => (
-          <button
-            key={tag.id}
-            className={`tag-chip${tagFilter === tag.id ? " on" : ""}`}
-            style={tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined}
-            onClick={() => {
-              setTagFilter(tag.id);
-              setPage(0);
-            }}
-          >
-            {tag.name}
-            <span className="tag-count">{tag.count}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Batch tagging bar (only in select mode with a selection) */}
-      {selectMode && (
-        <div className="batch-bar">
-          <span className="small">{t("selected_n", { n: selected.size })}</span>
-          <button
-            disabled={images.length === 0 || allSelected}
-            onClick={selectAllOnPage}
-          >
-            <i className="fa-solid fa-check-double" /> {t("select_all")}
-          </button>
-          {selected.size > 0 && (
-            <button onClick={() => setSelected(new Set())}>
-              <i className="fa-regular fa-square" /> {t("deselect_all")}
-            </button>
-          )}
-          <button
-            className={batchMode === "add" ? "on" : ""}
-            disabled={selected.size === 0}
-            onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
-          >
-            <i className="fa-solid fa-tag" /> {t("batch_add_tag")}
-          </button>
-          <button
-            className={batchMode === "remove" ? "on" : ""}
-            disabled={selected.size === 0}
-            onClick={() => setBatchMode(batchMode === "remove" ? null : "remove")}
-          >
-            <i className="fa-solid fa-eraser" /> {t("batch_remove_tag")}
-          </button>
-          <button
-            disabled={selected.size === 0}
-            onClick={downloadSelected}
-          >
-            <i className="fa-solid fa-download" /> {t("batch_download")}
-          </button>
-          <button
-            className="batch-done"
-            onClick={() => {
-              setSelectMode(false);
-              setSelected(new Set());
-              setBatchMode(null);
-            }}
-          >
-            <i className="fa-solid fa-check" /> {t("done")}
-          </button>
-        </div>
-      )}
-      {selectMode && batchMode && selected.size > 0 && (
-        <div className="batch-tags">
-          <div className="batch-section">
-            <span className="batch-section-title">{t("apply_to_selected")}</span>
-            <div className="tag-chip-row">
-              {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
-              {tags.map((tag) => (
-                <button
-                  key={tag.id}
-                  className="tag-chip"
-                  onClick={() => applyBatch(tag.id)}
-                >
-                  {batchMode === "add" ? "＋" : "－"} {tag.name}
-                  <span className="tag-count">{tag.count}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          {batchMode === "add" && (
-            <div className="batch-section">
-              <span className="batch-section-title">{t("create_new_tag")}</span>
-              <div className="tag-create">
-                <input
-                  value={draft}
-                  placeholder={t("new_tag_placeholder")}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      createAndApply();
-                    }
-                  }}
-                />
-                <button onClick={createAndApply} disabled={!draft.trim()}>
-                  {t("create")}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {pager}
 
       {loading ? (
         <p className="muted">

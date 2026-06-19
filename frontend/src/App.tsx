@@ -317,30 +317,35 @@ export default function App() {
       .length + dataVersion;
 
   return (
-    <div className="app">
+    <>
       <div className="topbar">
-        <div className="brand">
-          <span className="banana">🍌</span> Nano Banana Studio
+        <div className="topbar-inner">
+          <div className="brand">
+            <span className="banana">🍌</span> Nano Banana Studio
+          </div>
+          <div className="spacer" />
+          <button
+            className="lang-toggle"
+            title="中文 / English"
+            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+          >
+            {lang === "zh" ? "EN" : "中"}
+          </button>
+          <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
+            <i className="fa-solid fa-chart-simple"></i> {t("usage")}
+          </button>
+          <button className="topbar-btn" onClick={() => setShowSettings(true)}>
+            {configured ? (
+              <><i className="fa-solid fa-gear"></i> {t("settings")}</>
+            ) : (
+              <><i className="fa-solid fa-triangle-exclamation"></i> {t("set_api_key")}</>
+            )}
+          </button>
         </div>
-        <div className="spacer" />
-        <button
-          className="lang-toggle"
-          title="中文 / English"
-          onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-        >
-          {lang === "zh" ? "EN" : "中"}
-        </button>
-        <button onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
-          📊 {t("usage")}
-        </button>
-        <button onClick={() => setShowSettings(true)}>
-          {configured ? `⚙ ${t("settings")}` : `⚠ ${t("set_api_key")}`}
-        </button>
       </div>
 
-      <div
+      <div className="app workspace"
         ref={workspaceRef}
-        className="workspace"
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
         <aside className="side-panel">
@@ -464,6 +469,6 @@ export default function App() {
           onTagsChanged={bumpData}
         />
       )}
-    </div>
+    </>
   );
 }
