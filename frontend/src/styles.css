@@ -683,7 +683,7 @@ body.resizing-sidebar {
   display: flex; flex-direction: column;
 }
 .manager-header {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 14px 20px; border-bottom: 1px solid var(--border);
   background: var(--panel);
 }

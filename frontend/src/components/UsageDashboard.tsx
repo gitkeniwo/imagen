@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, MODELS, SeriesBucket, Stats } from "../api";
+import { api, MODELS, StatPeriod, Stats } from "../api";
 import { useI18n } from "../i18n";
 
-const BUCKETS: SeriesBucket[] = ["day", "week", "month", "year"];
-
 // Full-screen usage dashboard (mirrors FullscreenManager's overlay shell).
-// All figures are facts from the local DB; cost is a clearly-labelled estimate
-// computed here from user-editable unit prices (the app can't see real billing).
+// A single period selector (day/week/month/year/all) scopes the WHOLE panel —
+// cards, status & model breakdowns, the trend chart AND the cost estimate.
+// Figures are facts from the local DB; cost is a clearly-labelled estimate from
+// user-editable unit prices (the app can't see real billing).
 
 const PRICES_KEY = "imagen-cost-prices";
+const PERIODS: StatPeriod[] = ["day", "week", "month", "year", "all"];
 
 const STATUS_ORDER = ["success", "blocked", "error", "aborted"] as const;
 const STATUS_CLASS: Record<string, string> = {
@@ -18,8 +19,6 @@ const STATUS_CLASS: Record<string, string> = {
   aborted: "aborted",
 };
 
-// Editable price lines keyed by model+resolution. Example defaults — the user is
-// told to verify these against their actual Vertex rates.
 interface PriceRow {
   key: string;
   model: string;
@@ -64,7 +63,7 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [currency, setCurrency] = useState("$");
   const [prices, setPrices] = useState<Record<string, number>>({});
-  const [bucket, setBucket] = useState<SeriesBucket>("day");
+  const [period, setPeriod] = useState<StatPeriod>("all");
 
   useEffect(() => {
     const { currency, prices } = loadPrices();
@@ -100,10 +99,12 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
     localStorage.setItem(PRICES_KEY, JSON.stringify({ currency: c, prices }));
   };
 
-  // Count of successful generations per price-row (model + resolution; null res → 1K).
+  const p = stats?.periods[period];
+
+  // Successful generations per price-row (model + resolution; null res → 1K).
   const successCounts = useMemo(() => {
     const counts: Record<string, number> = Object.fromEntries(PRICE_ROWS.map((r) => [r.key, 0]));
-    for (const cb of stats?.cost_basis ?? []) {
+    for (const cb of p?.cost_basis ?? []) {
       const res = cb.resolution ?? "1K";
       const row =
         cb.model === "gemini-2.5-flash-image"
@@ -112,27 +113,33 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
       if (row) counts[row] = (counts[row] ?? 0) + cb.count;
     }
     return counts;
-  }, [stats]);
+  }, [p]);
 
   const costTotal = PRICE_ROWS.reduce(
     (sum, r) => sum + (successCounts[r.key] ?? 0) * (prices[r.key] ?? 0),
     0,
   );
 
-  const g = stats?.generations;
-  const successRate = g && g.total > 0 ? Math.round(((g.by_status.success ?? 0) / g.total) * 100) : 0;
-  const seriesPoints = stats?.series[bucket] ?? [];
-  const seriesMax = Math.max(1, ...seriesPoints.map((d) => d.total));
+  const successRate = p && p.total > 0 ? Math.round(((p.by_status.success ?? 0) / p.total) * 100) : 0;
+  const chartPoints = p?.chart ?? [];
+  const chartMax = Math.max(1, ...chartPoints.map((d) => d.total));
 
   return (
     <div className="manager-overlay">
       <div className="manager-header">
         <h3 style={{ margin: 0 }}>📊 {t("usage_title")}</h3>
-        {g && g.first_at && (
+        <div className="seg density-seg" title={t("usage_period")}>
+          {PERIODS.map((b) => (
+            <button key={b} className={period === b ? "on" : ""} onClick={() => setPeriod(b)}>
+              {t(`bucket_${b}`)}
+            </button>
+          ))}
+        </div>
+        {stats?.first_at && (
           <span className="muted small">
             {t("usage_range", {
-              from: (g.first_at ?? "").slice(0, 10),
-              to: (g.last_at ?? "").slice(0, 10),
+              from: (stats.first_at ?? "").slice(0, 10),
+              to: (stats.last_at ?? "").slice(0, 10),
             })}
           </span>
         )}
@@ -143,90 +150,77 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
 
       <div className="manager-body">
         {err && <div className="notice error">{err}</div>}
-        {!stats ? (
+        {!stats || !p ? (
           <div className="panel muted">
             <span className="spinner" /> {t("loading")}
           </div>
-        ) : stats.generations.total === 0 ? (
-          <div className="panel muted">{t("usage_empty")}</div>
         ) : (
           <div className="dash">
-            {/* Stat cards */}
+            {/* Stat cards (scoped to the selected period) */}
             <div className="dash-cards">
-              <StatCard label={t("stat_total")} value={g!.total} />
+              <StatCard label={t("stat_total")} value={p.total} />
               <StatCard label={t("stat_success_rate")} value={`${successRate}%`} />
-              <StatCard label={t("stat_today")} value={g!.today} />
-              <StatCard label={t("stat_last7")} value={g!.last7} />
+              <StatCard label={t("status_success")} value={p.by_status.success ?? 0} />
               <StatCard
                 label={t("stat_images")}
-                value={stats.images.total}
-                sub={`${t("tag_upload")} ${stats.images.by_source.upload ?? 0} · ${t("tag_generated")} ${stats.images.by_source.generated ?? 0}`}
+                value={p.images.total}
+                sub={`${t("tag_upload")} ${p.images.by_source.upload ?? 0} · ${t("tag_generated")} ${p.images.by_source.generated ?? 0}`}
               />
-              <StatCard label={t("stat_storage")} value={fmtBytes(stats.images.bytes)} />
+              <StatCard label={t("stat_storage")} value={fmtBytes(p.images.bytes)} />
               <StatCard label={t("stat_tags")} value={stats.tags} />
             </div>
 
-            <div className="dash-grid">
-              {/* By status */}
-              <div className="panel">
-                <h4 className="dash-h">{t("by_status_title")}</h4>
-                {STATUS_ORDER.filter((s) => (g!.by_status[s] ?? 0) > 0).map((s) => (
-                  <BarRow
-                    key={s}
-                    label={t(`status_${s}`)}
-                    value={g!.by_status[s] ?? 0}
-                    total={g!.total}
-                    cls={STATUS_CLASS[s]}
-                  />
-                ))}
-              </div>
-
-              {/* By model */}
-              <div className="panel">
-                <h4 className="dash-h">{t("by_model_title")}</h4>
-                {Object.entries(g!.by_model)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([m, c]) => (
-                    <BarRow key={m} label={modelShort(m)} value={c} total={g!.total} cls="running" />
-                  ))}
-              </div>
-            </div>
-
-            {/* Time series chart with day/week/month/year granularity */}
-            <div className="panel">
-              <div className="dash-chart-head">
-                <h4 className="dash-h" style={{ margin: 0 }}>{t("usage_series")}</h4>
-                <div className="seg density-seg">
-                  {BUCKETS.map((b) => (
-                    <button
-                      key={b}
-                      className={bucket === b ? "on" : ""}
-                      onClick={() => setBucket(b)}
-                    >
-                      {t(`bucket_${b}`)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="daily-chart">
-                {seriesPoints.map((d) => (
-                  <div key={d.label} className="daily-col" title={`${d.label}: ${d.total}`}>
-                    <div className="daily-bar" style={{ height: `${(d.total / seriesMax) * 100}%` }}>
-                      <div
-                        className="daily-bar-ok"
-                        style={{ height: d.total ? `${(d.success / d.total) * 100}%` : "0%" }}
+            {p.total === 0 ? (
+              <div className="panel muted">{t("usage_empty_period")}</div>
+            ) : (
+              <>
+                <div className="dash-grid">
+                  <div className="panel">
+                    <h4 className="dash-h">{t("by_status_title")}</h4>
+                    {STATUS_ORDER.filter((s) => (p.by_status[s] ?? 0) > 0).map((s) => (
+                      <BarRow
+                        key={s}
+                        label={t(`status_${s}`)}
+                        value={p.by_status[s] ?? 0}
+                        total={p.total}
+                        cls={STATUS_CLASS[s]}
                       />
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="daily-axis">
-                <span className="muted small">{seriesPoints[0]?.label}</span>
-                <span className="muted small">{seriesPoints[seriesPoints.length - 1]?.label}</span>
-              </div>
-            </div>
+                  <div className="panel">
+                    <h4 className="dash-h">{t("by_model_title")}</h4>
+                    {Object.entries(p.by_model)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([m, c]) => (
+                        <BarRow key={m} label={modelShort(m)} value={c} total={p.total} cls="running" />
+                      ))}
+                  </div>
+                </div>
 
-            {/* Cost estimate */}
+                {/* Trend chart for the selected window */}
+                <div className="panel">
+                  <h4 className="dash-h">{t("usage_series")}</h4>
+                  <div className="daily-chart">
+                    {chartPoints.map((d, i) => (
+                      <div key={`${d.label}-${i}`} className="daily-col" title={`${d.label}: ${d.total}`}>
+                        <div className="daily-bar" style={{ height: `${(d.total / chartMax) * 100}%` }}>
+                          <div
+                            className="daily-bar-ok"
+                            style={{ height: d.total ? `${(d.success / d.total) * 100}%` : "0%" }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="daily-axis">
+                    <span className="muted small">{chartPoints[0]?.label}</span>
+                    <span className="muted small">{chartPoints[chartPoints.length - 1]?.label}</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Cost estimate (scoped to the selected period) */}
             <div className="panel">
               <h4 className="dash-h">{t("cost_estimate")}</h4>
               <p className="muted small" style={{ marginTop: 0 }}>{t("cost_estimate_note")}</p>
@@ -297,17 +291,7 @@ function StatCard({ label, value, sub }: { label: string; value: number | string
   );
 }
 
-function BarRow({
-  label,
-  value,
-  total,
-  cls,
-}: {
-  label: string;
-  value: number;
-  total: number;
-  cls: string;
-}) {
+function BarRow({ label, value, total, cls }: { label: string; value: number; total: number; cls: string }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
     <div className="bar-row">

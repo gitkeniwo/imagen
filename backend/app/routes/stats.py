@@ -1,10 +1,15 @@
 """Usage statistics: read-only aggregates over generations / images / tags.
 
-All numbers are facts from the local SQLite DB. Cost is NOT computed here — the
-app cannot see real Vertex billing, so the frontend multiplies the success
-counts (cost_basis) by user-configurable unit prices and labels it an estimate.
+Everything is scoped by a time window (day / week / month / year / all) so the
+whole dashboard — counts, status & model breakdowns, storage AND the cost
+estimate — switches together. All windows are precomputed in one response
+(single-user scale is tiny) so the UI can toggle instantly without refetching.
+
+Cost is NOT computed here — the app cannot see real Vertex billing, so the
+frontend multiplies the per-period success counts (cost_basis) by
+user-configurable unit prices and labels it an estimate.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter
 
@@ -12,12 +17,35 @@ from ..db import get_conn
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
+PERIODS = ["day", "week", "month", "year", "all"]
 
-def _series_from(parsed, ordered_keys, keyfn):
-    """Aggregate (date,status) rows into ordered {label,total,success} buckets."""
+
+def _parse_dt(ts):
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _in_window(d: date, period: str, today: date) -> bool:
+    if period == "all":
+        return True
+    if period == "day":
+        return d == today
+    if period == "week":
+        return d >= today - timedelta(days=6)
+    if period == "month":
+        return d >= today - timedelta(days=29)
+    if period == "year":
+        return d >= today - timedelta(days=364)
+    return False
+
+
+def _series_from(rows, ordered_keys, keyfn):
+    """Aggregate (dt,status) rows into ordered {label,total,success} buckets."""
     agg = {k: [0, 0] for k, _ in ordered_keys}
-    for d, st in parsed:
-        k = keyfn(d)
+    for dt, st in rows:
+        k = keyfn(dt)
         if k in agg:
             agg[k][0] += 1
             if st == "success":
@@ -28,129 +56,96 @@ def _series_from(parsed, ordered_keys, keyfn):
     ]
 
 
-def _build_series(rows):
-    """Dense time series at day / week / month / year granularity."""
-    parsed = []
-    for ts, st in rows:
-        if not ts:
-            continue
-        try:
-            parsed.append((date.fromisoformat(ts[:10]), st))
-        except ValueError:
-            continue
-    today = date.today()
-
-    days = [today - timedelta(days=i) for i in range(29, -1, -1)]
-    day = _series_from(
-        parsed,
-        [(d.isoformat(), d.strftime("%m-%d")) for d in days],
-        lambda d: d.isoformat(),
+def _chart(rows, period: str, today: date):
+    """Trend bars for the window, sub-bucketed by a natural unit."""
+    if period == "day":  # by hour
+        keys = [(f"{h:02d}", f"{h:02d}") for h in range(24)]
+        return _series_from(rows, keys, lambda dt: f"{dt.hour:02d}")
+    if period in ("week", "month"):  # by day
+        n = 7 if period == "week" else 30
+        days = [today - timedelta(days=i) for i in range(n - 1, -1, -1)]
+        return _series_from(
+            rows,
+            [(d.isoformat(), d.strftime("%m-%d")) for d in days],
+            lambda dt: dt.date().isoformat(),
+        )
+    if period == "year":  # by month, last 12
+        months, y, m = [], today.year, today.month
+        for _ in range(12):
+            months.append((y, m))
+            m -= 1
+            if m == 0:
+                m, y = 12, y - 1
+        months.reverse()
+        return _series_from(
+            rows,
+            [(f"{yy}-{mm:02d}", f"{yy}-{mm:02d}") for yy, mm in months],
+            lambda dt: f"{dt.year}-{dt.month:02d}",
+        )
+    # all → by year
+    yrs = [dt.year for dt, _ in rows]
+    first = min(yrs, default=today.year)
+    return _series_from(
+        rows,
+        [(str(yy), str(yy)) for yy in range(first, today.year + 1)],
+        lambda dt: str(dt.year),
     )
-
-    this_monday = today - timedelta(days=today.weekday())
-    weeks = [this_monday - timedelta(weeks=i) for i in range(25, -1, -1)]
-    week = _series_from(
-        parsed,
-        [(w.isoformat(), w.strftime("%m-%d")) for w in weeks],
-        lambda d: (d - timedelta(days=d.weekday())).isoformat(),
-    )
-
-    months = []
-    y, m = today.year, today.month
-    for _ in range(12):
-        months.append((y, m))
-        m -= 1
-        if m == 0:
-            m, y = 12, y - 1
-    months.reverse()
-    month = _series_from(
-        parsed,
-        [(f"{yy}-{mm:02d}", f"{yy}-{mm:02d}") for yy, mm in months],
-        lambda d: f"{d.year}-{d.month:02d}",
-    )
-
-    first_year = max(min((d.year for d, _ in parsed), default=today.year), today.year - 7)
-    year = _series_from(
-        parsed,
-        [(str(yy), str(yy)) for yy in range(first_year, today.year + 1)],
-        lambda d: str(d.year),
-    )
-
-    return {"day": day, "week": week, "month": month, "year": year}
 
 
 @router.get("")
 def get_stats():
     with get_conn() as conn:
-        g_total = conn.execute("SELECT COUNT(*) c FROM generations").fetchone()["c"]
-        by_status = {
-            r["status"]: r["c"]
+        gens = [
+            (_parse_dt(r["created_at"]), r["status"], r["model"], r["resolution"])
             for r in conn.execute(
-                "SELECT status, COUNT(*) c FROM generations GROUP BY status"
-            )
-        }
-        by_model = {
-            r["model"]: r["c"]
-            for r in conn.execute(
-                "SELECT model, COUNT(*) c FROM generations GROUP BY model"
-            )
-        }
-        today = conn.execute(
-            "SELECT COUNT(*) c FROM generations "
-            "WHERE substr(created_at,1,10) = date('now')"
-        ).fetchone()["c"]
-        last7 = conn.execute(
-            "SELECT COUNT(*) c FROM generations "
-            "WHERE substr(created_at,1,10) >= date('now','-6 days')"
-        ).fetchone()["c"]
-        span = conn.execute(
-            "SELECT MIN(created_at) lo, MAX(created_at) hi FROM generations"
-        ).fetchone()
-
-        # Time series at day/week/month/year granularity (built in Python from
-        # the full (created_at,status) history — single-user scale is small).
-        series = _build_series(
-            [
-                (r["created_at"], r["status"])
-                for r in conn.execute("SELECT created_at, status FROM generations")
-            ]
-        )
-
-        cost_basis = [
-            {"model": r["model"], "resolution": r["resolution"], "count": r["c"]}
-            for r in conn.execute(
-                "SELECT model, resolution, COUNT(*) c FROM generations "
-                "WHERE status='success' GROUP BY model, resolution"
+                "SELECT created_at, status, model, resolution FROM generations"
             )
         ]
-
-        img_total = conn.execute(
-            "SELECT COUNT(*) c FROM images WHERE deleted_at IS NULL"
-        ).fetchone()["c"]
-        by_source = {
-            r["source"]: r["c"]
+        gens = [g for g in gens if g[0] is not None]
+        imgs = [
+            (_parse_dt(r["created_at"]), r["byte_size"] or 0, r["source"])
             for r in conn.execute(
-                "SELECT source, COUNT(*) c FROM images "
-                "WHERE deleted_at IS NULL GROUP BY source"
+                "SELECT created_at, byte_size, source FROM images "
+                "WHERE deleted_at IS NULL"
             )
-        }
-        img_bytes = conn.execute(
-            "SELECT COALESCE(SUM(byte_size),0) b FROM images WHERE deleted_at IS NULL"
-        ).fetchone()["b"]
+        ]
+        imgs = [i for i in imgs if i[0] is not None]
         tags = conn.execute("SELECT COUNT(*) c FROM tags").fetchone()["c"]
 
-    return {
-        "generations": {
-            "total": g_total,
+    today = date.today()
+    periods = {}
+    for p in PERIODS:
+        gsub = [g for g in gens if _in_window(g[0].date(), p, today)]
+        isub = [i for i in imgs if _in_window(i[0].date(), p, today)]
+
+        by_status, by_model, cost = {}, {}, {}
+        for _, st, model, res in gsub:
+            by_status[st] = by_status.get(st, 0) + 1
+            by_model[model] = by_model.get(model, 0) + 1
+            if st == "success":
+                cost[(model, res)] = cost.get((model, res), 0) + 1
+
+        by_source, bytes_sum = {}, 0
+        for _, bs, src in isub:
+            by_source[src] = by_source.get(src, 0) + 1
+            bytes_sum += bs
+
+        periods[p] = {
+            "total": len(gsub),
             "by_status": by_status,
             "by_model": by_model,
-            "today": today,
-            "last7": last7,
-            "first_at": span["lo"],
-            "last_at": span["hi"],
-        },
-        "images": {"total": img_total, "by_source": by_source, "bytes": img_bytes},
+            "cost_basis": [
+                {"model": m, "resolution": r, "count": c}
+                for (m, r), c in cost.items()
+            ],
+            "images": {"total": len(isub), "by_source": by_source, "bytes": bytes_sum},
+            "chart": _chart([(g[0], g[1]) for g in gsub], p, today),
+        }
+
+    dts = [g[0] for g in gens]
+    return {
+        "periods": periods,
         "tags": tags,
-        "series": series,
-        "cost_basis": cost_basis,
+        "first_at": min(dts).isoformat() if dts else None,
+        "last_at": max(dts).isoformat() if dts else None,
     }

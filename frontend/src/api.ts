@@ -106,31 +106,29 @@ export interface CostBasisRow {
   count: number;
 }
 
-export interface Stats {
-  generations: {
-    total: number;
-    by_status: Record<string, number>;
-    by_model: Record<string, number>;
-    today: number;
-    last7: number;
-    first_at: string | null;
-    last_at: string | null;
-  };
-  images: {
-    total: number;
-    by_source: Record<string, number>;
-    bytes: number;
-  };
-  tags: number;
-  series: Record<SeriesBucket, SeriesPoint[]>;
-  cost_basis: CostBasisRow[];
-}
+export type StatPeriod = "day" | "week" | "month" | "year" | "all";
 
-export type SeriesBucket = "day" | "week" | "month" | "year";
 export interface SeriesPoint {
   label: string;
   total: number;
   success: number;
+}
+
+// All metrics for a single time window — the whole dashboard switches together.
+export interface PeriodStats {
+  total: number;
+  by_status: Record<string, number>;
+  by_model: Record<string, number>;
+  cost_basis: CostBasisRow[];
+  images: { total: number; by_source: Record<string, number>; bytes: number };
+  chart: SeriesPoint[];
+}
+
+export interface Stats {
+  periods: Record<StatPeriod, PeriodStats>;
+  tags: number;
+  first_at: string | null;
+  last_at: string | null;
 }
 
 export const imgFileUrl = (id: number) => `/api/images/${id}/file`;
