@@ -130,6 +130,23 @@ function QueueItem({
       ? Math.max(0, Math.ceil((task.dispatchAt - now) / 1000))
       : 0;
 
+  // Fine-grained live status line (delaying / queued / sent / retrying).
+  let substatus: string | null = null;
+  if (task.status === "pending") {
+    substatus = undoLeft > 0 ? t("phase_delaying") : t("phase_queued");
+  } else if (task.status === "running") {
+    if (task.phase?.phase === "retrying") {
+      substatus = t("phase_retrying", {
+        code: task.phase.code ?? "?",
+        n: task.phase.delay ?? 0,
+      });
+    } else if (task.phase?.phase === "sent") {
+      substatus = t("phase_sent", { n: task.phase.attempt ?? 1 });
+    } else {
+      substatus = t("phase_running");
+    }
+  }
+
   return (
     <div className="qcard">
       <div className="q-inputs">
@@ -170,6 +187,8 @@ function QueueItem({
             </button>
           )}
         </div>
+
+        {substatus && <div className="q-substatus">{substatus}</div>}
 
         {task.prompt && (
           <div className="q-prompt-wrap">

@@ -236,22 +236,38 @@ export default function History({
 
               <div className="gen-row">
                 <div className="gen-inputs">
-                  {(g.inputs ?? []).map((im) => (
-                    <img
-                      key={im.id}
-                      src={imgThumbUrl(im.id)}
-                      alt={im.filename}
-                      title={im.filename}
-                      onClick={() => onOpenViewer(im, g.inputs ?? [])}
-                    />
-                  ))}
+                  {(g.inputs ?? []).map((im) =>
+                    im.deleted_at ? (
+                      <span
+                        key={im.id}
+                        className="deleted-tile"
+                        title={t("deleted_label")}
+                      >
+                        <i className="fa-solid fa-trash-can" />
+                      </span>
+                    ) : (
+                      <img
+                        key={im.id}
+                        src={imgThumbUrl(im.id)}
+                        alt={im.filename}
+                        title={im.filename}
+                        onClick={() => onOpenViewer(im, g.inputs ?? [])}
+                      />
+                    ),
+                  )}
                   {(g.inputs ?? []).length === 0 && (
                     <span className="muted small">{t("no_refs")}</span>
                   )}
                 </div>
                 <span className="arrow">→</span>
                 <div className="gen-out">
-                  {g.outputImage ? (
+                  {g.outputImage?.deleted_at ||
+                  (g.status === "success" && !g.outputImage) ? (
+                    <div className="deleted-tile output">
+                      <i className="fa-solid fa-trash-can" />
+                      <span className="small">{t("deleted_label")}</span>
+                    </div>
+                  ) : g.outputImage ? (
                     <div>
                       <img
                         src={imgThumbUrl(g.outputImage.id)}

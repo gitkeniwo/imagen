@@ -13,7 +13,7 @@ import random
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from google import genai
 from google.genai import errors, types
@@ -282,9 +282,20 @@ async def generate(
     resolution: Optional[str],
     images: list[InputImage],
     output_mime: Optional[str] = None,
+    on_event: Optional[Callable[[dict], None]] = None,
+    should_abort: Optional[Callable[[], bool]] = None,
 ) -> GeminiResult:
     tid = uuid.uuid4().hex[:6]
     start_ts = time.monotonic()
+
+    def _emit(ev: dict) -> None:
+        # Best-effort progress for the UI; never let a bad callback break gen.
+        if on_event is None:
+            return
+        try:
+            on_event(ev)
+        except Exception:  # noqa: BLE001
+            pass
     try:
         client = genai.Client(vertexai=True, project=project, location=location)
     except Exception as e:  # ADC / config resolution failure at construct time
@@ -300,8 +311,22 @@ async def generate(
     last_exc: Optional[Exception] = None
     retries_done = 0
     for attempt in range(MAX_ATTEMPTS):
+        # Cooperative cancel: if the client disconnected (user hit cancel), stop
+        # BEFORE starting a new attempt / its backoff wait. We deliberately never
+        # check mid-attempt, so the in-flight generate_content is left to finish —
+        # a completed (billable) call is returned & kept, never discarded.
+        if should_abort and should_abort():
+            logger.info(
+                "[%s] 客户端取消，停止后续重试（已完成 %d 次尝试）", tid, attempt
+            )
+            return GeminiResult(
+                status="aborted",
+                message="用户取消（已停止后续重试）。",
+                raw_finish="ABORTED",
+            )
         try:
             await _wait_for_vertex_attempt_slot()
+            _emit({"phase": "sent", "attempt": attempt + 1})
             resp = await _await_with_heartbeat(
                 client.aio.models.generate_content(
                     model=model, contents=contents, config=config
@@ -325,6 +350,7 @@ async def generate(
                 break
             retries_done += 1
             delay = await _schedule_retry(attempt, code)
+            _emit({"phase": "retrying", "attempt": attempt + 1, "code": code, "delay": round(delay)})
             logger.warning(
                 "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
                 tid, attempt + 1, code, delay, retries_done,
@@ -336,6 +362,7 @@ async def generate(
                 last_exc = e
                 retries_done += 1
                 delay = await _schedule_retry(attempt, code)
+                _emit({"phase": "retrying", "attempt": attempt + 1, "code": code, "delay": round(delay)})
                 logger.warning(
                     "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
                     tid, attempt + 1, code, delay, retries_done,
@@ -356,6 +383,7 @@ async def generate(
                 last_exc = e
                 retries_done += 1
                 delay = await _schedule_retry(attempt, code)
+                _emit({"phase": "retrying", "attempt": attempt + 1, "code": code, "delay": round(delay)})
                 logger.warning(
                     "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
                     tid, attempt + 1, code, delay, retries_done,
@@ -384,6 +412,7 @@ async def generate(
                 break
             retries_done += 1
             delay = await _schedule_retry(attempt, None)
+            _emit({"phase": "retrying", "attempt": attempt + 1, "code": None, "delay": round(delay)})
             logger.warning(
                 "[%s] attempt %d 失败（%s），将在约 %.0fs 后重试（累计重试 %d 次）",
                 tid, attempt + 1, type(e).__name__, delay, retries_done,

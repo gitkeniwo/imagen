@@ -21,6 +21,7 @@ export interface ImageRow {
   source: "upload" | "generated";
   starred: number;
   created_at: string;
+  deleted_at?: string | null;
   tags?: TagRef[];
 }
 
@@ -62,6 +63,8 @@ export interface QueueTask {
   // then it sits in the "undo send" countdown window and can be cancelled with
   // a guaranteed no-charge (the request is never sent).
   dispatchAt: number;
+  // Live backend phase while running (polled); undefined until first poll.
+  phase?: TaskPhase;
   message?: string | null;
   text?: string | null;
   rawFinish?: string | null;
@@ -86,10 +89,54 @@ export interface GenerateBody {
   inputImageIds: number[];
   uploadImageIds: number[];
   tagIds?: number[];
+  clientTaskId?: string;
+}
+
+// Live progress of an in-flight generation (polled while a task is running).
+export interface TaskPhase {
+  phase: "sent" | "retrying" | "unknown";
+  attempt?: number;
+  code?: number | null;
+  delay?: number;
+}
+
+export interface CostBasisRow {
+  model: string;
+  resolution: string | null;
+  count: number;
+}
+
+export interface Stats {
+  generations: {
+    total: number;
+    by_status: Record<string, number>;
+    by_model: Record<string, number>;
+    today: number;
+    last7: number;
+    first_at: string | null;
+    last_at: string | null;
+  };
+  images: {
+    total: number;
+    by_source: Record<string, number>;
+    bytes: number;
+  };
+  tags: number;
+  series: Record<SeriesBucket, SeriesPoint[]>;
+  cost_basis: CostBasisRow[];
+}
+
+export type SeriesBucket = "day" | "week" | "month" | "year";
+export interface SeriesPoint {
+  label: string;
+  total: number;
+  success: number;
 }
 
 export const imgFileUrl = (id: number) => `/api/images/${id}/file`;
 export const imgThumbUrl = (id: number) => `/api/images/${id}/thumb`;
+export const batchDownloadUrl = (ids: number[]) =>
+  `/api/images/batch-download?ids=${ids.join(",")}`;
 
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -157,6 +204,23 @@ export const api = {
   async deleteImage(id: number) {
     return handle(await fetch(`/api/images/${id}`, { method: "DELETE" }));
   },
+  async listBin(
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<{ images: ImageRow[]; total: number }> {
+    const q = new URLSearchParams();
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    return handle(await fetch(`/api/images/bin?${q.toString()}`));
+  },
+  async restoreImage(id: number) {
+    return handle(await fetch(`/api/images/${id}/restore`, { method: "POST" }));
+  },
+  async purgeImage(id: number) {
+    return handle(await fetch(`/api/images/${id}/purge`, { method: "DELETE" }));
+  },
+  async emptyBin(): Promise<{ purged: number }> {
+    return handle(await fetch(`/api/images/bin/empty`, { method: "POST" }));
+  },
   async generate(body: GenerateBody, signal?: AbortSignal): Promise<GenerateResult> {
     return handle(
       await fetch("/api/generate", {
@@ -166,6 +230,12 @@ export const api = {
         signal,
       }),
     );
+  },
+  async getProgress(cid: string): Promise<TaskPhase> {
+    return handle(await fetch(`/api/generate/progress/${cid}`));
+  },
+  async getStats(): Promise<Stats> {
+    return handle(await fetch("/api/stats"));
   },
   async listGenerations(
     params: { limit?: number; offset?: number; tag?: number; q?: string } = {},

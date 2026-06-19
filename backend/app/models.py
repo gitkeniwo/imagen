@@ -14,6 +14,8 @@ class GenerateRequest(BaseModel):
     uploadImageIds: list[int] = Field(default_factory=list)
     # Tags to auto-archive this task into (applied to output + inputs).
     tagIds: list[int] = Field(default_factory=list)
+    # Client-side queue task id, used to publish live progress (see PROGRESS).
+    clientTaskId: Optional[str] = None
 
 
 class TagCreate(BaseModel):

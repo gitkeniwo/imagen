@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { api, ImageRow, Tag, imgFileUrl, imgThumbUrl } from "../api";
+import { api, ImageRow, Tag, batchDownloadUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import SearchBox from "../components/SearchBox";
 
@@ -27,11 +27,13 @@ export default function Library({
   onOpenViewer,
   compact = false,
   refreshKey = 0,
+  onChanged,
 }: {
   addToTray: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   compact?: boolean;
   refreshKey?: number;
+  onChanged?: () => void;
 }) {
   const { t } = useI18n();
   const [images, setImages] = useState<ImageRow[]>([]);
@@ -115,9 +117,11 @@ export default function Library({
   };
 
   const remove = async (img: ImageRow) => {
+    if (!window.confirm(t("confirm_delete"))) return;
     try {
       await api.deleteImage(img.id);
       load();
+      onChanged?.();
     } catch (e) {
       alert((e as Error).message);
     }
@@ -148,12 +152,10 @@ export default function Library({
   };
 
   const downloadSelected = () => {
-    for (const id of selected) {
-      const a = document.createElement("a");
-      a.href = imgFileUrl(id);
-      a.download = "";
-      a.click();
-    }
+    const a = document.createElement("a");
+    a.href = batchDownloadUrl([...selected]);
+    a.download = "";
+    a.click();
   };
 
   const createAndApply = async () => {

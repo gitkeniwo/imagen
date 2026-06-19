@@ -507,6 +507,7 @@ body.resizing-sidebar {
   border-radius: 999px; background: var(--badge-error-bg);
   color: var(--badge-error-text); border: 1px solid var(--badge-error-border);
 }
+.q-substatus { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .q-prompt-wrap { margin: 8px 0 10px; }
 .q-prompt {
   margin: 0; white-space: pre-wrap; line-height: 1.45;
@@ -699,6 +700,57 @@ body.resizing-sidebar {
 .manager-body .panel.library-panel { box-shadow: none; border: none; padding: 0; background: transparent; }
 .manager-body .library-toolbar,
 .manager-body .history-toolbar { background: var(--bg); }
+
+/* ---- Usage dashboard ---- */
+.dash { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.dash-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;
+}
+.stat-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; box-shadow: var(--shadow);
+}
+.stat-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.stat-label { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.stat-sub { margin-top: 4px; }
+.dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 720px) { .dash-grid { grid-template-columns: 1fr; } }
+.dash-h { margin: 0 0 12px; font-size: 14px; }
+
+.bar-row { margin-bottom: 10px; }
+.bar-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+.bar-track { height: 10px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; min-width: 2px; }
+.bar-fill.success { background: var(--badge-success-text); }
+.bar-fill.blocked { background: var(--badge-blocked-text); }
+.bar-fill.error   { background: var(--badge-error-text); }
+.bar-fill.aborted { background: var(--badge-pending-text); }
+.bar-fill.running { background: var(--badge-running-text); }
+
+.dash-chart-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.daily-axis { display: flex; justify-content: space-between; margin-top: 6px; }
+.daily-chart {
+  display: flex; align-items: flex-end; gap: 3px; height: 120px;
+  padding-top: 6px;
+}
+.daily-col { flex: 1; height: 100%; display: flex; align-items: flex-end; }
+.daily-bar {
+  width: 100%; background: var(--badge-pending-border); border-radius: 3px 3px 0 0;
+  min-height: 2px; display: flex; align-items: flex-end; position: relative;
+}
+.daily-bar-ok { width: 100%; background: var(--badge-running-text); border-radius: 3px 3px 0 0; }
+
+.cost-currency-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+.cost-currency-input { width: 64px; }
+.cost-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cost-table th, .cost-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.cost-table th { color: var(--muted); font-weight: 600; }
+.cost-table tfoot td { border-bottom: none; text-align: right; }
+.cost-cur { color: var(--muted); margin-right: 2px; }
+.cost-price-input { width: 90px; display: inline-block; }
 .manager-body .library-toolbar { margin: 0 0 14px; padding: 12px 0; }
 
 .library-grid.full {
@@ -709,3 +761,27 @@ body.resizing-sidebar {
 .thumb-size-seg button { min-width: 32px; padding: 6px 8px; }
 
 body.manager-open { overflow: hidden; }
+
+/* ===== recycle bin + deleted placeholders ===== */
+/* "Image deleted" placeholder shown in history where an input/output used to be. */
+.deleted-tile {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; width: 56px; height: 56px; flex: 0 0 auto;
+  border: 1px dashed var(--border); border-radius: 8px;
+  background: var(--panel-2); color: var(--muted-2); font-size: 16px;
+}
+.history-list.compact .deleted-tile { width: 42px; height: 42px; }
+.deleted-tile.output { width: 110px; height: 110px; font-size: 22px; }
+.history-list.compact .deleted-tile.output { width: 74px; height: 74px; }
+.deleted-tile .small { font-size: 10px; }
+
+.bin-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.bin-meta { display: flex; gap: 6px; justify-content: space-between; }
+.bin-meta button { flex: 1; min-height: 0; padding: 5px 6px; font-size: 12px; box-shadow: none; }
+.bin-meta .bin-purge, .danger-btn {
+  color: var(--danger); border-color: var(--danger);
+}
+.bin-meta .bin-purge:hover:not(:disabled), .danger-btn:hover:not(:disabled) {
+  background: var(--danger); color: #fff; border-color: var(--danger);
+}
+.bin-meta button i, .danger-btn i { margin-right: 4px; font-size: 0.9em; }

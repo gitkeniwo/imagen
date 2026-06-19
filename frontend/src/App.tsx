@@ -5,8 +5,9 @@ import Generate from "./pages/Generate";
 import Library from "./pages/Library";
 import History from "./pages/History";
 import SettingsModal from "./components/SettingsModal";
+import UsageDashboard from "./components/UsageDashboard";
 import ImageViewer from "./components/ImageViewer";
-import FullscreenManager from "./components/FullscreenManager";
+import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 
 export type SidebarPanel = "library" | "history";
 
@@ -59,10 +60,16 @@ export default function App() {
   const { t, lang, setLang } = useI18n();
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>("library");
   const [managerOpen, setManagerOpen] = useState(false);
+  const [managerPanel, setManagerPanel] = useState<ManagerPanel>("library");
+  const openManager = (panel: ManagerPanel) => {
+    setManagerPanel(panel);
+    setManagerOpen(true);
+  };
   const [tray, setTray] = useState<ImageRow[]>([]);
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
   const [queue, setQueue] = useState<QueueTask[]>([]);
   const [concurrency, setConcurrency] = useState(initialConcurrency);
   const [undoSeconds, setUndoSeconds] = useState(initialUndoSeconds);
@@ -126,6 +133,32 @@ export default function App() {
     localStorage.setItem(UNDO_SECONDS_KEY, String(undoSeconds));
   }, [undoSeconds]);
 
+  // Poll live backend phase (sent / retrying) for running tasks. Keyed by the
+  // set of running ids so the interval is stable across phase updates.
+  const runningKey = queue
+    .filter((t) => t.status === "running")
+    .map((t) => t.id)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (!runningKey) return;
+    const ids = runningKey.split(",");
+    const poll = async () => {
+      const got = await Promise.all(
+        ids.map(async (id) => [id, await api.getProgress(id)] as const),
+      );
+      setQueue((q) =>
+        q.map((t) => {
+          const hit = got.find(([id]) => id === t.id);
+          return hit && t.status === "running" ? { ...t, phase: hit[1] } : t;
+        }),
+      );
+    };
+    const id = setInterval(poll, 1200);
+    poll();
+    return () => clearInterval(id);
+  }, [runningKey]);
+
   // Drive the countdown clock only while a task is still waiting to be sent.
   useEffect(() => {
     const hasCountdown = queue.some(
@@ -155,9 +188,10 @@ export default function App() {
     setQueue((q) => q.filter((t) => !(t.id === id && t.status !== "running")));
 
   // Cancel a task. Pending → just drop it (never sent, never billed). Running →
-  // abort the in-flight request: stops the backend retry loop (real savings when
-  // stuck on 429) and discards the result. NOTE: a generation Vertex already
-  // finished may still be billed — disconnecting cannot un-charge it.
+  // close the connection: that signals the backend, which finishes the current
+  // in-flight attempt (keeping a completed result) then stops retrying — so we
+  // never pay-and-discard. The card optimistically shows "aborted" right away;
+  // if that last attempt succeeds, its image still lands in the library.
   const abortTask = (id: string) => {
     const task = queue.find((t) => t.id === id);
     if (task?.status === "running") {
@@ -215,6 +249,7 @@ export default function App() {
             inputImageIds: task.inputs.map((i) => i.id),
             uploadImageIds: [],
             tagIds: task.tagIds,
+            clientTaskId: task.id,
           },
           controller.signal,
         )
@@ -295,6 +330,9 @@ export default function App() {
         >
           {lang === "zh" ? "EN" : "中"}
         </button>
+        <button onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
+          📊 {t("usage")}
+        </button>
         <button onClick={() => setShowSettings(true)}>
           {configured ? `⚙ ${t("settings")}` : `⚠ ${t("set_api_key")}`}
         </button>
@@ -320,8 +358,15 @@ export default function App() {
             </div>
             <button
               className="side-expand"
+              title={t("bin_title")}
+              onClick={() => openManager("bin")}
+            >
+              <i className="fa-solid fa-trash-can" />
+            </button>
+            <button
+              className="side-expand"
               title={t("fullscreen_manage")}
-              onClick={() => setManagerOpen(true)}
+              onClick={() => openManager(sidebarPanel)}
             >
               <i className="fa-solid fa-expand" />
             </button>
@@ -333,6 +378,7 @@ export default function App() {
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
+                onChanged={bumpData}
               />
             ) : (
               <History
@@ -395,13 +441,18 @@ export default function App() {
 
       {managerOpen && (
         <FullscreenManager
-          initialPanel={sidebarPanel}
+          initialPanel={managerPanel}
           onClose={() => setManagerOpen(false)}
           addToTray={addToTray}
           onOpenViewer={openViewer}
           onReuse={reuse}
           refreshKey={completedRefreshKey}
+          onChanged={bumpData}
         />
+      )}
+
+      {dashboardOpen && (
+        <UsageDashboard onClose={() => setDashboardOpen(false)} />
       )}
 
       {viewer && (

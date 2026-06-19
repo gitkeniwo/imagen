@@ -1,7 +1,6 @@
 """Generation entry point: assemble inputs, call Gemini, persist lineage."""
 import asyncio
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -12,15 +11,21 @@ from .settings import read_vertex
 
 router = APIRouter(prefix="/api", tags=["generate"])
 
+# Ephemeral, best-effort live progress per client queue-task id (set by the
+# frontend as clientTaskId). Holds the latest gemini event ({"phase": ...}) so
+# the UI can poll while a request is in flight. Not durable: cleared when the
+# request settles and lost on restart — mirrors the client's in-memory queue.
+PROGRESS: dict[str, dict] = {}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def _watch_disconnect(request: Request) -> None:
-    """Resolve once the client closes the connection (e.g. user hit cancel)."""
-    while not await request.is_disconnected():
-        await asyncio.sleep(0.3)
+@router.get("/generate/progress/{cid}")
+def generate_progress(cid: str):
+    """Latest in-flight phase for a queue task (sent / retrying / unknown)."""
+    return PROGRESS.get(cid) or {"phase": "unknown"}
 
 
 @router.post("/generate")
@@ -41,17 +46,32 @@ async def generate(body: GenerateRequest, request: Request):
             row = storage.get_image(conn, img_id)
             if not row:
                 raise HTTPException(status_code=404, detail=f"输入图片 {img_id} 不存在。")
-            data = Path(row["file_path"]).read_bytes()
+            data = storage.file_on_disk(row).read_bytes()
             input_images.append(gemini.InputImage(data=data, mime=row["mime"]))
 
-    # Race the generation against the client connection. If the client
-    # disconnects (user pressed cancel / AbortController.abort), cancel the whole
-    # generation coroutine — CancelledError unwinds every await point, including
-    # the in-flight generate_content call and any retry/backoff sleep, so we stop
-    # hammering Vertex (and stop future billable attempts). A generation Vertex
-    # already finished may still be billed; disconnecting cannot un-charge it.
-    gen_task = asyncio.ensure_future(
-        gemini.generate(
+    # Cooperative cancel: a background watcher flips `disconnected` when the
+    # client closes the connection (user hit cancel). We do NOT cancel the
+    # generation coroutine — gemini.generate checks this flag at retry
+    # boundaries, so it finishes the current in-flight attempt (keeping a
+    # completed/billable result) but skips all further retries.
+    cid = body.clientTaskId
+    disconnected = {"v": False}
+
+    def on_event(ev: dict) -> None:
+        if cid:
+            PROGRESS[cid] = ev
+
+    async def _watch() -> None:
+        try:
+            while not await request.is_disconnected():
+                await asyncio.sleep(0.3)
+            disconnected["v"] = True
+        except asyncio.CancelledError:
+            pass
+
+    watch_task = asyncio.ensure_future(_watch())
+    try:
+        result = await gemini.generate(
             project=project,
             location=location,
             prompt=body.prompt,
@@ -60,24 +80,13 @@ async def generate(body: GenerateRequest, request: Request):
             resolution=body.resolution,
             images=input_images,
             output_mime=body.outputFormat,
+            on_event=on_event,
+            should_abort=lambda: disconnected["v"],
         )
-    )
-    watch_task = asyncio.ensure_future(_watch_disconnect(request))
-    done, _ = await asyncio.wait(
-        {gen_task, watch_task}, return_when=asyncio.FIRST_COMPLETED
-    )
-    if gen_task in done:
+    finally:
         watch_task.cancel()
-        result = gen_task.result()
-    else:
-        gen_task.cancel()
-        try:
-            await gen_task
-        except asyncio.CancelledError:
-            pass
-        result = gemini.GeminiResult(
-            status="aborted", message="用户取消生成。", raw_finish="ABORTED"
-        )
+        if cid:
+            PROGRESS.pop(cid, None)
 
     output_image = None
     with get_conn() as conn:

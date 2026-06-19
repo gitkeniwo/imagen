@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS images (
     file_path   TEXT,
     thumb_path  TEXT,
     starred     INTEGER DEFAULT 0,
-    created_at  TEXT
+    created_at  TEXT,
+    deleted_at  TEXT                  -- NULL = live; set = in recycle bin
 );
 
 CREATE TABLE IF NOT EXISTS generations (
@@ -78,6 +79,15 @@ def init_storage() -> None:
     THUMBS_DIR.mkdir(parents=True, exist_ok=True)
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn) -> None:
+    """Idempotent in-place migrations for pre-existing databases."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(images)")}
+    if "deleted_at" not in cols:
+        conn.execute("ALTER TABLE images ADD COLUMN deleted_at TEXT")
+    conn.commit()
 
 
 def get_conn() -> sqlite3.Connection:

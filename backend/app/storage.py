@@ -2,6 +2,7 @@
 import hashlib
 import io
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from PIL import Image, UnidentifiedImageError
@@ -32,6 +33,19 @@ def get_image(conn, image_id: int) -> Optional[dict]:
     return _row_to_dict(row) if row else None
 
 
+def file_on_disk(row, thumb: bool = False) -> Path:
+    """On-disk path for an image's original (or thumbnail), resolved by basename
+    within the *current* data dir.
+
+    The DB may hold absolute paths from another host/mount (the data dir gets
+    moved or bind-mounted into a container at a different prefix), so we never
+    trust the stored prefix — only the ``<sha>.<ext>`` filename, which is stable.
+    """
+    base = db.THUMBS_DIR if thumb else db.IMAGES_DIR
+    col = "thumb_path" if thumb else "file_path"
+    return base / Path(row[col]).name
+
+
 def store_image(conn, data: bytes, filename: str, mime: str, source: str) -> dict:
     """Persist image bytes (dedup by sha256) and return the images row as a dict.
 
@@ -43,6 +57,13 @@ def store_image(conn, data: bytes, filename: str, mime: str, source: str) -> dic
         "SELECT * FROM images WHERE sha256 = ?", (sha,)
     ).fetchone()
     if existing:
+        # Re-adding an image that's sitting in the recycle bin restores it.
+        if existing["deleted_at"] is not None:
+            conn.execute(
+                "UPDATE images SET deleted_at = NULL WHERE id = ?", (existing["id"],)
+            )
+            conn.commit()
+            return get_image(conn, existing["id"])
         return _row_to_dict(existing)
 
     # Decode to learn dimensions + normalize mime/extension.

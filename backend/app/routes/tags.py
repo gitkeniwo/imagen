@@ -18,7 +18,9 @@ def _now() -> str:
 def _tag_row(conn, tag_id: int) -> dict | None:
     row = conn.execute(
         """SELECT t.*,
-                  (SELECT COUNT(*) FROM image_tags it WHERE it.tag_id = t.id) AS count
+                  (SELECT COUNT(*) FROM image_tags it
+                   JOIN images i ON i.id = it.image_id
+                   WHERE it.tag_id = t.id AND i.deleted_at IS NULL) AS count
            FROM tags t WHERE t.id = ?""",
         (tag_id,),
     ).fetchone()
@@ -30,7 +32,9 @@ def list_tags():
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT t.*,
-                      (SELECT COUNT(*) FROM image_tags it WHERE it.tag_id = t.id) AS count
+                      (SELECT COUNT(*) FROM image_tags it
+                   JOIN images i ON i.id = it.image_id
+                   WHERE it.tag_id = t.id AND i.deleted_at IS NULL) AS count
                FROM tags t
                ORDER BY t.name COLLATE NOCASE"""
         ).fetchall()
