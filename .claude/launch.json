@@ -23,6 +23,16 @@
       ],
       "cwd": "frontend",
       "port": 5173
+    },
+    {
+      "name": "dummy",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "IMAGEN_DATA_DIR=/tmp/imagen-dummy uv run uvicorn app.main:app --port 8033"
+      ],
+      "cwd": "backend",
+      "port": 8033
     }
   ]
 }

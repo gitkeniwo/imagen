@@ -113,6 +113,7 @@ const zh: Dict = {
   status_error: "出错",
   status_pending: "排队中",
   status_running: "生成中",
+  status_cancelling: "取消中",
   status_aborted: "已取消",
   queue_title: "队列",
   concurrency: "并发",
@@ -132,6 +133,7 @@ const zh: Dict = {
   phase_sent: "已发送 · 第 {n} 次尝试",
   phase_retrying: "重试中（{code}）· 约 {n}s 后",
   phase_running: "生成中…",
+  phase_cancelling: "取消中 · 收尾当前这次（不再重试）",
 
   // Usage dashboard
   usage: "用量",
@@ -303,6 +305,7 @@ const en: Dict = {
   status_error: "Error",
   status_pending: "Queued",
   status_running: "Generating",
+  status_cancelling: "Cancelling",
   status_aborted: "Cancelled",
   queue_title: "Queue",
   concurrency: "Parallel",
@@ -322,6 +325,7 @@ const en: Dict = {
   phase_sent: "Sent · attempt {n}",
   phase_retrying: "Retrying ({code}) · in ~{n}s",
   phase_running: "Generating…",
+  phase_cancelling: "Cancelling · finishing the current attempt (no more retries)",
 
   // Usage dashboard
   usage: "Usage",

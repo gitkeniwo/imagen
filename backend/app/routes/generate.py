@@ -17,6 +17,12 @@ router = APIRouter(prefix="/api", tags=["generate"])
 # request settles and lost on restart — mirrors the client's in-memory queue.
 PROGRESS: dict[str, dict] = {}
 
+# Client task ids the user asked to cancel. The in-flight /api/generate request
+# keeps reading this (via should_abort) and stops retrying cooperatively, then
+# returns its real final result — so the request stays open and the frontend
+# learns the true outcome (success-kept / aborted) instead of a closed socket.
+CANCELLED: set[str] = set()
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -26,6 +32,13 @@ def _now() -> str:
 def generate_progress(cid: str):
     """Latest in-flight phase for a queue task (sent / retrying / unknown)."""
     return PROGRESS.get(cid) or {"phase": "unknown"}
+
+
+@router.post("/generate/cancel/{cid}")
+def cancel_generate(cid: str):
+    """Signal a running generation to stop retrying (cooperative cancel)."""
+    CANCELLED.add(cid)
+    return {"ok": True}
 
 
 @router.post("/generate")
@@ -49,11 +62,12 @@ async def generate(body: GenerateRequest, request: Request):
             data = storage.file_on_disk(row).read_bytes()
             input_images.append(gemini.InputImage(data=data, mime=row["mime"]))
 
-    # Cooperative cancel: a background watcher flips `disconnected` when the
-    # client closes the connection (user hit cancel). We do NOT cancel the
-    # generation coroutine — gemini.generate checks this flag at retry
-    # boundaries, so it finishes the current in-flight attempt (keeping a
-    # completed/billable result) but skips all further retries.
+    # Cooperative cancel: stop signal comes from POST /generate/cancel/{cid}
+    # (CANCELLED) — the request stays open so we can return the true result.
+    # A disconnect watcher is the fallback (tab closed / navigated away).
+    # gemini.generate checks should_abort at retry boundaries, so it finishes
+    # the current in-flight attempt (keeping a completed/billable result) but
+    # skips all further retries.
     cid = body.clientTaskId
     disconnected = {"v": False}
 
@@ -81,12 +95,13 @@ async def generate(body: GenerateRequest, request: Request):
             images=input_images,
             output_mime=body.outputFormat,
             on_event=on_event,
-            should_abort=lambda: disconnected["v"],
+            should_abort=lambda: disconnected["v"] or (cid in CANCELLED),
         )
     finally:
         watch_task.cancel()
         if cid:
             PROGRESS.pop(cid, None)
+            CANCELLED.discard(cid)
 
     output_image = None
     with get_conn() as conn:

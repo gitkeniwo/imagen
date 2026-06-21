@@ -20,6 +20,7 @@ export default function Generate({
   removeTask,
   abortTask,
   clearDone,
+  onReuseTask,
   onOpenViewer,
   now,
   concurrency,
@@ -38,6 +39,7 @@ export default function Generate({
   removeTask: (id: string) => void;
   abortTask: (id: string) => void;
   clearDone: () => void;
+  onReuseTask: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   now: number;
   concurrency: number;
@@ -133,6 +135,7 @@ export default function Generate({
         onAbort={abortTask}
         onClearDone={clearDone}
         onUseAsRef={(img) => addManyToTray([img])}
+        onReuse={onReuseTask}
         onOpenViewer={onOpenViewer}
         now={now}
         concurrency={concurrency}

@@ -18,6 +18,7 @@ export default function QueueList({
   onAbort,
   onClearDone,
   onUseAsRef,
+  onReuse,
   onOpenViewer,
   now,
   concurrency,
@@ -29,6 +30,7 @@ export default function QueueList({
   onAbort: (id: string) => void;
   onClearDone: () => void;
   onUseAsRef: (img: ImageRow) => void;
+  onReuse: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   now: number;
   concurrency: number;
@@ -44,7 +46,9 @@ export default function QueueList({
 
   if (queue.length === 0) return null;
 
-  const hasDone = queue.some((task) => task.status !== "pending" && task.status !== "running");
+  const isActive = (s: QueueTask["status"]) =>
+    s === "pending" || s === "running" || s === "cancelling";
+  const hasDone = queue.some((task) => !isActive(task.status));
   // Newest first.
   const ordered = [...queue].reverse();
 
@@ -94,6 +98,7 @@ export default function QueueList({
             onRemove={onRemove}
             onAbort={onAbort}
             onUseAsRef={onUseAsRef}
+            onReuse={onReuse}
             onOpenViewer={onOpenViewer}
             now={now}
           />
@@ -108,6 +113,7 @@ function QueueItem({
   onRemove,
   onAbort,
   onUseAsRef,
+  onReuse,
   onOpenViewer,
   now,
 }: {
@@ -115,6 +121,7 @@ function QueueItem({
   onRemove: (id: string) => void;
   onAbort: (id: string) => void;
   onUseAsRef: (img: ImageRow) => void;
+  onReuse: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   now: number;
 }) {
@@ -145,6 +152,8 @@ function QueueItem({
     } else {
       substatus = t("phase_running");
     }
+  } else if (task.status === "cancelling") {
+    substatus = t("phase_cancelling");
   }
 
   return (
@@ -163,6 +172,13 @@ function QueueItem({
           <span className="muted small">· {task.aspectRatio}</span>
           {task.resolution && <span className="muted small">· {task.resolution}</span>}
           <div className="spacer" style={{ flex: 1 }} />
+          <button
+            className="q-reuse"
+            title={t("reuse")}
+            onClick={() => onReuse(task)}
+          >
+            <i className="fa-solid fa-rotate-left" />
+          </button>
           {undoLeft > 0 && (
             <button
               className="q-undo"
@@ -181,11 +197,13 @@ function QueueItem({
               {t("cancel_running")}
             </button>
           )}
-          {task.status !== "running" && undoLeft === 0 && (
-            <button className="q-x" title={t("remove_task")} onClick={() => onRemove(task.id)}>
-              ×
-            </button>
-          )}
+          {task.status !== "running" &&
+            task.status !== "cancelling" &&
+            undoLeft === 0 && (
+              <button className="q-x" title={t("remove_task")} onClick={() => onRemove(task.id)}>
+                ×
+              </button>
+            )}
         </div>
 
         {substatus && <div className="q-substatus">{substatus}</div>}
@@ -207,9 +225,13 @@ function QueueItem({
         )}
 
         {/* Result area */}
-        {(task.status === "pending" || task.status === "running") && (
+        {(task.status === "pending" ||
+          task.status === "running" ||
+          task.status === "cancelling") && (
           <div
-            className={`q-shimmer${task.status === "running" ? " active" : ""}`}
+            className={`q-shimmer${
+              task.status === "running" || task.status === "cancelling" ? " active" : ""
+            }`}
             style={{ aspectRatio: `${w} / ${h}` }}
           />
         )}

@@ -343,6 +343,7 @@ body.resizing-sidebar {
 .badge.error { background: var(--badge-error-bg); color: var(--badge-error-text); border-color: var(--badge-error-border); }
 .badge.pending { background: var(--badge-pending-bg); color: var(--badge-pending-text); border-color: var(--badge-pending-border); }
 .badge.running { background: var(--badge-running-bg); color: var(--badge-running-text); border-color: var(--badge-running-border); }
+.badge.cancelling { background: var(--badge-blocked-bg); color: var(--badge-blocked-text); border-color: var(--badge-blocked-border); }
 .badge.aborted { background: var(--badge-pending-bg); color: var(--badge-pending-text); border-color: var(--badge-pending-border); }
 .notice { border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; }
 .notice.blocked { background: var(--badge-blocked-bg); border: 1px solid var(--badge-blocked-border); color: var(--badge-blocked-text); }
@@ -516,6 +517,8 @@ body.resizing-sidebar {
 .q-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .q-x { background: none; border: none; font-size: 20px; line-height: 1; padding: 0 6px; min-height: 0; color: var(--muted); box-shadow: none; }
 .q-x:hover { color: var(--danger); background: transparent; border-color: transparent; }
+.q-reuse { background: none; border: none; font-size: 13px; line-height: 1; padding: 2px 6px; min-height: 0; color: var(--muted); box-shadow: none; }
+.q-reuse:hover { color: var(--accent); background: transparent; border-color: transparent; }
 .q-undo {
   font-size: 12px; font-weight: 600; padding: 3px 10px; min-height: 0;
   border-radius: 999px; background: var(--badge-running-bg);

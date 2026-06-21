@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { api, ImageRow, Tag, batchDownloadUrl, imgThumbUrl } from "../api";
+import { api, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import SearchBox from "../components/SearchBox";
 
@@ -114,6 +114,13 @@ export default function Library({
   const toggleStar = async (img: ImageRow) => {
     await api.patchImage(img.id, { starred: !img.starred });
     load();
+  };
+
+  const download = (img: ImageRow) => {
+    const a = document.createElement("a");
+    a.href = imgFileUrl(img.id);
+    a.download = img.filename || "";
+    a.click();
   };
 
   const remove = async (img: ImageRow) => {
@@ -475,6 +482,13 @@ export default function Library({
                     onClick={() => toggleStar(img)}
                   >
                     {img.starred ? "★" : "☆"}
+                  </button>
+                  <button
+                    className="star download-btn"
+                    title={t("download")}
+                    onClick={() => download(img)}
+                  >
+                    <i className="fa-solid fa-download" />
                   </button>
                   <button className="star delete-btn" title={t("delete")} onClick={() => remove(img)}>
                     🗑

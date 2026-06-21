@@ -43,6 +43,7 @@ export interface Generation {
 export type TaskStatus =
   | "pending"
   | "running"
+  | "cancelling"
   | "success"
   | "blocked"
   | "error"
@@ -231,6 +232,11 @@ export const api = {
   },
   async getProgress(cid: string): Promise<TaskPhase> {
     return handle(await fetch(`/api/generate/progress/${cid}`));
+  },
+  async cancelGenerate(cid: string): Promise<{ ok: boolean }> {
+    return handle(
+      await fetch(`/api/generate/cancel/${cid}`, { method: "POST" }),
+    );
   },
   async getStats(): Promise<Stats> {
     return handle(await fetch("/api/stats"));

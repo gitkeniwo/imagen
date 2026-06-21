@@ -170,9 +170,6 @@ export default function App() {
   }, [queue]);
 
   // --- Generation queue (lives in App so it survives tab switches) ---
-  // In-flight request controllers, so a running task can be aborted.
-  const controllersRef = useRef<Map<string, AbortController>>(new Map());
-
   const enqueue = (task: Omit<QueueTask, "id" | "status" | "dispatchAt">) =>
     setQueue((q) => [
       ...q,
@@ -184,22 +181,24 @@ export default function App() {
       },
     ]);
 
+  // In-flight or cancelling tasks must not be removed by the × / clear-done.
+  const isActive = (s: QueueTask["status"]) =>
+    s === "running" || s === "cancelling";
+
   const removeTask = (id: string) =>
-    setQueue((q) => q.filter((t) => !(t.id === id && t.status !== "running")));
+    setQueue((q) => q.filter((t) => !(t.id === id && !isActive(t.status))));
 
   // Cancel a task. Pending → just drop it (never sent, never billed). Running →
-  // close the connection: that signals the backend, which finishes the current
-  // in-flight attempt (keeping a completed result) then stops retrying — so we
-  // never pay-and-discard. The card optimistically shows "aborted" right away;
-  // if that last attempt succeeds, its image still lands in the library.
+  // send a cancel signal and show "cancelling": the request stays open, the
+  // backend finishes the current in-flight attempt (keeping a completed result)
+  // then stops retrying, and its real final result (aborted, or success saved to
+  // the library) updates the card via the original request's .then.
   const abortTask = (id: string) => {
     const task = queue.find((t) => t.id === id);
-    if (task?.status === "running") {
-      controllersRef.current.get(id)?.abort();
-      controllersRef.current.delete(id);
-      startedRef.current.delete(id);
+    if (task && isActive(task.status)) {
+      api.cancelGenerate(id).catch(() => {});
       setQueue((q) =>
-        q.map((t) => (t.id === id ? { ...t, status: "aborted", message: null } : t)),
+        q.map((t) => (t.id === id ? { ...t, status: "cancelling" } : t)),
       );
     } else {
       removeTask(id);
@@ -207,15 +206,14 @@ export default function App() {
   };
 
   const clearDone = () =>
-    setQueue((q) =>
-      q.filter((t) => t.status === "pending" || t.status === "running"),
-    );
+    setQueue((q) => q.filter((t) => t.status === "pending" || isActive(t.status)));
 
   // Bounded FIFO processor: dispatch tasks whose undo-send window has elapsed,
   // up to the user-chosen concurrency, without flooding Vertex.
   const startedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const running = queue.filter((t) => t.status === "running").length;
+    // A cancelling task still holds an open request → keep counting its slot.
+    const running = queue.filter((t) => isActive(t.status)).length;
     const slots = concurrency - running;
     if (slots <= 0) return;
 
@@ -236,23 +234,21 @@ export default function App() {
     );
 
     nextTasks.forEach((task) => {
-      const controller = new AbortController();
-      controllersRef.current.set(task.id, controller);
       api
-        .generate(
-          {
-            prompt: task.prompt,
-            model: task.model,
-            aspectRatio: task.aspectRatio,
-            resolution: task.resolution,
-            outputFormat: task.format,
-            inputImageIds: task.inputs.map((i) => i.id),
-            uploadImageIds: [],
-            tagIds: task.tagIds,
-            clientTaskId: task.id,
-          },
-          controller.signal,
-        )
+        .generate({
+          prompt: task.prompt,
+          model: task.model,
+          aspectRatio: task.aspectRatio,
+          resolution: task.resolution,
+          outputFormat: task.format,
+          inputImageIds: task.inputs.map((i) => i.id),
+          uploadImageIds: [],
+          tagIds: task.tagIds,
+          clientTaskId: task.id,
+        })
+        // The original request stays open through cancellation, so its result
+        // (success / aborted / blocked / error) is the true final state and
+        // overwrites a "cancelling" placeholder.
         .then((res) =>
           setQueue((q) =>
             q.map((t) =>
@@ -269,19 +265,15 @@ export default function App() {
             ),
           ),
         )
-        .catch((err) => {
-          // User-initiated abort: status was already set to "aborted" by
-          // abortTask — don't clobber it with an error.
-          if ((err as Error).name === "AbortError") return;
+        .catch((err) =>
           setQueue((q) =>
             q.map((t) =>
               t.id === task.id
                 ? { ...t, status: "error", message: (err as Error).message }
                 : t,
             ),
-          );
-        })
-        .finally(() => controllersRef.current.delete(task.id));
+          ),
+        );
     });
   }, [queue, now, concurrency]);
 
@@ -309,6 +301,17 @@ export default function App() {
       model: g.model,
       aspectRatio: g.aspect_ratio,
       resolution: g.resolution,
+    });
+  };
+
+  // Reuse a queued task's settings (prompt/model/ratio/resolution + inputs).
+  const reuseTask = (task: QueueTask) => {
+    setTray(task.inputs ?? []);
+    setPrefill({
+      prompt: task.prompt,
+      model: task.model,
+      aspectRatio: task.aspectRatio,
+      resolution: task.resolution,
     });
   };
 
@@ -426,6 +429,7 @@ export default function App() {
             removeTask={removeTask}
             abortTask={abortTask}
             clearDone={clearDone}
+            onReuseTask={reuseTask}
             onOpenViewer={openViewer}
             now={now}
             concurrency={concurrency}
