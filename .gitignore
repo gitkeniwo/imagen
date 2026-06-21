@@ -35,7 +35,7 @@ pnpm-debug.log*
 .env.*
 !.env.example
 *.local
-.claude/settings.local.json
+.claude/
 .codex/
 .agents/
 

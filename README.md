@@ -9,6 +9,19 @@ A lightweight, single-user **image-to-image** web app powered by Google Vertex A
 - **Queue** with delayed send, cancellation, configurable concurrency, live status
 - English / Chinese UI (localStorage)
 
+## Prerequisites
+
+The app authenticates to Vertex AI via **ADC (Application Default Credentials)** — no API keys needed.
+
+```bash
+gcloud config set project <your-project>
+gcloud services enable aiplatform.googleapis.com
+gcloud auth application-default login
+gcloud auth application-default set-quota-project <your-project>
+```
+
+The account needs the `Vertex AI User` role. After starting the app, open **Settings** and fill in your Project ID and Location.
+
 ## Tech Stack
 
 - **Frontend:** React + Vite (TypeScript), no-dependency i18n
@@ -32,22 +45,24 @@ cd backend && uv run uvicorn app.main:app --port 8000    # → http://localhost:
 
 ## Docker
 
+Via GHCR (pre-built image):
+
+```bash
+mkdir -p ./imagen-data && docker run -d \
+  --name imagen \
+  -p 8000:8000 \
+  -e IMAGEN_DATA_DIR=/data \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/gcloud/adc.json \
+  -v ./imagen-data:/data \
+  -v ~/.config/gcloud/application_default_credentials.json:/gcloud/adc.json:ro \
+  ghcr.io/gitkeniwo/imagen:latest
+```
+
+Or build locally with compose:
+
 ```bash
 docker compose up --build -d     # → http://localhost:8000
 ```
-
-Data is persisted via `./backend/data:/data`; ADC credentials are mounted read-only from the host.
-
-## First-Time Setup (ADC)
-
-```bash
-gcloud config set project <your-project>
-gcloud services enable aiplatform.googleapis.com
-gcloud auth application-default login
-gcloud auth application-default set-quota-project <your-project>
-```
-
-The account needs the `Vertex AI User` role. Then open the app, go to **Settings**, fill in your Project ID and Location.
 
 ## Verification
 
@@ -58,6 +73,6 @@ PROJECT=<your-project> uv run python scripts/probe_gemini.py
 
 ## Data & Privacy
 
-- All data lives in `backend/data/` (gitignored, never committed).
-- No API keys stored; auth uses host machine ADC (`~/.config/gcloud/application_default_credentials.json`).
+- All data lives in the mounted volume (`./imagen-data` with the command above, or `./backend/data` with compose).
+- ADC credentials (`~/.config/gcloud/application_default_credentials.json`) are mounted read-only.
 - Single-user, no access control — add your own if exposing to a network.
