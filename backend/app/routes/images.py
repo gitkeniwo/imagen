@@ -162,6 +162,10 @@ def patch_image(image_id: int, body: ImagePatch):
     if body.filename is not None:
         sets.append("filename = ?")
         params.append(body.filename)
+    if body.note is not None:
+        # Empty string clears the note (not "no change").
+        sets.append("note = ?")
+        params.append(body.note or None)
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
     with get_conn() as conn:

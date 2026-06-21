@@ -33,6 +33,16 @@
       ],
       "cwd": "backend",
       "port": 8033
+    },
+    {
+      "name": "fav-verify",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "IMAGEN_DATA_DIR=/tmp/imagen-fav uv run uvicorn app.main:app --port 8011"
+      ],
+      "cwd": "backend",
+      "port": 8011
     }
   ]
 }

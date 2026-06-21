@@ -44,3 +44,4 @@ class VertexConfig(BaseModel):
 class ImagePatch(BaseModel):
     starred: Optional[bool] = None
     filename: Optional[str] = None
+    note: Optional[str] = None

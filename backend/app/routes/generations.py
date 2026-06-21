@@ -35,9 +35,11 @@ def list_generations(
     offset: int = Query(0, ge=0),
     tag: int | None = None,
     q: str | None = None,
+    starred: bool | None = None,
 ):
     # Filter by the output image's tag (i.e. generations archived into that tag),
-    # and/or by a substring of the prompt.
+    # by a substring of the prompt, and/or by whether the output is starred
+    # (the "favorites" / saved-prompt view).
     clauses, params = [], []
     if tag is not None:
         clauses.append(
@@ -45,6 +47,11 @@ def list_generations(
             "(SELECT image_id FROM image_tags WHERE tag_id = ?)"
         )
         params.append(tag)
+    if starred:
+        clauses.append(
+            "output_image_id IN "
+            "(SELECT id FROM images WHERE starred = 1 AND deleted_at IS NULL)"
+        )
     if q and q.strip():
         clauses.append("prompt LIKE ?")
         params.append(f"%{q.strip()}%")
@@ -64,6 +71,24 @@ def list_generations(
             g["outputImage"] = _output_for(conn, g["output_image_id"])
             out.append(g)
     return {"generations": out, "total": total}
+
+
+@router.get("/by-output/{image_id}")
+def generation_by_output(image_id: int):
+    """The most recent generation that produced this output image, or null.
+    Lets the image lightbox surface the prompt behind a generated image."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM generations WHERE output_image_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (image_id,),
+        ).fetchone()
+        if not row:
+            return None
+        g = dict(row)
+        g["inputs"] = _inputs_for(conn, g["id"])
+        g["outputImage"] = _output_for(conn, g["output_image_id"])
+    return g
 
 
 @router.get("/{gen_id}")

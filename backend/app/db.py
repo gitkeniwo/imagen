@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS images (
     file_path   TEXT,
     thumb_path  TEXT,
     starred     INTEGER DEFAULT 0,
+    note        TEXT,                 -- user note/label for a saved (starred) prompt
     created_at  TEXT,
     deleted_at  TEXT                  -- NULL = live; set = in recycle bin
 );
@@ -87,6 +88,8 @@ def _migrate(conn) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(images)")}
     if "deleted_at" not in cols:
         conn.execute("ALTER TABLE images ADD COLUMN deleted_at TEXT")
+    if "note" not in cols:
+        conn.execute("ALTER TABLE images ADD COLUMN note TEXT")
     conn.commit()
 
 

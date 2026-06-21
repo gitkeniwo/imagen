@@ -3,9 +3,10 @@ import { Generation, ImageRow } from "../api";
 import { useI18n } from "../i18n";
 import Library from "../pages/Library";
 import History from "../pages/History";
+import Favorites from "../pages/Favorites";
 import Bin from "../pages/Bin";
 
-export type ManagerPanel = "library" | "history" | "bin";
+export type ManagerPanel = "library" | "history" | "favorites" | "bin";
 
 // Full-screen overlay that hosts Library / History / Bin in their non-compact
 // "full" mode, so the same components (and all their features) render large.
@@ -56,7 +57,7 @@ export default function FullscreenManager({
     <div className="manager-overlay">
       <div className="manager-header">
         <div className="side-tabs manager-tabs">
-          {(["library", "history", "bin"] as ManagerPanel[]).map((p) => (
+          {(["library", "history", "favorites", "bin"] as ManagerPanel[]).map((p) => (
             <button
               key={p}
               className={`tab${panel === p ? " active" : ""}`}
@@ -83,6 +84,13 @@ export default function FullscreenManager({
             onReuse={handleReuse}
             onOpenViewer={onOpenViewer}
             refreshKey={refreshKey}
+          />
+        ) : panel === "favorites" ? (
+          <Favorites
+            onReuse={handleReuse}
+            onOpenViewer={onOpenViewer}
+            refreshKey={refreshKey}
+            onChanged={onChanged}
           />
         ) : (
           <Bin

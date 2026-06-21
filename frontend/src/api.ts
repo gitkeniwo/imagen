@@ -20,6 +20,7 @@ export interface ImageRow {
   height: number;
   source: "upload" | "generated";
   starred: number;
+  note?: string | null;
   created_at: string;
   deleted_at?: string | null;
   tags?: TagRef[];
@@ -191,7 +192,10 @@ export const api = {
     if (params.q && params.q.trim()) q.set("q", params.q.trim());
     return handle(await fetch(`/api/images?${q.toString()}`));
   },
-  async patchImage(id: number, body: { starred?: boolean; filename?: string }) {
+  async patchImage(
+    id: number,
+    body: { starred?: boolean; filename?: string; note?: string },
+  ) {
     return handle(
       await fetch(`/api/images/${id}`, {
         method: "PATCH",
@@ -242,14 +246,24 @@ export const api = {
     return handle(await fetch("/api/stats"));
   },
   async listGenerations(
-    params: { limit?: number; offset?: number; tag?: number; q?: string } = {},
+    params: {
+      limit?: number;
+      offset?: number;
+      tag?: number;
+      q?: string;
+      starred?: boolean;
+    } = {},
   ): Promise<{ generations: Generation[]; total: number }> {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     if (params.tag) q.set("tag", String(params.tag));
     if (params.q && params.q.trim()) q.set("q", params.q.trim());
+    if (params.starred) q.set("starred", "true");
     return handle(await fetch(`/api/generations?${q.toString()}`));
+  },
+  async generationByOutput(imageId: number): Promise<Generation | null> {
+    return handle(await fetch(`/api/generations/by-output/${imageId}`));
   },
   async listTags(): Promise<{ tags: Tag[] }> {
     return handle(await fetch("/api/tags"));

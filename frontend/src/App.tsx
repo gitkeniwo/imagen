@@ -4,12 +4,13 @@ import { useI18n } from "./i18n";
 import Generate from "./pages/Generate";
 import Library from "./pages/Library";
 import History from "./pages/History";
+import Favorites from "./pages/Favorites";
 import SettingsModal from "./components/SettingsModal";
 import UsageDashboard from "./components/UsageDashboard";
 import ImageViewer from "./components/ImageViewer";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 
-export type SidebarPanel = "library" | "history";
+export type SidebarPanel = "library" | "history" | "favorites";
 
 export interface Prefill {
   prompt: string;
@@ -368,7 +369,7 @@ export default function App() {
         <aside className="side-panel">
           <div className="side-tabs-row">
             <div className="side-tabs">
-              {(["library", "history"] as SidebarPanel[]).map((panel) => (
+              {(["library", "history", "favorites"] as SidebarPanel[]).map((panel) => (
                 <button
                   key={panel}
                   className={`tab${sidebarPanel === panel ? " active" : ""}`}
@@ -402,12 +403,20 @@ export default function App() {
                 onOpenViewer={openViewer}
                 onChanged={bumpData}
               />
-            ) : (
+            ) : sidebarPanel === "history" ? (
               <History
                 onReuse={reuse}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
+              />
+            ) : (
+              <Favorites
+                onReuse={reuse}
+                compact
+                refreshKey={completedRefreshKey}
+                onOpenViewer={openViewer}
+                onChanged={bumpData}
               />
             )}
           </div>
@@ -486,6 +495,8 @@ export default function App() {
           onClose={() => setViewer(null)}
           onAddToTray={addToTray}
           onTagsChanged={bumpData}
+          onReuse={reuse}
+          onChanged={bumpData}
         />
       )}
     </>
