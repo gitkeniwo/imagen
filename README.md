@@ -1,4 +1,4 @@
-# Nano Banana Studio
+# Imagen
 
 A lightweight, single-user **image-to-image** web app powered by Google Vertex AI (Nano Banana models).
 

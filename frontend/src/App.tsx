@@ -339,7 +339,7 @@ export default function App() {
       <div className="topbar">
         <div className="topbar-inner">
           <div className="brand">
-            <span className="banana">🍌</span> Nano Banana Studio
+            <span className="banana">🍌</span> Imagen
           </div>
           <div className="spacer" />
           <button

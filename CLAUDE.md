@@ -18,7 +18,7 @@ Guidance for Claude Code working in this repo. Read this first.
 
 ## Overview
 
-Nano Banana Studio — a lightweight, single-user **image-to-image** web app. It calls
+Imagen — a lightweight, single-user **image-to-image** web app. It calls
 Google's "Nano Banana" image models through **Vertex AI** using the official
 `google-genai` SDK with **ADC** auth (no API keys; org policy disallows them).
 

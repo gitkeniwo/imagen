@@ -1,7 +1,7 @@
 [project]
 name = "nano-banana-studio-backend"
 version = "0.1.0"
-description = "Backend for Nano Banana Studio (image-to-image studio over the Gemini API)"
+description = "Backend for Imagen (image-to-image studio over the Gemini API)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi==0.115.6",

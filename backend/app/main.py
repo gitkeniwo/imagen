@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from .db import init_storage
 from .routes import generate, generations, images, settings, stats, tags
 
-app = FastAPI(title="Nano Banana Studio")
+app = FastAPI(title="Imagen")
 
 # Allow the Vite dev server (separate origin) during development.
 app.add_middleware(
