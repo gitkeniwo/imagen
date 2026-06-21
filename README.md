@@ -9,6 +9,9 @@ A lightweight, single-user **image-to-image** web app powered by Google Vertex A
 - **Queue** with delayed send, cancellation, configurable concurrency, live status
 - English / Chinese UI (localStorage)
 
+<img width="1389" height="844" alt="Screenshot 2026-06-21 at 22 23 48" src="https://github.com/user-attachments/assets/e23dfa9d-5a02-4e50-b59a-d201d9329034" />
+
+
 ## Prerequisites
 
 The app authenticates to Vertex AI via **ADC (Application Default Credentials)** — no API keys needed.
