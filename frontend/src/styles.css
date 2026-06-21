@@ -725,14 +725,10 @@ body.resizing-sidebar {
 }
 .viewer-reuse { margin-top: 10px; width: 100%; }
 .viewer-note { width: 100%; resize: vertical; font: inherit; }
+.viewer-inputs { margin-top: 8px; }
+.viewer-inputs img { width: 44px; height: 44px; }
 
 /* ===== favorites (saved-prompt) cards ===== */
-.fav-row { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 8px; }
-.fav-thumb {
-  flex: 0 0 auto; width: 72px; height: 72px; object-fit: cover; border-radius: 8px;
-  border: 1px solid var(--border); cursor: pointer; background: var(--panel-2);
-}
-.fav-main { flex: 1; min-width: 0; }
 .fav-note {
   width: 100%; font: inherit; font-weight: 600; margin-bottom: 6px;
   background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px;

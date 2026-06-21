@@ -161,55 +161,42 @@ export default function Favorites({
         >
           {gens.map((g) => (
             <div className="panel history-panel fav-panel" key={g.id}>
-              <div className="fav-row">
-                {g.outputImage && (
-                  <img
-                    className="fav-thumb"
-                    src={imgThumbUrl(g.outputImage.id)}
-                    alt="output"
-                    title={t("open_viewer")}
-                    onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
-                  />
+              {g.outputImage && (
+                <input
+                  className="fav-note"
+                  value={notes[g.outputImage.id] ?? ""}
+                  placeholder={t("note_placeholder")}
+                  onChange={(e) =>
+                    setNotes((n) => ({
+                      ...n,
+                      [g.outputImage!.id]: e.target.value,
+                    }))
+                  }
+                  onBlur={() => saveNote(g.outputImage!)}
+                />
+              )}
+              <div className="history-meta">
+                <span className="muted small">{g.model}</span>
+                {g.aspect_ratio && (
+                  <span className="muted small">· {g.aspect_ratio}</span>
                 )}
-                <div className="fav-main">
-                  {g.outputImage && (
-                    <input
-                      className="fav-note"
-                      value={notes[g.outputImage.id] ?? ""}
-                      placeholder={t("note_placeholder")}
-                      onChange={(e) =>
-                        setNotes((n) => ({
-                          ...n,
-                          [g.outputImage!.id]: e.target.value,
-                        }))
-                      }
-                      onBlur={() => saveNote(g.outputImage!)}
-                    />
-                  )}
-                  <div className="history-meta">
-                    <span className="muted small">{g.model}</span>
-                    {g.aspect_ratio && (
-                      <span className="muted small">· {g.aspect_ratio}</span>
-                    )}
-                    {g.resolution && (
-                      <span className="muted small">· {g.resolution}</span>
-                    )}
-                    <div className="spacer" style={{ flex: 1 }} />
-                    <button className="link-btn" onClick={() => copyPrompt(g)}>
-                      {copiedId === g.id ? t("copied") : t("copy_prompt")}
-                    </button>
-                    <button onClick={() => onReuse(g)}>{t("reuse")}</button>
-                    {g.outputImage && (
-                      <button
-                        className="star is-starred"
-                        title={t("unfavorite")}
-                        onClick={() => unfavorite(g.outputImage!)}
-                      >
-                        ★
-                      </button>
-                    )}
-                  </div>
-                </div>
+                {g.resolution && (
+                  <span className="muted small">· {g.resolution}</span>
+                )}
+                <div className="spacer" style={{ flex: 1 }} />
+                <button className="link-btn" onClick={() => copyPrompt(g)}>
+                  {copiedId === g.id ? t("copied") : t("copy_prompt")}
+                </button>
+                <button onClick={() => onReuse(g)}>{t("reuse")}</button>
+                {g.outputImage && (
+                  <button
+                    className="star is-starred"
+                    title={t("unfavorite")}
+                    onClick={() => unfavorite(g.outputImage!)}
+                  >
+                    ★
+                  </button>
+                )}
               </div>
 
               {g.prompt && (
@@ -232,6 +219,45 @@ export default function Favorites({
                   )}
                 </div>
               )}
+
+              {/* input images + prompt together form the reusable "input" */}
+              <div className="gen-row">
+                <div className="gen-inputs">
+                  {(g.inputs ?? []).map((im) =>
+                    im.deleted_at ? (
+                      <span
+                        key={im.id}
+                        className="deleted-tile"
+                        title={t("deleted_label")}
+                      >
+                        <i className="fa-solid fa-trash-can" />
+                      </span>
+                    ) : (
+                      <img
+                        key={im.id}
+                        src={imgThumbUrl(im.id)}
+                        alt={im.filename}
+                        title={im.filename}
+                        onClick={() => onOpenViewer(im, g.inputs ?? [])}
+                      />
+                    ),
+                  )}
+                  {(g.inputs ?? []).length === 0 && (
+                    <span className="muted small">{t("no_refs")}</span>
+                  )}
+                </div>
+                <span className="arrow">→</span>
+                <div className="gen-out">
+                  {g.outputImage && (
+                    <img
+                      src={imgThumbUrl(g.outputImage.id)}
+                      alt="output"
+                      title={t("open_viewer")}
+                      onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           ))}
         </div>

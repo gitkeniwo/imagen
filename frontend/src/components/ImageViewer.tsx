@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Generation, ImageRow, imgFileUrl } from "../api";
+import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import TagPicker from "./TagPicker";
 
@@ -159,6 +159,29 @@ export default function ImageViewer({
                 </button>
               </div>
               <p className="viewer-prompt-text">{gen.prompt}</p>
+              {gen.inputs && gen.inputs.length > 0 && (
+                <div className="viewer-inputs gen-inputs">
+                  {gen.inputs.map((im) =>
+                    im.deleted_at ? (
+                      <span
+                        key={im.id}
+                        className="deleted-tile"
+                        title={t("deleted_label")}
+                      >
+                        <i className="fa-solid fa-trash-can" />
+                      </span>
+                    ) : (
+                      <img
+                        key={im.id}
+                        src={imgThumbUrl(im.id)}
+                        alt={im.filename}
+                        title={`${im.filename} · ${t("add_to_input")}`}
+                        onClick={() => onAddToTray(im)}
+                      />
+                    ),
+                  )}
+                </div>
+              )}
               {onReuse && (
                 <button
                   className="viewer-reuse"
