@@ -241,7 +241,7 @@ export default function Library({
                 title={t("density")}
                 onClick={() => setDensityOpen((v) => !v)}
               >
-                ▦
+                <i className="fa-solid fa-table-cells-large" />
               </button>
               {densityOpen && (
                 <div className="density-popover">

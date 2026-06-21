@@ -17,7 +17,6 @@
   --hover-border: #cbd5e1;
   --focus-border: #94a3b8;
   --topbar-bg: rgba(248, 250, 252, 0.86);
-  --body-radial: rgba(226, 232, 240, 0.85);
   --body-start: #ffffff;
   --dropzone-bg: #f8fafc;
   --aspect-selected-bg: #f8fafc;
@@ -69,7 +68,6 @@
     --hover-border: #334155;
     --focus-border: #64748b;
     --topbar-bg: rgba(2, 6, 23, 0.84);
-    --body-radial: rgba(30, 41, 59, 0.58);
     --body-start: #020617;
     --dropzone-bg: #0f172a;
     --aspect-selected-bg: #0f172a;
@@ -106,9 +104,7 @@
 body {
   margin: 0;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background:
-    radial-gradient(circle at top left, var(--body-radial), transparent 36rem),
-    linear-gradient(180deg, var(--body-start) 0%, var(--bg) 38rem);
+  background: linear-gradient(180deg, var(--body-start) 0%, var(--bg) 38rem);
   color: var(--text);
   font-size: 14px;
 }
