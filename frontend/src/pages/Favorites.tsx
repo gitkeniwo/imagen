@@ -7,6 +7,14 @@ const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
 const PROMPT_PREVIEW_CHARS = 160;
 const PROMPT_PREVIEW_LINES = 3;
+const FAV_COLUMNS_KEY = "imagen-fav-columns";
+const FAV_COLUMN_OPTIONS = [1, 2, 3];
+const FAV_COLUMN_OPTIONS_FULL = [2, 3, 4];
+
+function initialFavColumns() {
+  const saved = Number(localStorage.getItem(FAV_COLUMNS_KEY));
+  return FAV_COLUMN_OPTIONS_FULL.includes(saved) ? saved : 2;
+}
 
 // Prompt-centric "favorites" view: the saved-prompt collection. A favorite is a
 // starred generated image; this lists those generations note-first so long
@@ -30,6 +38,7 @@ export default function Favorites({
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [columns, setColumns] = useState(initialFavColumns);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -61,6 +70,10 @@ export default function Favorites({
   };
 
   useEffect(load, [page, pageSize, query, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    localStorage.setItem(FAV_COLUMNS_KEY, String(columns));
+  }, [columns]);
 
   const toggleExpand = (id: number) =>
     setExpanded((s) => {
@@ -128,6 +141,17 @@ export default function Favorites({
             }}
             placeholder={t("search_placeholder_history")}
           />
+          <div className="seg density-seg history-cols-seg" title={t("columns_per_row")}>
+            {(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => (
+              <button
+                key={n}
+                className={columns === n ? "on" : ""}
+                onClick={() => setColumns(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {pager}
@@ -157,7 +181,7 @@ export default function Favorites({
       ) : (
         <div
           className={`history-list${compact ? " compact" : ""}`}
-          style={{ "--history-columns": 1 } as CSSProperties}
+          style={{ "--history-columns": columns } as CSSProperties}
         >
           {gens.map((g) => (
             <div className="panel history-panel fav-panel" key={g.id}>
@@ -249,12 +273,23 @@ export default function Favorites({
                 <span className="arrow">→</span>
                 <div className="gen-out">
                   {g.outputImage && (
-                    <img
-                      src={imgThumbUrl(g.outputImage.id)}
-                      alt="output"
-                      title={t("open_viewer")}
-                      onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
-                    />
+                    <div>
+                      <img
+                        src={imgThumbUrl(g.outputImage.id)}
+                        alt="output"
+                        title={t("open_viewer")}
+                        onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
+                      />
+                      {g.outputImage.tags && g.outputImage.tags.length > 0 && (
+                        <div className="card-tags">
+                          {g.outputImage.tags.map((tg) => (
+                            <span key={tg.id} className="card-tag">
+                              {tg.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

@@ -63,7 +63,7 @@ def list_images(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     sql = (
         f"SELECT * FROM images {where} "
-        "ORDER BY starred DESC, id DESC LIMIT ? OFFSET ?"
+        "ORDER BY id DESC LIMIT ? OFFSET ?"
     )
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(sql, (*params, limit, offset)).fetchall()]

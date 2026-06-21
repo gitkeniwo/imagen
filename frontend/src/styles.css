@@ -228,8 +228,7 @@ body.resizing-sidebar {
   min-height: 0;
 }
 .side-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: 6px;
   margin-bottom: 10px;
   padding: 4px;
@@ -237,7 +236,7 @@ body.resizing-sidebar {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
-.side-tabs .tab { min-height: 34px; }
+.side-tabs .tab { min-height: 34px; flex: 1 1 0; min-width: 0; white-space: nowrap; }
 .side-scroll {
   overflow: auto;
   padding-right: 2px;
@@ -757,7 +756,6 @@ body.resizing-sidebar {
 }
 .manager-tabs {
   flex: 0 0 auto;
-  grid-template-columns: repeat(3, 1fr);
   margin: 0 auto;
 }
 .manager-header .spacer { flex: 1; }
