@@ -369,13 +369,20 @@ export default function App() {
         <aside className="side-panel">
           <div className="side-tabs-row">
             <div className="side-tabs">
-              {(["library", "history", "favorites"] as SidebarPanel[]).map((panel) => (
+              {(
+                [
+                  ["library", "fa-images"],
+                  ["history", "fa-clock-rotate-left"],
+                  ["favorites", "fa-star"],
+                ] as [SidebarPanel, string][]
+              ).map(([panel, icon]) => (
                 <button
                   key={panel}
                   className={`tab${sidebarPanel === panel ? " active" : ""}`}
+                  title={t(`tab_${panel}`)}
                   onClick={() => setSidebarPanel(panel)}
                 >
-                  {t(`tab_${panel}`)}
+                  <i className={`fa-solid ${icon}`} />
                 </button>
               ))}
             </div>

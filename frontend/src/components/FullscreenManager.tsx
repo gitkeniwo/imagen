@@ -57,13 +57,21 @@ export default function FullscreenManager({
     <div className="manager-overlay">
       <div className="manager-header">
         <div className="side-tabs manager-tabs">
-          {(["library", "history", "favorites", "bin"] as ManagerPanel[]).map((p) => (
+          {(
+            [
+              ["library", "fa-images"],
+              ["history", "fa-clock-rotate-left"],
+              ["favorites", "fa-star"],
+              ["bin", "fa-trash-can"],
+            ] as [ManagerPanel, string][]
+          ).map(([p, icon]) => (
             <button
               key={p}
               className={`tab${panel === p ? " active" : ""}`}
+              title={t(`tab_${p}`)}
               onClick={() => setPanel(p)}
             >
-              {t(`tab_${p}`)}
+              <i className={`fa-solid ${icon}`} />
             </button>
           ))}
         </div>

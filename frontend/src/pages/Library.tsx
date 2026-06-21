@@ -200,19 +200,20 @@ export default function Library({
         <div className="library-toolbar">
           <div className="seg library-source-seg">
             {[
-              ["", t("filter_all")],
-              ["upload", t("filter_upload")],
-              ["generated", t("filter_generated")],
-            ].map(([val, label]) => (
+              ["", t("filter_all"), null],
+              ["upload", t("filter_upload"), "fa-upload"],
+              ["generated", t("filter_generated"), "fa-robot"],
+            ].map(([val, label, icon]) => (
               <button
                 key={val}
                 className={source === val ? "on" : ""}
+                title={label as string}
                 onClick={() => {
-                  setSource(val);
+                  setSource(val as string);
                   setPage(0);
                 }}
               >
-                {label}
+                {icon ? <i className={`fa-solid ${icon}`} /> : label}
               </button>
             ))}
           </div>
@@ -224,7 +225,7 @@ export default function Library({
               setPage(0);
             }}
           >
-            {starredOnly ? "★" : "☆"} {t("star")}
+            {starredOnly ? "★" : "☆"}
           </button>
           <SearchBox
             value={query}
@@ -491,7 +492,7 @@ export default function Library({
                     <i className="fa-solid fa-download" />
                   </button>
                   <button className="star delete-btn" title={t("delete")} onClick={() => remove(img)}>
-                    🗑
+                    <i className="fa-solid fa-trash-can" />
                   </button>
                 </span>
               </div>
