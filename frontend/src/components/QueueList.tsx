@@ -19,6 +19,7 @@ export default function QueueList({
   onClearDone,
   onUseAsRef,
   onReuse,
+  onReuseGenerate,
   onOpenViewer,
   now,
   concurrency,
@@ -31,6 +32,7 @@ export default function QueueList({
   onClearDone: () => void;
   onUseAsRef: (img: ImageRow) => void;
   onReuse: (task: QueueTask) => void;
+  onReuseGenerate: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   now: number;
   concurrency: number;
@@ -99,6 +101,7 @@ export default function QueueList({
             onAbort={onAbort}
             onUseAsRef={onUseAsRef}
             onReuse={onReuse}
+            onReuseGenerate={onReuseGenerate}
             onOpenViewer={onOpenViewer}
             now={now}
           />
@@ -114,6 +117,7 @@ function QueueItem({
   onAbort,
   onUseAsRef,
   onReuse,
+  onReuseGenerate,
   onOpenViewer,
   now,
 }: {
@@ -122,6 +126,7 @@ function QueueItem({
   onAbort: (id: string) => void;
   onUseAsRef: (img: ImageRow) => void;
   onReuse: (task: QueueTask) => void;
+  onReuseGenerate: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   now: number;
 }) {
@@ -173,11 +178,18 @@ function QueueItem({
           {task.resolution && <span className="muted small">· {task.resolution}</span>}
           <div className="spacer" style={{ flex: 1 }} />
           <button
-            className="q-reuse"
+            className="q-icon-btn q-reuse"
             title={t("reuse")}
             onClick={() => onReuse(task)}
           >
-            <i className="fa-solid fa-rotate-left" />
+            <i className="fa-solid fa-pen" />
+          </button>
+          <button
+            className="q-icon-btn q-reuse-generate"
+            title={t("reuse_generate")}
+            onClick={() => onReuseGenerate(task)}
+          >
+            <i className="fa-solid fa-bolt" />
           </button>
           {undoLeft > 0 && (
             <button
@@ -200,7 +212,7 @@ function QueueItem({
           {task.status !== "running" &&
             task.status !== "cancelling" &&
             undoLeft === 0 && (
-              <button className="q-x" title={t("remove_task")} onClick={() => onRemove(task.id)}>
+              <button className="q-icon-btn q-x" title={t("remove_task")} onClick={() => onRemove(task.id)}>
                 ×
               </button>
             )}

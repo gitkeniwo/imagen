@@ -315,6 +315,20 @@ export default function App() {
     });
   };
 
+  // Reuse a queued task's settings AND enqueue it immediately (skip the form).
+  // enqueue expects Omit<QueueTask, "id"|"status"|"dispatchAt">; QueueTask already
+  // carries every field, so spreading is a direct, lossless match.
+  const reuseGenerateTask = (task: QueueTask) =>
+    enqueue({
+      prompt: task.prompt,
+      model: task.model,
+      aspectRatio: task.aspectRatio,
+      resolution: task.resolution,
+      format: task.format,
+      inputs: task.inputs,
+      tagIds: task.tagIds,
+    });
+
   const completedRefreshKey =
     queue.filter((task) => task.status !== "pending" && task.status !== "running")
       .length + dataVersion;
@@ -430,6 +444,7 @@ export default function App() {
             abortTask={abortTask}
             clearDone={clearDone}
             onReuseTask={reuseTask}
+            onReuseGenerateTask={reuseGenerateTask}
             onOpenViewer={openViewer}
             now={now}
             concurrency={concurrency}
