@@ -37,11 +37,12 @@ CREATE TABLE IF NOT EXISTS generations (
     model           TEXT,
     aspect_ratio    TEXT,
     resolution      TEXT,
-    status          TEXT,             -- 'success' | 'blocked' | 'error'
+    status          TEXT,             -- 'success' | 'blocked' | 'error' | 'note'
     error_message   TEXT,
     raw_finish      TEXT,
     output_image_id INTEGER REFERENCES images(id),
-    created_at      TEXT
+    created_at      TEXT,
+    source          TEXT NOT NULL DEFAULT 'vertex'  -- 'vertex' (real call) | 'manual' (logged)
 );
 
 CREATE TABLE IF NOT EXISTS generation_inputs (
@@ -90,6 +91,12 @@ def _migrate(conn) -> None:
         conn.execute("ALTER TABLE images ADD COLUMN deleted_at TEXT")
     if "note" not in cols:
         conn.execute("ALTER TABLE images ADD COLUMN note TEXT")
+
+    gen_cols = {r["name"] for r in conn.execute("PRAGMA table_info(generations)")}
+    if "source" not in gen_cols:
+        conn.execute(
+            "ALTER TABLE generations ADD COLUMN source TEXT NOT NULL DEFAULT 'vertex'"
+        )
     conn.commit()
 
 

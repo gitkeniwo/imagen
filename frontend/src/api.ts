@@ -37,6 +37,7 @@ export interface Generation {
   raw_finish: string | null;
   output_image_id: number | null;
   created_at: string;
+  source: "vertex" | "manual";
   inputs?: ImageRow[];
   outputImage?: ImageRow | null;
 }
@@ -264,7 +265,7 @@ export const api = {
       tag?: number;
       q?: string;
       starred?: boolean;
-      note?: boolean;
+      kind?: "vertex" | "manual" | "note";
     } = {},
   ): Promise<{ generations: Generation[]; total: number }> {
     const q = new URLSearchParams();
@@ -273,7 +274,7 @@ export const api = {
     if (params.tag) q.set("tag", String(params.tag));
     if (params.q && params.q.trim()) q.set("q", params.q.trim());
     if (params.starred) q.set("starred", "true");
-    if (params.note !== undefined) q.set("note", String(params.note));
+    if (params.kind) q.set("kind", params.kind);
     return handle(await fetch(`/api/generations?${q.toString()}`));
   },
   async generationByOutput(imageId: number): Promise<Generation | null> {

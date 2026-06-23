@@ -61,10 +61,10 @@ def create_manual_generation(body: ManualGenerationRequest):
         cur = conn.execute(
             """INSERT INTO generations
                (prompt, model, aspect_ratio, resolution, status, error_message,
-                raw_finish, output_image_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                raw_finish, output_image_id, created_at, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.prompt, body.model, body.aspectRatio, body.resolution,
-             body.status, body.errorMessage, None, body.outputImageId, created_at),
+             body.status, body.errorMessage, None, body.outputImageId, created_at, "manual"),
         )
         gen_id = cur.lastrowid
         for pos, img_id in enumerate(body.inputImageIds):
@@ -92,12 +92,13 @@ def list_generations(
     tag: int | None = None,
     q: str | None = None,
     starred: bool | None = None,
-    note: bool | None = None,
+    kind: str | None = None,
 ):
     # Filter by the output image's tag (i.e. generations archived into that tag),
     # by a substring of the prompt, by whether the output is starred (the
-    # "favorites" / saved-prompt view), and/or by whether the record is a
-    # manually-logged note (vs. a real generation).
+    # "favorites" / saved-prompt view), and/or by record kind:
+    # 'vertex' (real generation via this app), 'manual' (a logged result from
+    # elsewhere, excluding notes), or 'note' (a manually-logged idea/note).
     clauses, params = [], []
     if tag is not None:
         clauses.append(
@@ -110,8 +111,14 @@ def list_generations(
             "output_image_id IN "
             "(SELECT id FROM images WHERE starred = 1 AND deleted_at IS NULL)"
         )
-    if note is not None:
-        clauses.append("status " + ("= ?" if note else "!= ?"))
+    if kind == "vertex":
+        clauses.append("source = ?")
+        params.append("vertex")
+    elif kind == "manual":
+        clauses.append("source = ? AND status != ?")
+        params.extend(["manual", "note"])
+    elif kind == "note":
+        clauses.append("status = ?")
         params.append("note")
     if q and q.strip():
         clauses.append("prompt LIKE ?")

@@ -32,7 +32,7 @@ export default function History({
   const [gens, setGens] = useState<Generation[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | null>(null);
-  const [noteFilter, setNoteFilter] = useState<boolean | null>(null);
+  const [kindFilter, setKindFilter] = useState<"vertex" | "manual" | "note" | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -51,7 +51,7 @@ export default function History({
         offset: page * pageSize,
         tag: tagFilter ?? undefined,
         q: query || undefined,
-        note: noteFilter ?? undefined,
+        kind: kindFilter ?? undefined,
       }),
       api.listTags(),
     ])
@@ -66,7 +66,7 @@ export default function History({
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [page, pageSize, tagFilter, noteFilter, query, refreshKey]);
+  useEffect(load, [page, pageSize, tagFilter, kindFilter, query, refreshKey]);
 
   const toggleStar = async (img: ImageRow) => {
     await api.patchImage(img.id, { starred: !img.starred });
@@ -180,30 +180,40 @@ export default function History({
           />
           <div className="seg history-kind-seg">
             <button
-              className={noteFilter === null ? "on" : ""}
+              className={kindFilter === null ? "on" : ""}
               title={t("filter_all")}
               onClick={() => {
-                setNoteFilter(null);
+                setKindFilter(null);
                 setPage(0);
               }}
             >
               {t("filter_all")}
             </button>
             <button
-              className={noteFilter === false ? "on" : ""}
-              title={t("hist_filter_gens")}
+              className={kindFilter === "vertex" ? "on" : ""}
+              title={t("hist_filter_vertex")}
               onClick={() => {
-                setNoteFilter(false);
+                setKindFilter("vertex");
                 setPage(0);
               }}
             >
-              <i className="fa-solid fa-image" />
+              <i className="fa-solid fa-wand-magic-sparkles" />
             </button>
             <button
-              className={noteFilter === true ? "on" : ""}
+              className={kindFilter === "manual" ? "on" : ""}
+              title={t("hist_filter_manual")}
+              onClick={() => {
+                setKindFilter("manual");
+                setPage(0);
+              }}
+            >
+              <i className="fa-solid fa-upload" />
+            </button>
+            <button
+              className={kindFilter === "note" ? "on" : ""}
               title={t("hist_filter_notes")}
               onClick={() => {
-                setNoteFilter(true);
+                setKindFilter("note");
                 setPage(0);
               }}
             >
@@ -232,14 +242,14 @@ export default function History({
         </div>
       ) : gens.length === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
-          {query || tagFilter !== null || noteFilter !== null ? (
+          {query || tagFilter !== null || kindFilter !== null ? (
             <div className="empty-state">
               <span>{t("no_results")}</span>
               <button
                 onClick={() => {
                   setQuery("");
                   setTagFilter(null);
-                  setNoteFilter(null);
+                  setKindFilter(null);
                   setPage(0);
                 }}
               >

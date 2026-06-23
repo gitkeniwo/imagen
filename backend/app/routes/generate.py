@@ -115,11 +115,11 @@ async def generate(body: GenerateRequest, request: Request):
         cur = conn.execute(
             """INSERT INTO generations
                (prompt, model, aspect_ratio, resolution, status, error_message,
-                raw_finish, output_image_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                raw_finish, output_image_id, created_at, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.prompt, body.model, body.aspectRatio, body.resolution,
              result.status, result.message, result.raw_finish,
-             output_image["id"] if output_image else None, _now()),
+             output_image["id"] if output_image else None, _now(), "vertex"),
         )
         gen_id = cur.lastrowid
         for pos, img_id in enumerate(ordered_ids):
