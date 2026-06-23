@@ -37,33 +37,40 @@ function toLocalInputValue(iso: string): string {
 // Add or edit a manually-logged history record (or, in edit mode, any
 // existing record). `existing` switches the modal into edit mode: fields are
 // pre-filled and saving calls the update endpoint instead of create.
+// `duplicate` pre-fills like edit mode but always creates a new record with the
+// current timestamp (used to log a batch of outputs that share one prompt).
 export default function AddHistoryModal({
   existing,
+  duplicate,
   onClose,
   onSaved,
 }: {
   existing?: Generation;
+  duplicate?: Generation;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useI18n();
-  const [prompt, setPrompt] = useState(existing?.prompt ?? "");
-  const [model, setModel] = useState(existing?.model ?? MODELS[0].id);
-  const [aspectRatio, setAspectRatio] = useState(existing?.aspect_ratio ?? ASPECT_RATIOS[0]);
-  const [resolution, setResolution] = useState(existing?.resolution ?? RESOLUTIONS[0]);
+  // Source record to pre-fill from: an explicit edit target, else a duplicate.
+  // createdAt is only carried over in true edit mode, not when duplicating.
+  const src = existing ?? duplicate;
+  const [prompt, setPrompt] = useState(src?.prompt ?? "");
+  const [model, setModel] = useState(src?.model ?? MODELS[0].id);
+  const [aspectRatio, setAspectRatio] = useState(src?.aspect_ratio ?? ASPECT_RATIOS[0]);
+  const [resolution, setResolution] = useState(src?.resolution ?? RESOLUTIONS[0]);
   const [kind, setKind] = useState<Kind>(
-    existing ? (existing.status === "note" ? "note" : existing.source) : "manual",
+    src ? (src.status === "note" ? "note" : src.source) : "manual",
   );
-  const [status, setStatus] = useState<RealStatus>(initialStatus(existing));
-  const [errorMessage, setErrorMessage] = useState(existing?.error_message ?? "");
+  const [status, setStatus] = useState<RealStatus>(initialStatus(src));
+  const [errorMessage, setErrorMessage] = useState(src?.error_message ?? "");
   const [createdAt, setCreatedAt] = useState(
     existing ? toLocalInputValue(existing.created_at) : "",
   );
-  const [inputImages, setInputImages] = useState<ImageRow[]>(existing?.inputs ?? []);
-  const [outputImage, setOutputImage] = useState<ImageRow | null>(existing?.outputImage ?? null);
-  const [outputNote, setOutputNote] = useState(existing?.outputImage?.note ?? "");
+  const [inputImages, setInputImages] = useState<ImageRow[]>(src?.inputs ?? []);
+  const [outputImage, setOutputImage] = useState<ImageRow | null>(src?.outputImage ?? null);
+  const [outputNote, setOutputNote] = useState(src?.outputImage?.note ?? "");
   const [outputTagIds, setOutputTagIds] = useState<number[]>(
-    (existing?.outputImage?.tags ?? []).map((tg) => tg.id),
+    (src?.outputImage?.tags ?? []).map((tg) => tg.id),
   );
   const [outputBusy, setOutputBusy] = useState(false);
   const [saving, setSaving] = useState(false);

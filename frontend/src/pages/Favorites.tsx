@@ -41,6 +41,7 @@ export default function Favorites({
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [columns, setColumns] = useState(initialFavColumns);
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
+  const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -227,6 +228,13 @@ export default function Favorites({
                 >
                   <i className="fa-solid fa-pen" />
                 </button>
+                <button
+                  className="icon-btn"
+                  title={t("duplicate")}
+                  onClick={() => setDuplicatingGen(g)}
+                >
+                  <i className="fa-solid fa-clone" />
+                </button>
                 <div className="spacer" style={{ flex: 1 }} />
                 <button className="link-btn" onClick={() => copyPrompt(g)}>
                   {copiedId === g.id ? t("copied") : t("copy_prompt")}
@@ -327,6 +335,16 @@ export default function Favorites({
           onClose={() => setEditingGen(null)}
           onSaved={() => {
             setEditingGen(null);
+            load();
+          }}
+        />
+      )}
+      {duplicatingGen && (
+        <AddHistoryModal
+          duplicate={duplicatingGen}
+          onClose={() => setDuplicatingGen(null)}
+          onSaved={() => {
+            setDuplicatingGen(null);
             load();
           }}
         />

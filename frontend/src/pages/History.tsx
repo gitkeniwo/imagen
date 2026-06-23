@@ -36,6 +36,7 @@ export default function History({
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
+  const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
   const [columns, setColumns] = useState(initialHistoryColumns);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -281,6 +282,13 @@ export default function History({
                 >
                   <i className="fa-solid fa-pen" />
                 </button>
+                <button
+                  className="icon-btn"
+                  title={t("duplicate")}
+                  onClick={() => setDuplicatingGen(g)}
+                >
+                  <i className="fa-solid fa-clone" />
+                </button>
                 <div className="spacer" style={{ flex: 1 }} />
                 <button onClick={() => onReuse(g)}>{t("reuse")}</button>
               </div>
@@ -400,6 +408,16 @@ export default function History({
           onClose={() => setEditingGen(null)}
           onSaved={() => {
             setEditingGen(null);
+            load();
+          }}
+        />
+      )}
+      {duplicatingGen && (
+        <AddHistoryModal
+          duplicate={duplicatingGen}
+          onClose={() => setDuplicatingGen(null)}
+          onSaved={() => {
+            setDuplicatingGen(null);
             load();
           }}
         />
