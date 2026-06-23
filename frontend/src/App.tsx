@@ -6,6 +6,7 @@ import Library from "./pages/Library";
 import History from "./pages/History";
 import Favorites from "./pages/Favorites";
 import SettingsModal from "./components/SettingsModal";
+import AddHistoryModal from "./components/AddHistoryModal";
 import UsageDashboard from "./components/UsageDashboard";
 import ImageViewer from "./components/ImageViewer";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
@@ -70,6 +71,7 @@ export default function App() {
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAddHistory, setShowAddHistory] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [queue, setQueue] = useState<QueueTask[]>([]);
   const [concurrency, setConcurrency] = useState(initialConcurrency);
@@ -349,6 +351,9 @@ export default function App() {
           >
             {lang === "zh" ? "EN" : "ZH"}
           </button>
+          <button className="topbar-btn" onClick={() => setShowAddHistory(true)} title={t("add_history_title")}>
+            <i className="fa-solid fa-square-plus"></i> {t("add_history")}
+          </button>
           <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
             <i className="fa-solid fa-chart-simple"></i> {t("usage")}
           </button>
@@ -476,6 +481,13 @@ export default function App() {
           onSaved={refreshConfig}
           undoSeconds={undoSeconds}
           setUndoSeconds={setUndoSeconds}
+        />
+      )}
+
+      {showAddHistory && (
+        <AddHistoryModal
+          onClose={() => setShowAddHistory(false)}
+          onSaved={bumpData}
         />
       )}
 

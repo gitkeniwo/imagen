@@ -18,6 +18,20 @@ class GenerateRequest(BaseModel):
     clientTaskId: Optional[str] = None
 
 
+class ManualGenerationRequest(BaseModel):
+    """A generation row created from results produced elsewhere (no Vertex call)."""
+    prompt: str = ""
+    model: str
+    aspectRatio: Optional[str] = None
+    resolution: Optional[str] = None
+    status: str = "success"  # "success" | "blocked" | "error"
+    errorMessage: Optional[str] = None
+    inputImageIds: list[int] = Field(default_factory=list)
+    outputImageId: Optional[int] = None
+    tagIds: list[int] = Field(default_factory=list)
+    createdAt: Optional[str] = None  # ISO-8601; defaults to now if omitted
+
+
 class TagCreate(BaseModel):
     name: str
     color: Optional[str] = None

@@ -11,12 +11,13 @@ import { useI18n } from "../i18n";
 const PRICES_KEY = "imagen-cost-prices";
 const PERIODS: StatPeriod[] = ["day", "week", "month", "year", "all"];
 
-const STATUS_ORDER = ["success", "blocked", "error", "aborted"] as const;
+const STATUS_ORDER = ["success", "blocked", "error", "aborted", "note"] as const;
 const STATUS_CLASS: Record<string, string> = {
   success: "success",
   blocked: "blocked",
   error: "error",
   aborted: "aborted",
+  note: "note",
 };
 
 interface PriceRow {

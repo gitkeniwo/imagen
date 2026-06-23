@@ -32,7 +32,7 @@ export interface Generation {
   model: string;
   aspect_ratio: string | null;
   resolution: string | null;
-  status: "success" | "blocked" | "error" | "aborted";
+  status: "success" | "blocked" | "error" | "aborted" | "note";
   error_message: string | null;
   raw_finish: string | null;
   output_image_id: number | null;
@@ -92,6 +92,18 @@ export interface GenerateBody {
   uploadImageIds: number[];
   tagIds?: number[];
   clientTaskId?: string;
+}
+
+export interface ManualGenerationBody {
+  prompt: string;
+  model: string;
+  aspectRatio?: string | null;
+  resolution?: string | null;
+  status: "success" | "blocked" | "error" | "note";
+  errorMessage?: string | null;
+  inputImageIds: number[];
+  outputImageId?: number | null;
+  createdAt?: string | null;
 }
 
 // Live progress of an in-flight generation (polled while a task is running).
@@ -252,6 +264,7 @@ export const api = {
       tag?: number;
       q?: string;
       starred?: boolean;
+      note?: boolean;
     } = {},
   ): Promise<{ generations: Generation[]; total: number }> {
     const q = new URLSearchParams();
@@ -260,10 +273,20 @@ export const api = {
     if (params.tag) q.set("tag", String(params.tag));
     if (params.q && params.q.trim()) q.set("q", params.q.trim());
     if (params.starred) q.set("starred", "true");
+    if (params.note !== undefined) q.set("note", String(params.note));
     return handle(await fetch(`/api/generations?${q.toString()}`));
   },
   async generationByOutput(imageId: number): Promise<Generation | null> {
     return handle(await fetch(`/api/generations/by-output/${imageId}`));
+  },
+  async createManualGeneration(body: ManualGenerationBody): Promise<Generation> {
+    return handle(
+      await fetch("/api/generations/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
   },
   async listTags(): Promise<{ tags: Tag[] }> {
     return handle(await fetch("/api/tags"));

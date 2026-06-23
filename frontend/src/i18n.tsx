@@ -67,6 +67,9 @@ const zh: Dict = {
   filter_all: "All",
   filter_upload: "Uploaded",
   filter_generated: "Generated",
+  hist_filter_gens: "Generations",
+  hist_filter_notes: "Notes",
+  edit_annotation: "Edit note & tags",
   lib_hint: "Click an image to add it as a reference",
   columns_per_row: "Per row",
   density: "Density",
@@ -124,6 +127,7 @@ const zh: Dict = {
   status_success: "Success",
   status_blocked: "Blocked",
   status_error: "Error",
+  status_note: "Note",
   status_pending: "Queued",
   status_running: "Generating",
   status_cancelling: "Cancelling",
@@ -208,6 +212,18 @@ const zh: Dict = {
   reason_403: "Permission denied (403): ensure the account has the Vertex AI User role and the aiplatform API is enabled.",
   reason_404: "Model not found or unavailable in this region (404).",
   reason_429: "Quota / rate limit reached (429).",
+
+  add_history: "Add",
+  add_history_title: "Add history record",
+  add_history_desc:
+    "Save a result made elsewhere (another tool/model) into History, alongside real generations.",
+  add_history_output: "Output image",
+  add_history_status: "Status",
+  add_history_error_message: "Error message",
+  add_history_created_at: "Created at (optional — leave blank for now)",
+  add_history_need_output: "An output image is required when status is Success.",
+  pick_from_library: "Pick from library",
+  note_no_output: "This is a note — no output image.",
 };
 
 const en: Dict = {
@@ -273,6 +289,9 @@ const en: Dict = {
   filter_all: "All",
   filter_upload: "Uploaded",
   filter_generated: "Generated",
+  hist_filter_gens: "Generations",
+  hist_filter_notes: "Notes",
+  edit_annotation: "Edit note & tags",
   lib_hint: "Click an image to add it as a reference",
   columns_per_row: "Per row",
   density: "Density",
@@ -330,6 +349,7 @@ const en: Dict = {
   status_success: "Success",
   status_blocked: "Blocked",
   status_error: "Error",
+  status_note: "Note",
   status_pending: "Queued",
   status_running: "Generating",
   status_cancelling: "Cancelling",
@@ -413,6 +433,18 @@ const en: Dict = {
   reason_403: "Permission denied (403): ensure the account has the Vertex AI User role and the aiplatform API is enabled.",
   reason_404: "Model not found or unavailable in this region (404).",
   reason_429: "Quota / rate limit reached (429).",
+
+  add_history: "Add",
+  add_history_title: "Add history record",
+  add_history_desc:
+    "Save a result made elsewhere (another tool/model) into History, alongside real generations.",
+  add_history_output: "Output image",
+  add_history_status: "Status",
+  add_history_error_message: "Error message",
+  add_history_created_at: "Created at (optional — leave blank for now)",
+  add_history_need_output: "An output image is required when status is Success.",
+  pick_from_library: "Pick from library",
+  note_no_output: "This is a note — no output image.",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };
