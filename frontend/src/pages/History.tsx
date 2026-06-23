@@ -248,8 +248,18 @@ export default function History({
         >
           {gens.map((g) => {
             const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
+            const cornerKind =
+              g.status === "note" ? "note"
+              : g.source === "manual" ? "manual"
+              : null;
             return (
             <div className="panel history-panel" key={g.id}>
+              {cornerKind && (
+                <span
+                  className={`card-corner ${cornerKind}`}
+                  title={cornerKind === "manual" ? t("hist_filter_manual") : t("hist_filter_notes")}
+                />
+              )}
               <div className="history-meta">
                 <span className={`badge ${g.status}`}>{t(`status_${g.status}`)}</span>
                 <span className="muted small">{g.model}</span>

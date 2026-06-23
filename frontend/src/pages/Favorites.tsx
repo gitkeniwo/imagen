@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 
 const COMPACT_PAGE_SIZE = 12;
@@ -39,6 +40,7 @@ export default function Favorites({
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [columns, setColumns] = useState(initialFavColumns);
+  const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -183,8 +185,19 @@ export default function Favorites({
           className={`history-list${compact ? " compact" : ""}`}
           style={{ "--history-columns": columns } as CSSProperties}
         >
-          {gens.map((g) => (
+          {gens.map((g) => {
+            const cornerKind =
+              g.status === "note" ? "note"
+              : g.source === "manual" ? "manual"
+              : null;
+            return (
             <div className="panel history-panel fav-panel" key={g.id}>
+              {cornerKind && (
+                <span
+                  className={`card-corner ${cornerKind}`}
+                  title={cornerKind === "manual" ? t("hist_filter_manual") : t("hist_filter_notes")}
+                />
+              )}
               {g.outputImage && (
                 <input
                   className="fav-note"
@@ -207,6 +220,13 @@ export default function Favorites({
                 {g.resolution && (
                   <span className="muted small">· {g.resolution}</span>
                 )}
+                <button
+                  className="icon-btn"
+                  title={t("edit_annotation")}
+                  onClick={() => setEditingGen(g)}
+                >
+                  <i className="fa-solid fa-pen" />
+                </button>
                 <div className="spacer" style={{ flex: 1 }} />
                 <button className="link-btn" onClick={() => copyPrompt(g)}>
                   {copiedId === g.id ? t("copied") : t("copy_prompt")}
@@ -294,11 +314,23 @@ export default function Favorites({
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {pager}
+
+      {editingGen && (
+        <AddHistoryModal
+          existing={editingGen}
+          onClose={() => setEditingGen(null)}
+          onSaved={() => {
+            setEditingGen(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
