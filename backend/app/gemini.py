@@ -74,18 +74,18 @@ BLOCK_FINISH = {
 # localizes these by code (raw_finish) for zh/en — keep the codes in sync with
 # frontend/src/i18n.tsx reason_* keys.
 _HUMAN_BLOCK = {
-    "SAFETY": "结果被 Vertex AI 安全策略拦截（SAFETY）。",
-    "IMAGE_SAFETY": "图像被安全策略拦截（IMAGE_SAFETY）。",
-    "PROHIBITED_CONTENT": "内容被判定为禁止内容（PROHIBITED_CONTENT）。",
-    "IMAGE_PROHIBITED_CONTENT": "图像被判定为禁止内容（IMAGE_PROHIBITED_CONTENT）。",
-    "RECITATION": "结果因疑似复述受版权保护内容被拦截（RECITATION）。",
-    "IMAGE_RECITATION": "图像因疑似复述受版权保护内容被拦截（IMAGE_RECITATION）。",
-    "BLOCKLIST": "命中屏蔽词表（BLOCKLIST）。",
-    "SPII": "疑似涉及敏感个人信息（SPII）。",
-    "IMAGE_OTHER": "图像因其它原因未生成（IMAGE_OTHER）。",
-    "NO_IMAGE": "模型未生成图像（NO_IMAGE）。",
-    "JAILBREAK": "请求被判定为越狱尝试（JAILBREAK）。",
-    "MODEL_ARMOR": "被 Model Armor 策略拦截（MODEL_ARMOR）。",
+    "SAFETY": "Blocked by Vertex AI safety policy (SAFETY).",
+    "IMAGE_SAFETY": "Image blocked by safety policy (IMAGE_SAFETY).",
+    "PROHIBITED_CONTENT": "Flagged as prohibited content (PROHIBITED_CONTENT).",
+    "IMAGE_PROHIBITED_CONTENT": "Image flagged as prohibited content (IMAGE_PROHIBITED_CONTENT).",
+    "RECITATION": "Blocked for likely reciting copyrighted content (RECITATION).",
+    "IMAGE_RECITATION": "Image blocked for likely reciting copyrighted content (IMAGE_RECITATION).",
+    "BLOCKLIST": "Hit the blocklist (BLOCKLIST).",
+    "SPII": "Possibly involves sensitive personal information (SPII).",
+    "IMAGE_OTHER": "Image was not produced for another reason (IMAGE_OTHER).",
+    "NO_IMAGE": "The model did not produce an image (NO_IMAGE).",
+    "JAILBREAK": "Request flagged as a jailbreak attempt (JAILBREAK).",
+    "MODEL_ARMOR": "Blocked by Model Armor policy (MODEL_ARMOR).",
 }
 
 
@@ -148,12 +148,12 @@ def parse_response(resp: types.GenerateContentResponse) -> GeminiResult:
         code = _enum_name(feedback.block_reason)
         msg = _HUMAN_BLOCK.get(code) or getattr(
             feedback, "block_reason_message", None
-        ) or f"Prompt 被拦截（{code}）。"
+        ) or f"Prompt blocked ({code})."
         return GeminiResult(status="blocked", message=msg, raw_finish=code)
 
     candidates = resp.candidates or []
     if not candidates:
-        return GeminiResult(status="error", message="模型未返回任何候选结果。")
+        return GeminiResult(status="error", message="Model returned no candidates.")
 
     cand = candidates[0]
     finish = _enum_name(cand.finish_reason)
@@ -179,23 +179,23 @@ def parse_response(resp: types.GenerateContentResponse) -> GeminiResult:
 
     # No image returned.
     if finish in BLOCK_FINISH:
-        msg = _HUMAN_BLOCK.get(finish, f"结果被拦截（{finish}）。")
+        msg = _HUMAN_BLOCK.get(finish, f"Result blocked ({finish}).")
         return GeminiResult(status="blocked", message=msg, raw_finish=finish, text=text)
 
-    msg = "模型未返回图像。"
+    msg = "Model returned no image."
     if text:
-        msg += f"\n模型回复：{text}"
+        msg += f"\nModel reply: {text}"
     return GeminiResult(status="blocked", message=msg, raw_finish=finish, text=text)
 
 
 def _api_error_message(code: Optional[int], detail: str) -> str:
     base = {
-        400: "请求参数有误（400）",
-        401: "凭据无效或未授权（401）",
-        403: "无权限或被拒绝（403）：请确认账号有 Vertex AI User 角色、项目已启用 aiplatform API",
-        404: "模型不存在或该区域不可用（404）",
-        429: "触发配额/限流（429）",
-    }.get(code or 0, f"请求失败（{code}）" if code else "请求失败")
+        400: "Bad request parameters (400)",
+        401: "Invalid or unauthorized credentials (401)",
+        403: "Permission denied (403): ensure the account has the Vertex AI User role and the aiplatform API is enabled",
+        404: "Model not found or unavailable in this region (404)",
+        429: "Quota / rate limit reached (429)",
+    }.get(code or 0, f"Request failed ({code})" if code else "Request failed")
     return f"{base}：{detail}" if detail else base
 
 
@@ -252,7 +252,7 @@ async def _await_with_heartbeat(coro, tid: str, attempt: int, model: str):
             await asyncio.sleep(HEARTBEAT_FIRST_S if first else HEARTBEAT_INTERVAL_S)
             first = False
             logger.warning(
-                "[%s] attempt %d 仍在等待 Gemini 返回（%s），已 %.0fs 未响应",
+                "[%s] attempt %d still waiting for Gemini response (%s), %.0fs since start",
                 tid, attempt + 1, model, time.monotonic() - start,
             )
 
@@ -299,12 +299,12 @@ async def generate(
     try:
         client = genai.Client(vertexai=True, project=project, location=location)
     except Exception as e:  # ADC / config resolution failure at construct time
-        logger.warning("[%s] 无法初始化 Vertex 客户端：%s", tid, e)
-        return GeminiResult(status="error", message=f"无法初始化 Vertex 客户端：{e}")
+        logger.warning("[%s] failed to create Vertex client: %s", tid, e)
+        return GeminiResult(status="error", message=f"Failed to create Vertex client: {e}")
     contents = build_contents(prompt, images)
     config = build_config(model, aspect_ratio, resolution, output_mime)
     logger.info(
-        "[%s] 开始生成 model=%s project=%s 输入图 %d 张",
+        "[%s] starting generation model=%s project=%s input_images=%d",
         tid, model, project, len(images),
     )
 
@@ -317,11 +317,11 @@ async def generate(
         # a completed (billable) call is returned & kept, never discarded.
         if should_abort and should_abort():
             logger.info(
-                "[%s] 客户端取消，停止后续重试（已完成 %d 次尝试）", tid, attempt
+                "[%s] client cancelled, stopping further retries (completed %d attempts)", tid, attempt
             )
             return GeminiResult(
                 status="aborted",
-                message="用户取消（已停止后续重试）。",
+                message="User cancelled (stopped further retries).",
                 raw_finish="ABORTED",
             )
         try:
@@ -336,10 +336,10 @@ async def generate(
             result = parse_response(resp)
             elapsed = time.monotonic() - start_ts
             if result.status == "success":
-                logger.info("[%s] 成功，总耗时 %.1fs，重试 %d 次", tid, elapsed, retries_done)
+                logger.info("[%s] success, total %.1fs, %d retries", tid, elapsed, retries_done)
             else:
                 logger.info(
-                    "[%s] 被拦截（%s），总耗时 %.1fs，重试 %d 次",
+                    "[%s] blocked (%s), total %.1fs, %d retries",
                     tid, result.raw_finish or "?", elapsed, retries_done,
                 )
             return result
@@ -352,7 +352,7 @@ async def generate(
             delay = await _schedule_retry(attempt, code)
             _emit({"phase": "retrying", "attempt": attempt + 1, "code": code, "delay": round(delay)})
             logger.warning(
-                "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
+                "[%s] attempt %d failed code=%s, will retry in ~%.0fs (%d total retries)",
                 tid, attempt + 1, code, delay, retries_done,
             )
             continue
@@ -364,12 +364,12 @@ async def generate(
                 delay = await _schedule_retry(attempt, code)
                 _emit({"phase": "retrying", "attempt": attempt + 1, "code": code, "delay": round(delay)})
                 logger.warning(
-                    "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
+                    "[%s] attempt %d failed code=%s, will retry in ~%.0fs (%d total retries)",
                     tid, attempt + 1, code, delay, retries_done,
                 )
                 continue
             logger.warning(
-                "[%s] 失败 code=%s（不可重试），总耗时 %.1fs",
+                "[%s] failed code=%s (not retryable), total %.1fs",
                 tid, code, time.monotonic() - start_ts,
             )
             return GeminiResult(
@@ -385,12 +385,12 @@ async def generate(
                 delay = await _schedule_retry(attempt, code)
                 _emit({"phase": "retrying", "attempt": attempt + 1, "code": code, "delay": round(delay)})
                 logger.warning(
-                    "[%s] attempt %d 失败 code=%s，将在约 %.0fs 后重试（累计重试 %d 次）",
+                    "[%s] attempt %d failed code=%s, will retry in ~%.0fs (%d total retries)",
                     tid, attempt + 1, code, delay, retries_done,
                 )
                 continue
             logger.warning(
-                "[%s] 失败 code=%s（不可重试），总耗时 %.1fs",
+                "[%s] failed code=%s (not retryable), total %.1fs",
                 tid, code, time.monotonic() - start_ts,
             )
             return GeminiResult(
@@ -400,12 +400,12 @@ async def generate(
             )
         except Exception as e:  # network / unexpected / credentials
             if "default credentials" in str(e).lower() or "DefaultCredentials" in type(e).__name__:
-                logger.warning("[%s] 未找到 ADC 凭据", tid)
+                logger.warning("[%s] no ADC credentials found", tid)
                 return GeminiResult(
                     status="error",
-                    message="未找到 ADC 凭据。请在本机运行 "
-                            "`gcloud auth application-default login` 并 "
-                            "`gcloud auth application-default set-quota-project <项目ID>`。",
+                    message="No ADC credentials found. Run "
+                            "`gcloud auth application-default login` and "
+                            "`gcloud auth application-default set-quota-project <PROJECT_ID>` on this machine.",
                 )
             last_exc = e
             if attempt >= MAX_NON_429_ATTEMPTS - 1:
@@ -414,7 +414,7 @@ async def generate(
             delay = await _schedule_retry(attempt, None)
             _emit({"phase": "retrying", "attempt": attempt + 1, "code": None, "delay": round(delay)})
             logger.warning(
-                "[%s] attempt %d 失败（%s），将在约 %.0fs 后重试（累计重试 %d 次）",
+                "[%s] attempt %d failed (%s), will retry in ~%.0fs (%d total retries)",
                 tid, attempt + 1, type(e).__name__, delay, retries_done,
             )
             continue
@@ -422,11 +422,11 @@ async def generate(
     code = _error_code(last_exc) if last_exc else None
     detail = str(getattr(last_exc, "message", last_exc)) if last_exc else ""
     logger.warning(
-        "[%s] 失败 code=%s，总耗时 %.1fs，重试 %d 次",
+        "[%s] failed code=%s, total %.1fs, %d retries",
         tid, code, time.monotonic() - start_ts, retries_done,
     )
     return GeminiResult(
         status="error",
-        message=f"{_api_error_message(code, detail)}；已自动排期重试 {retries_done} 次。",
+        message=f"{_api_error_message(code, detail)}; auto-scheduled {retries_done} retries.",
         raw_finish=str(code or ""),
     )

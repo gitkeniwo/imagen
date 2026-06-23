@@ -344,10 +344,10 @@ export default function App() {
           <div className="spacer" />
           <button
             className="lang-toggle"
-            title="中文 / English"
+            title="Language"
             onClick={() => setLang(lang === "zh" ? "en" : "zh")}
           >
-            {lang === "zh" ? "EN" : "中"}
+            {lang === "zh" ? "EN" : "ZH"}
           </button>
           <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
             <i className="fa-solid fa-chart-simple"></i> {t("usage")}

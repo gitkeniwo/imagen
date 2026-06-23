@@ -45,7 +45,7 @@ def cancel_generate(cid: str):
 async def generate(body: GenerateRequest, request: Request):
     project, location = read_vertex()
     if not project:
-        raise HTTPException(status_code=400, detail="尚未设置 Vertex 项目，请先在设置中填写 Project ID。")
+        raise HTTPException(status_code=400, detail="Vertex project not set. Please enter your Project ID in Settings.")
 
     # Ordered, de-duplicated input image ids: library refs first, then uploads.
     ordered_ids: list[int] = []
@@ -58,7 +58,7 @@ async def generate(body: GenerateRequest, request: Request):
         for img_id in ordered_ids:
             row = storage.get_image(conn, img_id)
             if not row:
-                raise HTTPException(status_code=404, detail=f"输入图片 {img_id} 不存在。")
+                raise HTTPException(status_code=404, detail=f"Input image {img_id} does not exist.")
             data = storage.file_on_disk(row).read_bytes()
             input_images.append(gemini.InputImage(data=data, mime=row["mime"]))
 
