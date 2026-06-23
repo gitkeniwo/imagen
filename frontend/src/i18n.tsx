@@ -227,6 +227,8 @@ const zh: Dict = {
   add_history_error_message: "Error message",
   add_history_created_at: "Created at (optional — leave blank for now)",
   add_history_need_output: "An output image is required when status is Success.",
+  batch_output_hint:
+    "Creates {n} records — one per output image. Note & tags apply to all.",
   pick_from_library: "Pick from library",
   note_no_output: "This is a note — no output image.",
 };
@@ -453,6 +455,8 @@ const en: Dict = {
   add_history_error_message: "Error message",
   add_history_created_at: "Created at (optional — leave blank for now)",
   add_history_need_output: "An output image is required when status is Success.",
+  batch_output_hint:
+    "Creates {n} records — one per output image. Note & tags apply to all.",
   pick_from_library: "Pick from library",
   note_no_output: "This is a note — no output image.",
 };

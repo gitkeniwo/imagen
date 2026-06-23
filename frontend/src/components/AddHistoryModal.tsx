@@ -67,7 +67,9 @@ export default function AddHistoryModal({
     existing ? toLocalInputValue(existing.created_at) : "",
   );
   const [inputImages, setInputImages] = useState<ImageRow[]>(src?.inputs ?? []);
-  const [outputImage, setOutputImage] = useState<ImageRow | null>(src?.outputImage ?? null);
+  const [outputImages, setOutputImages] = useState<ImageRow[]>(
+    src?.outputImage ? [src.outputImage] : [],
+  );
   const [outputNote, setOutputNote] = useState(src?.outputImage?.note ?? "");
   const [outputTagIds, setOutputTagIds] = useState<number[]>(
     (src?.outputImage?.tags ?? []).map((tg) => tg.id),
@@ -77,28 +79,47 @@ export default function AddHistoryModal({
   const [err, setErr] = useState<string | null>(null);
   const [picker, setPicker] = useState<"input" | "output" | null>(null);
 
+  const isCreate = !existing;
+
   const addInputImage = (img: ImageRow) =>
     setInputImages((prev) => (prev.some((i) => i.id === img.id) ? prev : [...prev, img]));
 
+  // Append an output image. In create mode multiple outputs are allowed
+  // (each becomes its own record on save); in edit mode only one is kept.
+  const addOutput = (img: ImageRow) => {
+    setOutputImages((prev) => {
+      if (prev.some((i) => i.id === img.id)) return prev;
+      return isCreate ? [...prev, img] : [img];
+    });
+  };
+
+  // Re-seed the shared note/tags from a picked image (used when picking from
+  // the library so the chosen image's existing note/tags are surfaced).
   const pickOutput = (img: ImageRow) => {
-    setOutputImage(img);
+    addOutput(img);
     setOutputNote(img.note ?? "");
     setOutputTagIds((img.tags ?? []).map((tg) => tg.id));
   };
 
-  const clearOutput = () => {
-    setOutputImage(null);
-    setOutputNote("");
-    setOutputTagIds([]);
+  const removeOutput = (id: number) => {
+    setOutputImages((prev) => prev.filter((i) => i.id !== id));
   };
 
   const uploadOutput = async (files: FileList | null) => {
     if (!files || !files.length) return;
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (!list.length) return;
     setOutputBusy(true);
     setErr(null);
     try {
-      const { images } = await api.uploadImages([files[0]]);
-      pickOutput(images[0]);
+      const { images } = await api.uploadImages(list);
+      // Upload always seeds the shared note/tags from the first image so the
+      // chosen image's metadata is surfaced (matches the prior single behavior).
+      if (images[0]) {
+        setOutputNote(images[0].note ?? "");
+        setOutputTagIds((images[0].tags ?? []).map((tg) => tg.id));
+      }
+      images.forEach((im) => addOutput(im));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -115,16 +136,29 @@ export default function AddHistoryModal({
     });
   };
 
+  // Apply the shared note/tags to a single output image.
+  const applyNoteAndTags = async (img: ImageRow) => {
+    const current = (img.tags ?? []).map((tg) => tg.id);
+    const added = outputTagIds.filter((x) => !current.includes(x));
+    const removed = current.filter((x) => !outputTagIds.includes(x));
+    if (added.length) await api.batchTag([img.id], added, "add");
+    if (removed.length) await api.batchTag([img.id], removed, "remove");
+    const trimmedNote = outputNote.trim();
+    if (trimmedNote !== (img.note ?? "")) {
+      await api.patchImage(img.id, { note: trimmedNote });
+    }
+  };
+
   const save = async () => {
     const finalStatus: RealStatus | "note" = kind === "note" ? "note" : status;
-    if (finalStatus === "success" && !outputImage) {
+    if (finalStatus === "success" && outputImages.length === 0) {
       setErr(t("add_history_need_output"));
       return;
     }
     setSaving(true);
     setErr(null);
     try {
-      const body = {
+      const base = {
         prompt,
         model,
         aspectRatio,
@@ -133,23 +167,19 @@ export default function AddHistoryModal({
         source: kind === "note" ? ("manual" as const) : kind,
         errorMessage: errorMessage.trim() || null,
         inputImageIds: inputImages.map((i) => i.id),
-        outputImageId: outputImage?.id ?? null,
         createdAt: createdAt ? new Date(createdAt).toISOString() : null,
       };
       if (existing) {
-        await api.updateGeneration(existing.id, body);
+        const out = outputImages[0];
+        await api.updateGeneration(existing.id, { ...base, outputImageId: out?.id ?? null });
+        if (out) await applyNoteAndTags(out);
       } else {
-        await api.createManualGeneration(body);
-      }
-      if (outputImage) {
-        const current = (outputImage.tags ?? []).map((tg) => tg.id);
-        const added = outputTagIds.filter((x) => !current.includes(x));
-        const removed = current.filter((x) => !outputTagIds.includes(x));
-        if (added.length) await api.batchTag([outputImage.id], added, "add");
-        if (removed.length) await api.batchTag([outputImage.id], removed, "remove");
-        const trimmedNote = outputNote.trim();
-        if (trimmedNote !== (outputImage.note ?? "")) {
-          await api.patchImage(outputImage.id, { note: trimmedNote });
+        // Create: one record per output image (same prompt/inputs), so a batch
+        // of N same-prompt outputs becomes N records. No output → one record.
+        const targets = outputImages.length ? outputImages : [null];
+        for (const out of targets) {
+          await api.createManualGeneration({ ...base, outputImageId: out?.id ?? null });
+          if (out) await applyNoteAndTags(out);
         }
       }
       onSaved();
@@ -201,19 +231,21 @@ export default function AddHistoryModal({
         <div style={{ marginTop: 14 }}>
           <label>{t("add_history_output")}</label>
           <div className="tray">
-            {outputImage ? (
-              <div className="chip" title={outputImage.filename}>
-                <img src={imgThumbUrl(outputImage.id)} alt={outputImage.filename} />
-                <button className="x" onClick={clearOutput}>
+            {outputImages.map((im) => (
+              <div className="chip" key={im.id} title={im.filename}>
+                <img src={imgThumbUrl(im.id)} alt={im.filename} />
+                <button className="x" onClick={() => removeOutput(im.id)}>
                   ×
                 </button>
               </div>
-            ) : (
+            ))}
+            {(isCreate || outputImages.length === 0) && (
               <label className="dropzone" style={{ cursor: "pointer" }}>
                 {outputBusy ? <span className="spinner" /> : <span>{t("tray_upload")}</span>}
                 <input
                   type="file"
                   accept="image/*"
+                  multiple={isCreate}
                   hidden
                   onChange={(e) => {
                     uploadOutput(e.target.files);
@@ -223,7 +255,7 @@ export default function AddHistoryModal({
               </label>
             )}
           </div>
-          {!outputImage && (
+          {(isCreate || outputImages.length === 0) && (
             <button
               type="button"
               style={{ marginTop: 8 }}
@@ -232,7 +264,12 @@ export default function AddHistoryModal({
               <i className="fa-solid fa-images" /> {t("pick_from_library")}
             </button>
           )}
-          {outputImage && (
+          {isCreate && outputImages.length > 1 && (
+            <p className="muted small" style={{ marginTop: 6 }}>
+              {t("batch_output_hint", { n: outputImages.length })}
+            </p>
+          )}
+          {outputImages.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <label>{t("note_label")}</label>
               <textarea
@@ -363,7 +400,7 @@ export default function AddHistoryModal({
       </div>
       {picker && (
         <LibraryPickerModal
-          mode={picker === "input" ? "multi" : "single"}
+          mode={picker === "input" || (picker === "output" && isCreate) ? "multi" : "single"}
           onPick={picker === "input" ? addInputImage : pickOutput}
           onClose={() => setPicker(null)}
         />
