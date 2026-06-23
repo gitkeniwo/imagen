@@ -644,14 +644,14 @@ body.resizing-sidebar {
 .custom-select-item .check { width: 16px; color: var(--accent); font-weight: 700; }
 
 .tag-chip-row, .tag-filter-row {
-  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  display: flex; gap: 3px; flex-wrap: wrap; align-items: center;
 }
-.tag-filter-row { padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.tag-filter-row { padding: 3px 12px; border-bottom: 1px solid var(--border); }
 .tag-chip {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 9px; border-radius: 20px; font-size: 12px;
+  padding: 2px 9px; border-radius: 20px; font-size: 12px;
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
-  --tag-color: var(--accent);
+  --tag-color: var(--accent); min-height: 28px;
 }
 .tag-chip:hover:not(.on) { border-color: var(--hover-border); }
 .tag-chip.on {
@@ -662,7 +662,7 @@ body.resizing-sidebar {
   padding: 0 5px; border-radius: 10px;
 }
 .tag-chip.on .tag-count { color: var(--text); }
-.tag-create { display: flex; gap: 6px; margin-top: 8px; }
+.tag-create { display: flex; gap: 6px; margin-top: 4px; }
 .tag-create input { flex: 1; padding: 6px 9px; }
 .tag-create button { flex: 0 0 auto; }
 .tag-picker { margin-top: 4px; }
@@ -795,7 +795,7 @@ body.resizing-sidebar {
 .manager-body .library-panel,
 .manager-body .panel.library-panel { box-shadow: none; border: none; padding: 0; background: transparent; }
 .manager-body .history-toolbar { background: var(--panel); }
-.manager-body .tag-filter-row { padding: 6px 0; }
+.manager-body .tag-filter-row { padding: 3px 0; }
 
 /* ---- Usage dashboard ---- */
 .dash { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
