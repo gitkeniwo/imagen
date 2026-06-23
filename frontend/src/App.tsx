@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, ImageRow, Generation, QueueTask } from "./api";
 import { useI18n } from "./i18n";
 import Generate from "./pages/Generate";
@@ -37,12 +37,12 @@ const DEFAULT_UNDO_SECONDS = 5;
 const SIDEBAR_WIDTH_KEY = "imagen-sidebar-width";
 const DEFAULT_SIDEBAR_WIDTH = 340;
 const MIN_SIDEBAR_WIDTH = 260;
-const MAX_SIDEBAR_WIDTH = 620;
+const SIDEBAR_MAX_RATIO = 0.7;
 
 function initialSidebarWidth() {
   const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
   return Number.isFinite(saved)
-    ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, saved))
+    ? Math.max(MIN_SIDEBAR_WIDTH, saved)
     : DEFAULT_SIDEBAR_WIDTH;
 }
 
@@ -102,11 +102,11 @@ export default function App() {
     if (!resizingSidebar) return;
 
     const onPointerMove = (e: PointerEvent) => {
-      const workspaceLeft =
-        workspaceRef.current?.getBoundingClientRect().left ?? 20;
+      const rect = workspaceRef.current?.getBoundingClientRect();
+      if (!rect) return;
       const next = Math.min(
-        MAX_SIDEBAR_WIDTH,
-        Math.max(MIN_SIDEBAR_WIDTH, e.clientX - workspaceLeft),
+        rect.width * SIDEBAR_MAX_RATIO,
+        Math.max(MIN_SIDEBAR_WIDTH, e.clientX - rect.left),
       );
       setSidebarWidth(next);
     };
@@ -127,6 +127,21 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
+
+  // Clamp sidebar width on mount and window resize so it never exceeds 70%.
+  useLayoutEffect(() => {
+    const clamp = () => {
+      const rect = workspaceRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const maxWidth = rect.width * SIDEBAR_MAX_RATIO;
+      setSidebarWidth((prev) =>
+        Math.min(maxWidth, Math.max(MIN_SIDEBAR_WIDTH, prev)),
+      );
+    };
+    clamp();
+    window.addEventListener("resize", clamp);
+    return () => window.removeEventListener("resize", clamp);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(CONCURRENCY_KEY, String(concurrency));

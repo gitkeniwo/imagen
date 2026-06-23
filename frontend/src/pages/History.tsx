@@ -6,8 +6,8 @@ import SearchBox from "../components/SearchBox";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
-const PROMPT_PREVIEW_CHARS = 160;
-const PROMPT_PREVIEW_LINES = 3;
+const PROMPT_PREVIEW_CHARS = 120;
+const PROMPT_PREVIEW_LINES = 2;
 const HISTORY_COLUMNS_KEY = "imagen-history-columns";
 const HISTORY_COLUMN_OPTIONS = [1, 2, 3];
 const HISTORY_COLUMN_OPTIONS_FULL = [1, 2, 3, 4, 5];
@@ -315,7 +315,7 @@ export default function History({
               )}
 
               {genTags(g).length > 0 && (
-                <div className="card-tags" style={{ marginBottom: 8 }}>
+                <div className="card-tags" style={{ marginBottom: 4 }}>
                   {genTags(g).map((tg) => (
                     <span key={tg.id} className="card-tag">
                       {tg.name}
