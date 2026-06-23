@@ -1,8 +1,8 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow, Tag, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
-import TagPicker from "../components/TagPicker";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -35,8 +35,7 @@ export default function History({
   const [kindFilter, setKindFilter] = useState<"vertex" | "manual" | "note" | null>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [noteDraft, setNoteDraft] = useState<Record<number, string>>({});
+  const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [columns, setColumns] = useState(initialHistoryColumns);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -70,24 +69,6 @@ export default function History({
 
   const toggleStar = async (img: ImageRow) => {
     await api.patchImage(img.id, { starred: !img.starred });
-    load();
-  };
-
-  const saveNote = async (img: ImageRow) => {
-    const draft = noteDraft[img.id];
-    if (draft === undefined) return;
-    const trimmed = draft.trim();
-    if (trimmed === (img.note ?? "")) return;
-    await api.patchImage(img.id, { note: trimmed });
-    load();
-  };
-
-  const applyTags = async (img: ImageRow, next: number[]) => {
-    const current = (img.tags ?? []).map((tg) => tg.id);
-    const added = next.filter((x) => !current.includes(x));
-    const removed = current.filter((x) => !next.includes(x));
-    if (added.length) await api.batchTag([img.id], added, "add");
-    if (removed.length) await api.batchTag([img.id], removed, "remove");
     load();
   };
 
@@ -275,49 +256,24 @@ export default function History({
                 {g.aspect_ratio && <span className="muted small">· {g.aspect_ratio}</span>}
                 {g.resolution && <span className="muted small">· {g.resolution}</span>}
                 {outImg && (
-                  <>
-                    <button
-                      className={`icon-btn${outImg.starred ? " is-starred" : ""}`}
-                      title={outImg.starred ? t("unfavorite") : t("favorite")}
-                      onClick={() => toggleStar(outImg)}
-                    >
-                      <i className={outImg.starred ? "fa-solid fa-star" : "fa-regular fa-star"} />
-                    </button>
-                    <button
-                      className={`icon-btn${editingId === g.id ? " on" : ""}`}
-                      title={t("edit_annotation")}
-                      onClick={() => {
-                        setEditingId(editingId === g.id ? null : g.id);
-                        setNoteDraft((d) => ({ ...d, [outImg.id]: outImg.note ?? "" }));
-                      }}
-                    >
-                      <i className="fa-solid fa-pen" />
-                    </button>
-                  </>
+                  <button
+                    className={`icon-btn${outImg.starred ? " is-starred" : ""}`}
+                    title={outImg.starred ? t("unfavorite") : t("favorite")}
+                    onClick={() => toggleStar(outImg)}
+                  >
+                    <i className={outImg.starred ? "fa-solid fa-star" : "fa-regular fa-star"} />
+                  </button>
                 )}
+                <button
+                  className="icon-btn"
+                  title={t("edit_annotation")}
+                  onClick={() => setEditingGen(g)}
+                >
+                  <i className="fa-solid fa-pen" />
+                </button>
                 <div className="spacer" style={{ flex: 1 }} />
                 <button onClick={() => onReuse(g)}>{t("reuse")}</button>
               </div>
-
-              {editingId === g.id && outImg && (
-                <div className="history-edit-panel">
-                  <label>{t("note_label")}</label>
-                  <textarea
-                    rows={2}
-                    value={noteDraft[outImg.id] ?? outImg.note ?? ""}
-                    placeholder={t("note_placeholder")}
-                    onChange={(e) =>
-                      setNoteDraft((d) => ({ ...d, [outImg.id]: e.target.value }))
-                    }
-                    onBlur={() => saveNote(outImg)}
-                  />
-                  <label style={{ marginTop: 8 }}>{t("tags_label")}</label>
-                  <TagPicker
-                    selected={(outImg.tags ?? []).map((tg) => tg.id)}
-                    onChange={(ids) => applyTags(outImg, ids)}
-                  />
-                </div>
-              )}
 
               {g.prompt && (
                 <div className="history-prompt-wrap">
@@ -427,6 +383,17 @@ export default function History({
       )}
 
       {pager}
+
+      {editingGen && (
+        <AddHistoryModal
+          existing={editingGen}
+          onClose={() => setEditingGen(null)}
+          onSaved={() => {
+            setEditingGen(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

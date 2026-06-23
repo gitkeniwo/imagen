@@ -19,12 +19,13 @@ class GenerateRequest(BaseModel):
 
 
 class ManualGenerationRequest(BaseModel):
-    """A generation row created from results produced elsewhere (no Vertex call)."""
+    """A generation row created/edited from results produced elsewhere (no Vertex call)."""
     prompt: str = ""
     model: str
     aspectRatio: Optional[str] = None
     resolution: Optional[str] = None
-    status: str = "success"  # "success" | "blocked" | "error"
+    status: str = "success"  # "success" | "blocked" | "error" | "note"
+    source: str = "manual"   # "vertex" | "manual" — forced to "manual" when status is "note"
     errorMessage: Optional[str] = None
     inputImageIds: list[int] = Field(default_factory=list)
     outputImageId: Optional[int] = None

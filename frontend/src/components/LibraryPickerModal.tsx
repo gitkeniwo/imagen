@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { ImageRow } from "../api";
 import { useI18n } from "../i18n";
 import Library from "../pages/Library";
@@ -31,7 +32,7 @@ export default function LibraryPickerModal({
     if (mode === "single") onClose();
   };
 
-  return (
+  return createPortal(
     <div className="manager-overlay" onClick={(e) => e.stopPropagation()}>
       <div className="manager-header">
         <span style={{ fontWeight: 600 }}>{t("pick_from_library")}</span>
@@ -42,6 +43,7 @@ export default function LibraryPickerModal({
       <div className="manager-body">
         <Library addToTray={handlePick} onOpenViewer={() => {}} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

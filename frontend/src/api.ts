@@ -101,6 +101,7 @@ export interface ManualGenerationBody {
   aspectRatio?: string | null;
   resolution?: string | null;
   status: "success" | "blocked" | "error" | "note";
+  source: "vertex" | "manual";
   errorMessage?: string | null;
   inputImageIds: number[];
   outputImageId?: number | null;
@@ -284,6 +285,15 @@ export const api = {
     return handle(
       await fetch("/api/generations/manual", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  },
+  async updateGeneration(id: number, body: ManualGenerationBody): Promise<Generation> {
+    return handle(
+      await fetch(`/api/generations/${id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }),

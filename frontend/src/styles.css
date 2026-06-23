@@ -469,12 +469,6 @@ body.resizing-sidebar {
 }
 .icon-btn:hover { color: var(--text); background: none; }
 .icon-btn.is-starred { color: var(--warning); }
-.icon-btn.on { color: var(--accent); }
-.history-edit-panel {
-  margin-bottom: 10px; padding: 10px 12px; background: var(--panel-2);
-  border: 1px solid var(--border); border-radius: 10px;
-}
-.history-edit-panel textarea { width: 100%; resize: vertical; font: inherit; margin-top: 4px; }
 
 .history-list {
   display: grid;

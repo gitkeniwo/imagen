@@ -218,7 +218,10 @@ const zh: Dict = {
   add_history_title: "Add history record",
   add_history_desc:
     "Save a result made elsewhere (another tool/model) into History, alongside real generations.",
+  edit_history_title: "Edit history record",
+  edit_history_desc: "Edit any field of this record — prompt, images, params, status, or timestamp.",
   add_history_output: "Output image",
+  add_history_kind: "Record type",
   add_history_status: "Status",
   add_history_error_message: "Error message",
   add_history_created_at: "Created at (optional — leave blank for now)",
@@ -440,7 +443,10 @@ const en: Dict = {
   add_history_title: "Add history record",
   add_history_desc:
     "Save a result made elsewhere (another tool/model) into History, alongside real generations.",
+  edit_history_title: "Edit history record",
+  edit_history_desc: "Edit any field of this record — prompt, images, params, status, or timestamp.",
   add_history_output: "Output image",
+  add_history_kind: "Record type",
   add_history_status: "Status",
   add_history_error_message: "Error message",
   add_history_created_at: "Created at (optional — leave blank for now)",
