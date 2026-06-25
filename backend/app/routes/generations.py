@@ -62,6 +62,16 @@ def _check_images_exist(conn, body: ManualGenerationRequest) -> None:
             raise HTTPException(status_code=404, detail=f"Image {img_id} does not exist.")
 
 
+def _mark_output_generated(conn, output_image_id) -> None:
+    # The output of a generation is a generated image — flip an uploaded image's
+    # source so it's classified like a real Vertex result (it was uploaded with
+    # source='upload' when logging the record manually).
+    if output_image_id:
+        conn.execute(
+            "UPDATE images SET source = 'generated' WHERE id = ?", (output_image_id,)
+        )
+
+
 @router.post("/manual")
 def create_manual_generation(body: ManualGenerationRequest):
     """Record a generation that happened elsewhere (no Vertex call) so it shows
@@ -82,6 +92,7 @@ def create_manual_generation(body: ManualGenerationRequest):
              _resolved_source(body)),
         )
         gen_id = cur.lastrowid
+        _mark_output_generated(conn, body.outputImageId)
         for pos, img_id in enumerate(body.inputImageIds):
             conn.execute(
                 "INSERT INTO generation_inputs (generation_id, image_id, position) "
@@ -128,6 +139,7 @@ def update_generation(gen_id: int, body: ManualGenerationRequest):
              body.status, body.errorMessage, body.outputImageId, created_at,
              _resolved_source(body), gen_id),
         )
+        _mark_output_generated(conn, body.outputImageId)
         conn.execute("DELETE FROM generation_inputs WHERE generation_id = ?", (gen_id,))
         for pos, img_id in enumerate(body.inputImageIds):
             conn.execute(

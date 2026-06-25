@@ -38,6 +38,7 @@ export default function ImageViewer({
   const [gen, setGen] = useState<Generation | null>(null);
   const [starred, setStarred] = useState(!!current.starred);
   const [note, setNote] = useState(current.note ?? "");
+  const [source, setSource] = useState(current.source);
   const [copied, setCopied] = useState(false);
 
   // Reset editable tags when navigating to another image.
@@ -45,6 +46,7 @@ export default function ImageViewer({
     setTagIds((current.tags ?? []).map((x) => x.id));
     setStarred(!!current.starred);
     setNote(current.note ?? "");
+    setSource(current.source);
     setCopied(false);
   }, [current.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -52,7 +54,7 @@ export default function ImageViewer({
   useEffect(() => {
     let alive = true;
     setGen(null);
-    if (current.source === "generated") {
+    if (source === "generated") {
       api
         .generationByOutput(current.id)
         .then((g) => alive && setGen(g))
@@ -61,12 +63,20 @@ export default function ImageViewer({
     return () => {
       alive = false;
     };
-  }, [current.id, current.source]);
+  }, [current.id, source]);
 
   const toggleStar = async () => {
     const next = !starred;
     setStarred(next);
     await api.patchImage(current.id, { starred: next });
+    onChanged?.();
+  };
+
+  const toggleSource = async () => {
+    const next = source === "generated" ? "upload" : "generated";
+    setSource(next);
+    current.source = next; // keep the in-memory row in sync for re-open
+    await api.patchImage(current.id, { source: next });
     onChanged?.();
   };
 
@@ -146,11 +156,17 @@ export default function ImageViewer({
           </div>
           <div className="muted small">
             {current.width}×{current.height} ·{" "}
-            {current.source === "upload" ? t("tag_upload") : t("tag_generated")}
+            <button
+              className="link-btn"
+              title={t("toggle_source_hint")}
+              onClick={toggleSource}
+            >
+              {source === "upload" ? t("tag_upload") : t("tag_generated")}
+            </button>
             {multi && ` · ${idx + 1}/${items.length}`}
           </div>
 
-          {current.source === "generated" && gen?.prompt && (
+          {source === "generated" && gen?.prompt && (
             <div className="viewer-prompt">
               <div className="viewer-prompt-head">
                 <label>{t("prompt_label")}</label>
@@ -193,7 +209,7 @@ export default function ImageViewer({
             </div>
           )}
 
-          {current.source === "generated" && (
+          {source === "generated" && (
             <>
               <label style={{ marginTop: 16 }}>{t("note_label")}</label>
               <textarea

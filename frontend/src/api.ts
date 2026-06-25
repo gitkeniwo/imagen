@@ -208,7 +208,12 @@ export const api = {
   },
   async patchImage(
     id: number,
-    body: { starred?: boolean; filename?: string; note?: string },
+    body: {
+      starred?: boolean;
+      filename?: string;
+      note?: string;
+      source?: "upload" | "generated";
+    },
   ) {
     return handle(
       await fetch(`/api/images/${id}`, {

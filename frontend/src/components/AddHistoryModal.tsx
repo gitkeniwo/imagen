@@ -93,12 +93,22 @@ export default function AddHistoryModal({
     });
   };
 
+  // Seed the shared note/tags from a newly added image, but only when the user
+  // hasn't set any yet. This surfaces a picked image's metadata on first add
+  // while preserving an existing selection when the output is swapped (e.g. on
+  // duplicate, removing the inherited output and adding a replacement must not
+  // wipe the inherited tags).
+  const seedMetaIfEmpty = (img: ImageRow) => {
+    if (outputNote.trim() !== "" || outputTagIds.length > 0) return;
+    setOutputNote(img.note ?? "");
+    setOutputTagIds((img.tags ?? []).map((tg) => tg.id));
+  };
+
   // Re-seed the shared note/tags from a picked image (used when picking from
   // the library so the chosen image's existing note/tags are surfaced).
   const pickOutput = (img: ImageRow) => {
     addOutput(img);
-    setOutputNote(img.note ?? "");
-    setOutputTagIds((img.tags ?? []).map((tg) => tg.id));
+    seedMetaIfEmpty(img);
   };
 
   const removeOutput = (id: number) => {
@@ -113,12 +123,9 @@ export default function AddHistoryModal({
     setErr(null);
     try {
       const { images } = await api.uploadImages(list);
-      // Upload always seeds the shared note/tags from the first image so the
-      // chosen image's metadata is surfaced (matches the prior single behavior).
-      if (images[0]) {
-        setOutputNote(images[0].note ?? "");
-        setOutputTagIds((images[0].tags ?? []).map((tg) => tg.id));
-      }
+      // Surface the first uploaded image's note/tags, unless the user already
+      // has a selection (see seedMetaIfEmpty).
+      if (images[0]) seedMetaIfEmpty(images[0]);
       images.forEach((im) => addOutput(im));
     } catch (e) {
       setErr((e as Error).message);

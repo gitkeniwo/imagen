@@ -166,6 +166,11 @@ def patch_image(image_id: int, body: ImagePatch):
         # Empty string clears the note (not "no change").
         sets.append("note = ?")
         params.append(body.note or None)
+    if body.source is not None:
+        if body.source not in ("upload", "generated"):
+            raise HTTPException(status_code=400, detail=f"Invalid source: {body.source}")
+        sets.append("source = ?")
+        params.append(body.source)
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
     with get_conn() as conn:
