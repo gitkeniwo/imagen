@@ -75,6 +75,7 @@ export default function AddHistoryModal({
     (src?.outputImage?.tags ?? []).map((tg) => tg.id),
   );
   const [outputBusy, setOutputBusy] = useState(false);
+  const [outputDrag, setOutputDrag] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [picker, setPicker] = useState<"input" | "output" | null>(null);
@@ -225,6 +226,7 @@ export default function AddHistoryModal({
             onAdd={(imgs) => setInputImages((prev) => [...prev, ...imgs])}
             onRemove={(id) => setInputImages((prev) => prev.filter((i) => i.id !== id))}
             onMove={moveInput}
+            noGlobalDrop
           />
           <button
             type="button"
@@ -237,7 +239,22 @@ export default function AddHistoryModal({
 
         <div style={{ marginTop: 14 }}>
           <label>{t("add_history_output")}</label>
-          <div className="tray">
+          <div
+            className={`tray dropzone-wrap${outputDrag ? " drag" : ""}`}
+            onDragOver={(e) => {
+              if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+              e.preventDefault();
+              setOutputDrag(true);
+            }}
+            onDragLeave={() => setOutputDrag(false)}
+            onDrop={(e) => {
+              if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setOutputDrag(false);
+              uploadOutput(e.dataTransfer.files);
+            }}
+          >
             {outputImages.map((im) => (
               <div className="chip" key={im.id} title={im.filename}>
                 <img src={imgThumbUrl(im.id)} alt={im.filename} />
@@ -247,7 +264,7 @@ export default function AddHistoryModal({
               </div>
             ))}
             {(isCreate || outputImages.length === 0) && (
-              <label className="dropzone" style={{ cursor: "pointer" }}>
+              <label className={`dropzone${outputDrag ? " drag" : ""}`} style={{ cursor: "pointer" }}>
                 {outputBusy ? <span className="spinner" /> : <span>{t("tray_upload")}</span>}
                 <input
                   type="file"

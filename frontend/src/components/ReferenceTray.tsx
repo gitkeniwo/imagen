@@ -11,11 +11,13 @@ export default function ReferenceTray({
   onAdd,
   onRemove,
   onMove,
+  noGlobalDrop,
 }: {
   tray: ImageRow[];
   onAdd: (imgs: ImageRow[]) => void;
   onRemove: (id: number) => void;
   onMove: (from: number, to: number) => void;
+  noGlobalDrop?: boolean;
 }) {
   const { t } = useI18n();
   const [drag, setDrag] = useState(false);
@@ -47,6 +49,8 @@ export default function ReferenceTray({
   const dragCounter = useRef(0);
 
   useEffect(() => {
+    if (noGlobalDrop) return;
+
     const onEnter = (e: DragEvent) => {
       if (!isFileDrag(e.dataTransfer)) return;
       e.preventDefault();
@@ -79,11 +83,11 @@ export default function ReferenceTray({
       window.removeEventListener("dragleave", onLeave);
       window.removeEventListener("drop", onDrop);
     };
-  }, []);
+  }, [noGlobalDrop]);
 
   return (
     <div>
-      {pageDrag && (
+      {!noGlobalDrop && pageDrag && (
         <div
           className="file-drop-overlay"
           onDragOver={(e) => {
