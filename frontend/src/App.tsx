@@ -172,7 +172,7 @@ export default function App() {
         }),
       );
     };
-    const id = setInterval(poll, 1200);
+    const id = setInterval(poll, 3000);
     poll();
     return () => clearInterval(id);
   }, [runningKey]);

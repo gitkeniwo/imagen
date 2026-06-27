@@ -1,4 +1,5 @@
 """FastAPI application: wires routes and serves the built frontend."""
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,6 +11,13 @@ from .db import init_storage
 from .routes import generate, generations, images, settings, stats, tags
 
 app = FastAPI(title="Imagen")
+
+# Suppress uvicorn access logs for noisy progress-poll requests.
+class _ProgressAccessFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/api/generate/progress/" not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(_ProgressAccessFilter())
 
 # Allow the Vite dev server (separate origin) during development.
 app.add_middleware(
