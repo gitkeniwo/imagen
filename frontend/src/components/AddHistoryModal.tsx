@@ -200,7 +200,14 @@ export default function AddHistoryModal({
   };
 
   return createPortal(
-    <div className="overlay" onClick={onClose}>
+    <div
+      className="overlay"
+      onClick={onClose}
+      onDragEnter={(e) => { e.stopPropagation(); }}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onDragLeave={(e) => { e.stopPropagation(); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+    >
       <div
         className="modal"
         style={{ width: 640, maxHeight: "88vh", overflowY: "auto" }}
