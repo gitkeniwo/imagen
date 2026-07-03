@@ -61,6 +61,7 @@ export interface QueueTask {
   format: string;
   inputs: ImageRow[];
   tagIds: number[];
+  skipIfPrecedingSucceeds?: boolean;
   status: TaskStatus;
   // When (ms epoch) this task may actually be dispatched to the backend. Until
   // then it sits in the "undo send" countdown window and can be cancelled with

@@ -230,6 +230,9 @@ export default function App() {
   // up to the user-chosen concurrency, without flooding Vertex.
   const startedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
+    // Alias so the i18n `t` is reachable inside queue .map callbacks that
+    // shadow it with a `t` task parameter.
+    const translate = t;
     // A cancelling task still holds an open request → keep counting its slot.
     const running = queue.filter((t) => isActive(t.status)).length;
     const slots = concurrency - running;
@@ -268,8 +271,8 @@ export default function App() {
         // (success / aborted / blocked / error) is the true final state and
         // overwrites a "cancelling" placeholder.
         .then((res) =>
-          setQueue((q) =>
-            q.map((t) =>
+          setQueue((q) => {
+            const afterSelf: QueueTask[] = q.map((t) =>
               t.id === task.id
                 ? {
                     ...t,
@@ -278,16 +281,35 @@ export default function App() {
                     text: res.text,
                     rawFinish: res.generation?.raw_finish,
                     outputImage: res.outputImage,
-                  }
+                  } as QueueTask
                 : t,
-            ),
-          ),
+            );
+            // "Retry until one succeeds": on a successful outcome, skip every
+            // still-pending task that opted in. On any non-success outcome
+            // (blocked/error) we leave those tasks untouched so a later success
+            // can still skip them.
+            if (res.status === "success") {
+              return afterSelf.map((t) =>
+                t.status === "pending" && t.skipIfPrecedingSucceeds
+                  ? {
+                      ...t,
+                      status: "aborted" as const,
+                      message: translate("skipped_by_preceding_success"),
+                    } as QueueTask
+                  : t,
+              );
+            }
+            return afterSelf;
+          }),
         )
         .catch((err) =>
+          // A thrown error is a non-success outcome: mark this task failed and
+          // leave still-pending opted-in tasks alone so a later success can
+          // still skip them.
           setQueue((q) =>
             q.map((t) =>
               t.id === task.id
-                ? { ...t, status: "error", message: (err as Error).message }
+                ? { ...t, status: "error" as const, message: (err as Error).message } as QueueTask
                 : t,
             ),
           ),
@@ -345,6 +367,7 @@ export default function App() {
       format: task.format,
       inputs: task.inputs,
       tagIds: task.tagIds,
+      skipIfPrecedingSucceeds: task.skipIfPrecedingSucceeds,
     });
 
   const completedRefreshKey =

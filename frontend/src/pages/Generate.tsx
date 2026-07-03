@@ -55,6 +55,7 @@ export default function Generate({
   const [resolution, setResolution] = useState("1K");
   const [format, setFormat] = useState("image/jpeg");
   const [tagIds, setTagIds] = useState<number[]>([]);
+  const [skipIfPrecedingSucceeds, setSkipIfPrecedingSucceeds] = useState(false);
 
   // Apply a "reuse" prefill coming from the History tab.
   useEffect(() => {
@@ -80,6 +81,7 @@ export default function Generate({
       format,
       inputs: [...tray],
       tagIds: [...tagIds],
+      skipIfPrecedingSucceeds,
     });
   };
 
@@ -128,6 +130,14 @@ export default function Generate({
             {t("ref_count", { n: tray.length })}
             {!keyConfigured && t("need_key_inline")}
           </span>
+          <button
+            className={`skip-toggle${skipIfPrecedingSucceeds ? " on" : ""}`}
+            onClick={() => setSkipIfPrecedingSucceeds((v) => !v)}
+            title={t("skip_if_preceding_succeeds_title")}
+          >
+            {t("skip_if_preceding_succeeds")}
+          </button>
+          <div className="spacer" />
         </div>
       </div>
 

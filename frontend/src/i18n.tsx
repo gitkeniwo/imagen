@@ -232,6 +232,10 @@ const zh: Dict = {
     "Creates {n} records — one per output image. Note & tags apply to all.",
   pick_from_library: "Pick from library",
   note_no_output: "This is a note — no output image.",
+
+  skip_if_preceding_succeeds: "自动跳过",
+  skip_if_preceding_succeeds_title: "若正在生成的任务成功则跳过此任务",
+  skipped_by_preceding_success: "已跳过：前置任务已成功生成",
 };
 
 const en: Dict = {
@@ -461,6 +465,10 @@ const en: Dict = {
     "Creates {n} records — one per output image. Note & tags apply to all.",
   pick_from_library: "Pick from library",
   note_no_output: "This is a note — no output image.",
+
+  skip_if_preceding_succeeds: "Auto-skip",
+  skip_if_preceding_succeeds_title: "Skip if the running task succeeds",
+  skipped_by_preceding_success: "Skipped: preceding task succeeded",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };

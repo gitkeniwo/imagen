@@ -202,7 +202,9 @@ export default function AddHistoryModal({
   return createPortal(
     <div
       className="overlay"
-      onClick={onClose}
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       onDragEnter={(e) => { e.stopPropagation(); }}
       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
       onDragLeave={(e) => { e.stopPropagation(); }}
