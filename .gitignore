@@ -19,6 +19,10 @@ build/
 # App data (local images + sqlite)
 backend/data/
 
+# Local Docker Compose overrides
+docker-compose.yml
+!docker-compose.example.yml
+
 # Node / build
 frontend/node_modules/
 frontend/dist/
