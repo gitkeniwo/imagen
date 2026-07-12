@@ -202,6 +202,8 @@ export default function AddHistoryModal({
   return createPortal(
     <div
       className="overlay"
+      role="dialog"
+      aria-modal="true"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

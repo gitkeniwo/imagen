@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { pressable } from "../a11y";
 import TagPicker from "./TagPicker";
+import { useToast } from "./Toast";
 
 // Full-screen lightbox: big image + metadata + inline tag editing + actions.
 // For generated images it also surfaces the prompt behind the image (copy /
@@ -26,6 +28,7 @@ export default function ImageViewer({
   onChanged?: () => void;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const items = list.length ? list : [image];
   const [idx, setIdx] = useState(
     Math.max(0, items.findIndex((i) => i.id === image.id)),
@@ -66,26 +69,43 @@ export default function ImageViewer({
   }, [current.id, source]);
 
   const toggleStar = async () => {
+    const prev = starred;
     const next = !starred;
     setStarred(next);
-    await api.patchImage(current.id, { starred: next });
-    onChanged?.();
+    try {
+      await api.patchImage(current.id, { starred: next });
+      current.starred = next ? 1 : 0; // keep the in-memory row in sync for re-open
+      onChanged?.();
+    } catch (e) {
+      setStarred(prev);
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const toggleSource = async () => {
+    const prev = source;
     const next = source === "generated" ? "upload" : "generated";
     setSource(next);
-    current.source = next; // keep the in-memory row in sync for re-open
-    await api.patchImage(current.id, { source: next });
-    onChanged?.();
+    try {
+      await api.patchImage(current.id, { source: next });
+      current.source = next; // keep the in-memory row in sync for re-open
+      onChanged?.();
+    } catch (e) {
+      setSource(prev);
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const saveNote = async () => {
     const trimmed = note.trim();
     if (trimmed === (current.note ?? "")) return;
-    await api.patchImage(current.id, { note: trimmed });
-    current.note = trimmed; // keep the in-memory row in sync for re-open
-    onChanged?.();
+    try {
+      await api.patchImage(current.id, { note: trimmed });
+      current.note = trimmed; // keep the in-memory row in sync for re-open
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const copyPrompt = async () => {
@@ -111,18 +131,30 @@ export default function ImageViewer({
   }, [items.length, onClose]);
 
   const applyTags = async (next: number[]) => {
-    const added = next.filter((x) => !tagIds.includes(x));
-    const removed = tagIds.filter((x) => !next.includes(x));
+    const prev = tagIds;
+    const added = next.filter((x) => !prev.includes(x));
+    const removed = prev.filter((x) => !next.includes(x));
     setTagIds(next);
-    if (added.length) await api.batchTag([current.id], added, "add");
-    if (removed.length) await api.batchTag([current.id], removed, "remove");
-    onTagsChanged();
+    try {
+      if (added.length) await api.batchTag([current.id], added, "add");
+      if (removed.length) await api.batchTag([current.id], removed, "remove");
+      // Keep the in-memory row in sync so prev/next within this lightbox
+      // session (and re-open) shows the edited tags.
+      const { tags } = await api.listTags();
+      current.tags = tags
+        .filter((tg) => next.includes(tg.id))
+        .map(({ id, name, color }) => ({ id, name, color }));
+      onTagsChanged();
+    } catch (e) {
+      setTagIds(prev);
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const multi = items.length > 1;
 
   return (
-    <div className="viewer-overlay" onClick={onClose}>
+    <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <button className="viewer-close" title={t("close")} onClick={onClose}>
         ×
       </button>
@@ -193,6 +225,7 @@ export default function ImageViewer({
                         alt={im.filename}
                         title={`${im.filename} · ${t("add_to_input")}`}
                         onClick={() => onAddToTray(im)}
+                        {...pressable(() => onAddToTray(im))}
                       />
                     ),
                   )}

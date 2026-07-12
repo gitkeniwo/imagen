@@ -1,4 +1,11 @@
-import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { api, ImageRow, Generation, QueueTask } from "./api";
 import { useI18n } from "./i18n";
 import Generate from "./pages/Generate";
@@ -40,8 +47,12 @@ const MIN_SIDEBAR_WIDTH = 260;
 const SIDEBAR_MAX_RATIO = 0.7;
 
 function initialSidebarWidth() {
-  const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  return Number.isFinite(saved)
+  // Number(null) is 0, so an unset key must be caught before coercion or the
+  // default is silently replaced by the clamp floor.
+  const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+  if (raw === null) return DEFAULT_SIDEBAR_WIDTH;
+  const saved = Number(raw);
+  return Number.isFinite(saved) && saved > 0
     ? Math.max(MIN_SIDEBAR_WIDTH, saved)
     : DEFAULT_SIDEBAR_WIDTH;
 }
@@ -54,7 +65,11 @@ function initialConcurrency() {
 }
 
 function initialUndoSeconds() {
-  const v = Number(localStorage.getItem(UNDO_SECONDS_KEY));
+  // An unset key must yield the default: Number(null) is 0, which would pass
+  // the range check and silently disable the undo-send window for new users.
+  const raw = localStorage.getItem(UNDO_SECONDS_KEY);
+  if (raw === null) return DEFAULT_UNDO_SECONDS;
+  const v = Number(raw);
   return Number.isFinite(v) && v >= 0 && v <= 60 ? v : DEFAULT_UNDO_SECONDS;
 }
 
@@ -76,9 +91,10 @@ export default function App() {
   const [queue, setQueue] = useState<QueueTask[]>([]);
   const [concurrency, setConcurrency] = useState(initialConcurrency);
   const [undoSeconds, setUndoSeconds] = useState(initialUndoSeconds);
-  // Ticks while any task is still in its undo-send countdown, so the countdown
-  // re-renders and the processor re-evaluates when a task becomes dispatchable.
-  const [now, setNow] = useState(() => Date.now());
+  // Bumped once when the earliest undo-send countdown elapses, so the
+  // processor re-evaluates exactly then. The visible per-card countdown ticks
+  // locally inside QueueItem — App must not re-render 4×/sec for it.
+  const [dispatchTick, setDispatchTick] = useState(0);
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -87,9 +103,12 @@ export default function App() {
     null,
   );
   const [dataVersion, setDataVersion] = useState(0);
-  const openViewer = (image: ImageRow, list: ImageRow[] = []) =>
-    setViewer({ image, list });
-  const bumpData = () => setDataVersion((v) => v + 1);
+  const openViewer = useCallback(
+    (image: ImageRow, list: ImageRow[] = []) => setViewer({ image, list }),
+    [],
+  );
+  const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
+  const consumePrefill = useCallback(() => setPrefill(null), []);
 
   const refreshConfig = () =>
     api.getVertex().then((r) => setConfigured(r.configured));
@@ -151,10 +170,11 @@ export default function App() {
     localStorage.setItem(UNDO_SECONDS_KEY, String(undoSeconds));
   }, [undoSeconds]);
 
-  // Poll live backend phase (sent / retrying) for running tasks. Keyed by the
-  // set of running ids so the interval is stable across phase updates.
+  // Poll live backend phase (sent / retrying) for in-flight tasks — including
+  // "cancelling", whose request is still open. Keyed by the set of ids so the
+  // interval is stable across phase updates.
   const runningKey = queue
-    .filter((t) => t.status === "running")
+    .filter((t) => t.status === "running" || t.status === "cancelling")
     .map((t) => t.id)
     .sort()
     .join(",");
@@ -168,7 +188,9 @@ export default function App() {
       setQueue((q) =>
         q.map((t) => {
           const hit = got.find(([id]) => id === t.id);
-          return hit && t.status === "running" ? { ...t, phase: hit[1] } : t;
+          return hit && (t.status === "running" || t.status === "cancelling")
+            ? { ...t, phase: hit[1] }
+            : t;
         }),
       );
     };
@@ -177,58 +199,87 @@ export default function App() {
     return () => clearInterval(id);
   }, [runningKey]);
 
-  // Drive the countdown clock only while a task is still waiting to be sent.
+  // Wake the processor exactly when the earliest undo-send countdown elapses
+  // (a one-shot timeout — not a 250ms tick, which would re-render the whole
+  // app tree). dispatchTick is a dep so a too-early wake reschedules itself.
   useEffect(() => {
-    const hasCountdown = queue.some(
-      (t) => t.status === "pending" && t.dispatchAt > Date.now(),
-    );
-    if (!hasCountdown) return;
-    const id = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(id);
-  }, [queue]);
+    const waits = queue
+      .filter((t) => t.status === "pending" && t.dispatchAt > Date.now())
+      .map((t) => t.dispatchAt);
+    if (waits.length === 0) return;
+    const delay = Math.max(0, Math.min(...waits) - Date.now()) + 20;
+    const id = setTimeout(() => setDispatchTick((v) => v + 1), delay);
+    return () => clearTimeout(id);
+  }, [queue, dispatchTick]);
 
   // --- Generation queue (lives in App so it survives tab switches) ---
-  const enqueue = (task: Omit<QueueTask, "id" | "status" | "dispatchAt">) =>
-    setQueue((q) => [
-      ...q,
-      {
-        ...task,
-        id: crypto.randomUUID(),
-        status: "pending",
-        dispatchAt: Date.now() + undoSeconds * 1000,
-      },
-    ]);
+  const enqueue = useCallback(
+    (task: Omit<QueueTask, "id" | "status" | "dispatchAt">) =>
+      setQueue((q) => [
+        ...q,
+        {
+          ...task,
+          id: crypto.randomUUID(),
+          status: "pending",
+          dispatchAt: Date.now() + undoSeconds * 1000,
+        },
+      ]),
+    [undoSeconds],
+  );
 
   // In-flight or cancelling tasks must not be removed by the × / clear-done.
   const isActive = (s: QueueTask["status"]) =>
     s === "running" || s === "cancelling";
 
-  const removeTask = (id: string) =>
+  // Latest queue snapshot for stable event handlers (abortTask), so QueueItem
+  // can be memoized without its callbacks changing on every queue update.
+  const queueRef = useRef<QueueTask[]>(queue);
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+
+  // Guards double-dispatch; entries are pruned when a task settles or leaves
+  // the queue so the set doesn't grow for the life of the session.
+  const startedRef = useRef<Set<string>>(new Set());
+
+  const removeTask = useCallback((id: string) => {
     setQueue((q) => q.filter((t) => !(t.id === id && !isActive(t.status))));
+    startedRef.current.delete(id);
+  }, []);
 
   // Cancel a task. Pending → just drop it (never sent, never billed). Running →
   // send a cancel signal and show "cancelling": the request stays open, the
   // backend finishes the current in-flight attempt (keeping a completed result)
   // then stops retrying, and its real final result (aborted, or success saved to
   // the library) updates the card via the original request's .then.
-  const abortTask = (id: string) => {
-    const task = queue.find((t) => t.id === id);
-    if (task && isActive(task.status)) {
-      api.cancelGenerate(id).catch(() => {});
-      setQueue((q) =>
-        q.map((t) => (t.id === id ? { ...t, status: "cancelling" } : t)),
-      );
-    } else {
-      removeTask(id);
-    }
-  };
+  const abortTask = useCallback(
+    (id: string) => {
+      const task = queueRef.current.find((t) => t.id === id);
+      if (task && isActive(task.status)) {
+        api.cancelGenerate(id).catch(() => {});
+        setQueue((q) =>
+          q.map((t) => (t.id === id ? { ...t, status: "cancelling" } : t)),
+        );
+      } else {
+        removeTask(id);
+      }
+    },
+    [removeTask],
+  );
 
-  const clearDone = () =>
-    setQueue((q) => q.filter((t) => t.status === "pending" || isActive(t.status)));
+  const clearDone = useCallback(() => {
+    setQueue((q) => {
+      const kept = q.filter((t) => t.status === "pending" || isActive(t.status));
+      const keptIds = new Set(kept.map((t) => t.id));
+      for (const id of startedRef.current) {
+        if (!keptIds.has(id)) startedRef.current.delete(id);
+      }
+      return kept;
+    });
+  }, []);
 
   // Bounded FIFO processor: dispatch tasks whose undo-send window has elapsed,
   // up to the user-chosen concurrency, without flooding Vertex.
-  const startedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     // Alias so the i18n `t` is reachable inside queue .map callbacks that
     // shadow it with a `t` task parameter.
@@ -270,7 +321,8 @@ export default function App() {
         // The original request stays open through cancellation, so its result
         // (success / aborted / blocked / error) is the true final state and
         // overwrites a "cancelling" placeholder.
-        .then((res) =>
+        .then((res) => {
+          startedRef.current.delete(task.id);
           setQueue((q) => {
             const afterSelf: QueueTask[] = q.map((t) =>
               t.id === task.id
@@ -300,41 +352,53 @@ export default function App() {
               );
             }
             return afterSelf;
-          }),
-        )
-        .catch((err) =>
+          });
+        })
+        .catch((err) => {
           // A thrown error is a non-success outcome: mark this task failed and
           // leave still-pending opted-in tasks alone so a later success can
           // still skip them.
+          startedRef.current.delete(task.id);
           setQueue((q) =>
             q.map((t) =>
               t.id === task.id
                 ? { ...t, status: "error" as const, message: (err as Error).message } as QueueTask
                 : t,
             ),
-          ),
-        );
+          );
+        });
     });
-  }, [queue, now, concurrency]);
+  }, [queue, dispatchTick, concurrency]);
 
-  const addToTray = (img: ImageRow) =>
-    setTray((t) => (t.some((x) => x.id === img.id) ? t : [...t, img]));
-  const addManyToTray = (imgs: ImageRow[]) =>
-    setTray((t) => {
-      const seen = new Set(t.map((x) => x.id));
-      return [...t, ...imgs.filter((i) => !seen.has(i.id))];
-    });
-  const removeFromTray = (id: number) =>
-    setTray((t) => t.filter((x) => x.id !== id));
-  const moveInTray = (from: number, to: number) =>
-    setTray((t) => {
-      const next = [...t];
-      const [m] = next.splice(from, 1);
-      next.splice(to, 0, m);
-      return next;
-    });
+  const addToTray = useCallback(
+    (img: ImageRow) =>
+      setTray((t) => (t.some((x) => x.id === img.id) ? t : [...t, img])),
+    [],
+  );
+  const addManyToTray = useCallback(
+    (imgs: ImageRow[]) =>
+      setTray((t) => {
+        const seen = new Set(t.map((x) => x.id));
+        return [...t, ...imgs.filter((i) => !seen.has(i.id))];
+      }),
+    [],
+  );
+  const removeFromTray = useCallback(
+    (id: number) => setTray((t) => t.filter((x) => x.id !== id)),
+    [],
+  );
+  const moveInTray = useCallback(
+    (from: number, to: number) =>
+      setTray((t) => {
+        const next = [...t];
+        const [m] = next.splice(from, 1);
+        next.splice(to, 0, m);
+        return next;
+      }),
+    [],
+  );
 
-  const reuse = (g: Generation) => {
+  const reuse = useCallback((g: Generation) => {
     setTray(g.inputs ?? []);
     setPrefill({
       prompt: g.prompt,
@@ -342,10 +406,10 @@ export default function App() {
       aspectRatio: g.aspect_ratio,
       resolution: g.resolution,
     });
-  };
+  }, []);
 
   // Reuse a queued task's settings (prompt/model/ratio/resolution + inputs).
-  const reuseTask = (task: QueueTask) => {
+  const reuseTask = useCallback((task: QueueTask) => {
     setTray(task.inputs ?? []);
     setPrefill({
       prompt: task.prompt,
@@ -353,22 +417,25 @@ export default function App() {
       aspectRatio: task.aspectRatio,
       resolution: task.resolution,
     });
-  };
+  }, []);
 
   // Reuse a queued task's settings AND enqueue it immediately (skip the form).
   // enqueue expects Omit<QueueTask, "id"|"status"|"dispatchAt">; QueueTask already
   // carries every field, so spreading is a direct, lossless match.
-  const reuseGenerateTask = (task: QueueTask) =>
-    enqueue({
-      prompt: task.prompt,
-      model: task.model,
-      aspectRatio: task.aspectRatio,
-      resolution: task.resolution,
-      format: task.format,
-      inputs: task.inputs,
-      tagIds: task.tagIds,
-      skipIfPrecedingSucceeds: task.skipIfPrecedingSucceeds,
-    });
+  const reuseGenerateTask = useCallback(
+    (task: QueueTask) =>
+      enqueue({
+        prompt: task.prompt,
+        model: task.model,
+        aspectRatio: task.aspectRatio,
+        resolution: task.resolution,
+        format: task.format,
+        inputs: task.inputs,
+        tagIds: task.tagIds,
+        skipIfPrecedingSucceeds: task.skipIfPrecedingSucceeds,
+      }),
+    [enqueue],
+  );
 
   const completedRefreshKey =
     queue.filter((task) => task.status !== "pending" && task.status !== "running")
@@ -384,7 +451,7 @@ export default function App() {
           <div className="spacer" />
           <button
             className="lang-toggle"
-            title="Language"
+            title={t("lang_toggle")}
             onClick={() => setLang(lang === "zh" ? "en" : "zh")}
           >
             {lang === "zh" ? "EN" : "ZH"}
@@ -492,7 +559,7 @@ export default function App() {
           <Generate
             tray={tray}
             prefill={prefill}
-            consumePrefill={() => setPrefill(null)}
+            consumePrefill={consumePrefill}
             addManyToTray={addManyToTray}
             removeFromTray={removeFromTray}
             moveInTray={moveInTray}
@@ -505,7 +572,6 @@ export default function App() {
             onReuseTask={reuseTask}
             onReuseGenerateTask={reuseGenerateTask}
             onOpenViewer={openViewer}
-            now={now}
             concurrency={concurrency}
             setConcurrency={setConcurrency}
             maxConcurrency={MAX_CONCURRENCY}

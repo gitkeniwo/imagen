@@ -1,7 +1,9 @@
 """SQLite connection and schema initialization."""
+import contextlib
 import os
 import sqlite3
 from pathlib import Path
+from typing import Iterator
 
 # data/ lives at backend/data; override with IMAGEN_DATA_DIR for isolated runs
 # (e.g. tests/verification) so real data is never touched.
@@ -75,13 +77,26 @@ CREATE TABLE IF NOT EXISTS image_tags (
 """
 
 
+# Created after _migrate so index columns exist on pre-migration databases.
+INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_generations_output_image_id ON generations(output_image_id);
+CREATE INDEX IF NOT EXISTS idx_generation_inputs_image_id ON generation_inputs(image_id);
+CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_images_source ON images(source);
+"""
+
+
 def init_storage() -> None:
     """Create data directories and the database schema if missing."""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     THUMBS_DIR.mkdir(parents=True, exist_ok=True)
     with get_conn() as conn:
+        # WAL lets concurrent readers proceed while a generation commits.
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
         _migrate(conn)
+        conn.executescript(INDEXES)
 
 
 def _migrate(conn) -> None:
@@ -100,9 +115,23 @@ def _migrate(conn) -> None:
     conn.commit()
 
 
-def get_conn() -> sqlite3.Connection:
-    """Open a connection with row access by name and FK enforcement."""
+@contextlib.contextmanager
+def get_conn() -> Iterator[sqlite3.Connection]:
+    """Connection with row access by name and FK enforcement.
+
+    Commits on clean exit, rolls back on error, and always closes — the bare
+    sqlite3 context manager never closes, which leaks file descriptors on a
+    long-running server.
+    """
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()

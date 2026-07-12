@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { pressable } from "../a11y";
+import { useToast } from "../components/Toast";
 
 const PAGE_SIZE = 60;
 
@@ -15,13 +17,16 @@ export default function Bin({
   onChanged?: () => void;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [images, setImages] = useState<ImageRow[]>([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
+    setLoadError(null);
     api
       .listBin({ limit: PAGE_SIZE, offset: page * PAGE_SIZE })
       .then((r) => {
@@ -31,29 +36,42 @@ export default function Bin({
           setPage(Math.max(0, Math.ceil(r.total / PAGE_SIZE) - 1));
         }
       })
+      .catch((e) => setLoadError((e as Error).message))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [page, refreshKey]);
 
   const restore = async (img: ImageRow) => {
-    await api.restoreImage(img.id);
-    load();
-    onChanged?.();
+    try {
+      await api.restoreImage(img.id);
+      load();
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const purge = async (img: ImageRow) => {
     if (!window.confirm(t("confirm_purge"))) return;
-    await api.purgeImage(img.id);
-    load();
-    onChanged?.();
+    try {
+      await api.purgeImage(img.id);
+      load();
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const emptyBin = async () => {
     if (!window.confirm(t("confirm_empty_bin"))) return;
-    await api.emptyBin();
-    load();
-    onChanged?.();
+    try {
+      await api.emptyBin();
+      load();
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -94,6 +112,11 @@ export default function Bin({
         <p className="muted">
           <span className="spinner" /> {t("loading")}
         </p>
+      ) : loadError ? (
+        <div className="load-error">
+          <span className="small">{t("load_error", { msg: loadError })}</span>
+          <button onClick={load}>{t("retry")}</button>
+        </div>
       ) : images.length === 0 ? (
         <p className="muted">{t("bin_empty_state")}</p>
       ) : (
@@ -106,6 +129,7 @@ export default function Bin({
                   alt={img.filename}
                   title={t("open_viewer")}
                   onClick={() => onOpenViewer(img, images)}
+                  {...pressable(() => onOpenViewer(img, images))}
                 />
               </div>
               <div className="meta bin-meta">

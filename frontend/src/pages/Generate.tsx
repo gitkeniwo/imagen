@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Prefill } from "../App";
 import { ImageRow, MODELS, QueueTask } from "../api";
 import { useI18n } from "../i18n";
@@ -23,7 +23,6 @@ export default function Generate({
   onReuseTask,
   onReuseGenerateTask,
   onOpenViewer,
-  now,
   concurrency,
   setConcurrency,
   maxConcurrency,
@@ -43,7 +42,6 @@ export default function Generate({
   onReuseTask: (task: QueueTask) => void;
   onReuseGenerateTask: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
-  now: number;
   concurrency: number;
   setConcurrency: (n: number) => void;
   maxConcurrency: number;
@@ -69,6 +67,7 @@ export default function Generate({
   }, [prefill, consumePrefill]);
 
   const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
+  const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
 
   // Submit: snapshot the composer into the queue. Keep the prompt in place so
   // repeated generations and small edits don't require retyping it.
@@ -85,6 +84,11 @@ export default function Generate({
     });
   };
 
+  const useAsRef = useCallback(
+    (img: ImageRow) => addManyToTray([img]),
+    [addManyToTray],
+  );
+
   return (
     <div>
       <div className="panel">
@@ -99,6 +103,13 @@ export default function Generate({
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              // Cmd/Ctrl+Enter enqueues, same as the generate button.
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
+                e.preventDefault();
+                submit();
+              }
+            }}
             placeholder={t("prompt_placeholder")}
           />
         </div>
@@ -122,7 +133,8 @@ export default function Generate({
           <button
             className="primary"
             onClick={submit}
-            disabled={!keyConfigured || (!prompt.trim() && tray.length === 0)}
+            disabled={!canSubmit}
+            title={t("submit_shortcut_hint")}
           >
             {t("generate")}
           </button>
@@ -146,11 +158,10 @@ export default function Generate({
         onRemove={removeTask}
         onAbort={abortTask}
         onClearDone={clearDone}
-        onUseAsRef={(img) => addManyToTray([img])}
+        onUseAsRef={useAsRef}
         onReuse={onReuseTask}
         onReuseGenerate={onReuseGenerateTask}
         onOpenViewer={onOpenViewer}
-        now={now}
         concurrency={concurrency}
         setConcurrency={setConcurrency}
         maxConcurrency={maxConcurrency}

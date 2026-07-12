@@ -46,6 +46,22 @@ HEARTBEAT_INTERVAL_S = 30.0
 _retry_gate_lock = asyncio.Lock()
 _next_vertex_attempt_at = 0.0
 
+# Cache one client per (project, location): construction resolves ADC (sync
+# file IO) so it must not run per-call on the event loop. A racing first call
+# may build twice; last-write-wins is harmless.
+_clients: dict[tuple[str, str], genai.Client] = {}
+
+
+async def _get_client(project: str, location: str) -> genai.Client:
+    key = (project, location)
+    client = _clients.get(key)
+    if client is None:
+        client = await asyncio.to_thread(
+            genai.Client, vertexai=True, project=project, location=location
+        )
+        _clients[key] = client
+    return client
+
 # Relax every *configurable* safety category to OFF, matching the official
 # Vertex AI Studio sample, to minimize censorship for this self-use app. This
 # covers both text-side and image-side harm categories. Note: Vertex still
@@ -297,7 +313,7 @@ async def generate(
         except Exception:  # noqa: BLE001
             pass
     try:
-        client = genai.Client(vertexai=True, project=project, location=location)
+        client = await _get_client(project, location)
     except Exception as e:  # ADC / config resolution failure at construct time
         logger.warning("[%s] failed to create Vertex client: %s", tid, e)
         return GeminiResult(status="error", message=f"Failed to create Vertex client: {e}")

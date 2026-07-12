@@ -172,6 +172,16 @@ export interface VertexConfig {
   configured: boolean;
 }
 
+// Short-lived tags cache: Library/History/TagPicker all request /api/tags on
+// mount and on every refresh, usually within the same second. The TTL is kept
+// short because tag *counts* change as images are tagged/removed elsewhere.
+let tagsCache: { at: number; promise: Promise<{ tags: Tag[] }> } | null = null;
+const TAGS_CACHE_TTL_MS = 5000;
+
+function invalidateTags() {
+  tagsCache = null;
+}
+
 export const api = {
   async getVertex(): Promise<VertexConfig> {
     return handle(await fetch("/api/settings/vertex"));
@@ -306,40 +316,54 @@ export const api = {
     );
   },
   async listTags(): Promise<{ tags: Tag[] }> {
-    return handle(await fetch("/api/tags"));
+    if (tagsCache && Date.now() - tagsCache.at < TAGS_CACHE_TTL_MS) {
+      return tagsCache.promise;
+    }
+    const promise = fetch("/api/tags").then((res) => handle<{ tags: Tag[] }>(res));
+    tagsCache = { at: Date.now(), promise };
+    promise.catch(invalidateTags); // never cache a failure
+    return promise;
   },
   async createTag(name: string, color?: string): Promise<Tag> {
-    return handle(
+    const tag = await handle<Tag>(
       await fetch("/api/tags", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, color }),
       }),
     );
+    invalidateTags();
+    return tag;
   },
   async updateTag(
     id: number,
     body: { name?: string; color?: string; coverImageId?: number },
   ): Promise<Tag> {
-    return handle(
+    const tag = await handle<Tag>(
       await fetch(`/api/tags/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }),
     );
+    invalidateTags();
+    return tag;
   },
   async deleteTag(id: number) {
-    return handle(await fetch(`/api/tags/${id}`, { method: "DELETE" }));
+    const res = await handle(await fetch(`/api/tags/${id}`, { method: "DELETE" }));
+    invalidateTags();
+    return res;
   },
   async batchTag(imageIds: number[], tagIds: number[], op: "add" | "remove") {
-    return handle(
+    const res = await handle(
       await fetch("/api/tags/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageIds, tagIds, op }),
       }),
     );
+    invalidateTags();
+    return res;
   },
 };
 

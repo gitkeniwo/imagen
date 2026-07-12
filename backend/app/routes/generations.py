@@ -28,6 +28,47 @@ def _inputs_for(conn, gen_id: int) -> list[dict]:
     return tagging.attach_tags(conn, [dict(r) for r in rows])
 
 
+def _hydrate(conn, gens: list[dict]) -> list[dict]:
+    """Attach `inputs` + `outputImage` to a page of generations with a fixed
+    number of queries (inputs, outputs, tags) instead of 3+ per row."""
+    if not gens:
+        return gens
+    gen_ids = [g["id"] for g in gens]
+    ph = ",".join("?" * len(gen_ids))
+    input_rows = conn.execute(
+        f"""SELECT gi.generation_id AS gen_id, i.* FROM generation_inputs gi
+            JOIN images i ON i.id = gi.image_id
+            WHERE gi.generation_id IN ({ph})
+            ORDER BY gi.generation_id, gi.position""",
+        gen_ids,
+    ).fetchall()
+    inputs_by_gen: dict[int, list[dict]] = {}
+    all_images: list[dict] = []
+    for r in input_rows:
+        d = dict(r)
+        gen_id = d.pop("gen_id")
+        inputs_by_gen.setdefault(gen_id, []).append(d)
+        all_images.append(d)
+
+    output_ids = [g["output_image_id"] for g in gens if g["output_image_id"]]
+    outputs: dict[int, dict] = {}
+    if output_ids:
+        ph = ",".join("?" * len(output_ids))
+        outputs = {
+            r["id"]: dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM images WHERE id IN ({ph})", output_ids
+            ).fetchall()
+        }
+    all_images.extend(outputs.values())
+
+    tagging.attach_tags(conn, all_images)
+    for g in gens:
+        g["inputs"] = inputs_by_gen.get(g["id"], [])
+        g["outputImage"] = outputs.get(g["output_image_id"])
+    return gens
+
+
 def _output_for(conn, output_image_id) -> dict | None:
     if not output_image_id:
         return None
@@ -206,12 +247,7 @@ def list_generations(
         total = conn.execute(
             f"SELECT COUNT(*) c FROM generations {where}", params
         ).fetchone()["c"]
-        out = []
-        for g in gens:
-            g = dict(g)
-            g["inputs"] = _inputs_for(conn, g["id"])
-            g["outputImage"] = _output_for(conn, g["output_image_id"])
-            out.append(g)
+        out = _hydrate(conn, [dict(g) for g in gens])
     return {"generations": out, "total": total}
 
 

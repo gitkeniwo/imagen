@@ -886,3 +886,43 @@ body.manager-open { overflow: hidden; }
   background: var(--danger); color: #fff; border-color: var(--danger);
 }
 .bin-meta button i, .danger-btn i { margin-right: 4px; font-size: 0.9em; }
+
+/* --- Toasts (transient error/success notifications) --- */
+.toast-stack {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  cursor: pointer;
+  max-width: min(480px, 90vw);
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.9rem;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  animation: toast-in 0.18s ease-out;
+}
+.toast.error { border-color: var(--danger); }
+.toast.success { border-color: var(--accent); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- List load-error state (distinct from "empty") --- */
+.load-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--danger);
+}

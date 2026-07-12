@@ -1,7 +1,9 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { api, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { pressable } from "../a11y";
 import SearchBox from "../components/SearchBox";
+import { useToast } from "../components/Toast";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -36,6 +38,7 @@ export default function Library({
   onChanged?: () => void;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [images, setImages] = useState<ImageRow[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [source, setSource] = useState<string>("");
@@ -47,6 +50,7 @@ export default function Library({
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [added, setAdded] = useState<number | null>(null);
   const [columns, setColumns] = useState(initialGridColumns);
   const [thumbSize, setThumbSize] = useState<ThumbSize>(initialThumbSize);
@@ -58,6 +62,7 @@ export default function Library({
 
   const load = () => {
     setLoading(true);
+    setLoadError(null);
     Promise.all([
       api.listImages({
         limit: pageSize,
@@ -77,6 +82,7 @@ export default function Library({
           setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
         }
       })
+      .catch((e) => setLoadError((e as Error).message))
       .finally(() => setLoading(false));
   };
 
@@ -112,8 +118,12 @@ export default function Library({
   };
 
   const toggleStar = async (img: ImageRow) => {
-    await api.patchImage(img.id, { starred: !img.starred });
-    load();
+    try {
+      await api.patchImage(img.id, { starred: !img.starred });
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const download = (img: ImageRow) => {
@@ -130,7 +140,7 @@ export default function Library({
       load();
       onChanged?.();
     } catch (e) {
-      alert((e as Error).message);
+      toast(t("op_failed", { msg: (e as Error).message }));
     }
   };
 
@@ -154,8 +164,12 @@ export default function Library({
 
   const applyBatch = async (tagId: number) => {
     if (!batchMode || selected.size === 0) return;
-    await api.batchTag([...selected], [tagId], batchMode);
-    load();
+    try {
+      await api.batchTag([...selected], [tagId], batchMode);
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const downloadSelected = () => {
@@ -168,10 +182,14 @@ export default function Library({
   const createAndApply = async () => {
     const name = draft.trim();
     if (!name) return;
-    const tag = await api.createTag(name);
-    setDraft("");
-    if (selected.size > 0) await api.batchTag([...selected], [tag.id], "add");
-    load();
+    try {
+      const tag = await api.createTag(name);
+      setDraft("");
+      if (selected.size > 0) await api.batchTag([...selected], [tag.id], "add");
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -411,6 +429,11 @@ export default function Library({
         <p className="muted">
           <span className="spinner" /> {t("loading")}
         </p>
+      ) : loadError ? (
+        <div className="load-error">
+          <span className="small">{t("load_error", { msg: loadError })}</span>
+          <button onClick={load}>{t("retry")}</button>
+        </div>
       ) : images.length === 0 ? (
         hasActiveFilters ? (
           <div className="empty-state">
@@ -443,6 +466,7 @@ export default function Library({
                   alt={img.filename}
                   title={selectMode ? t("select_mode") : t("open_viewer")}
                   onClick={() => onCardClick(img)}
+                  {...pressable(() => onCardClick(img))}
                   style={
                     added === img.id ? { outline: "3px solid var(--accent)" } : undefined
                   }

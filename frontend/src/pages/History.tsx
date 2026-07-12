@@ -1,8 +1,10 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow, Tag, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { pressable } from "../a11y";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
+import { useToast } from "../components/Toast";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -29,6 +31,7 @@ export default function History({
   refreshKey?: number;
 }) {
   const { t, reason } = useI18n();
+  const toast = useToast();
   const [gens, setGens] = useState<Generation[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | null>(null);
@@ -41,10 +44,12 @@ export default function History({
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
 
   const load = () => {
     setLoading(true);
+    setLoadError(null);
     Promise.all([
       api.listGenerations({
         limit: pageSize,
@@ -63,14 +68,19 @@ export default function History({
           setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
         }
       })
+      .catch((e) => setLoadError((e as Error).message))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [page, pageSize, tagFilter, kindFilter, query, refreshKey]);
 
   const toggleStar = async (img: ImageRow) => {
-    await api.patchImage(img.id, { starred: !img.starred });
-    load();
+    try {
+      await api.patchImage(img.id, { starred: !img.starred });
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   useEffect(() => {
@@ -222,6 +232,13 @@ export default function History({
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
           <span className="spinner" /> {t("loading")}
         </div>
+      ) : loadError ? (
+        <div className={`panel history-panel${compact ? " compact" : ""}`}>
+          <div className="load-error">
+            <span className="small">{t("load_error", { msg: loadError })}</span>
+            <button onClick={load}>{t("retry")}</button>
+          </div>
+        </div>
       ) : gens.length === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
           {query || tagFilter !== null || kindFilter !== null ? (
@@ -342,6 +359,7 @@ export default function History({
                         alt={im.filename}
                         title={im.filename}
                         onClick={() => onOpenViewer(im, g.inputs ?? [])}
+                        {...pressable(() => onOpenViewer(im, g.inputs ?? []))}
                       />
                     ),
                   )}
@@ -364,6 +382,7 @@ export default function History({
                         alt="output"
                         title={t("open_viewer")}
                         onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
+                        {...pressable(() => onOpenViewer(g.outputImage!, pageOutputs))}
                       />
                       {g.outputImage.tags && g.outputImage.tags.length > 0 && (
                         <div className="card-tags">

@@ -1,8 +1,10 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { pressable } from "../a11y";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
+import { useToast } from "../components/Toast";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -34,6 +36,7 @@ export default function Favorites({
   onChanged?: () => void;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [gens, setGens] = useState<Generation[]>([]);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -45,10 +48,12 @@ export default function Favorites({
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
 
   const load = () => {
     setLoading(true);
+    setLoadError(null);
     api
       .listGenerations({
         starred: true,
@@ -69,6 +74,7 @@ export default function Favorites({
           setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
         }
       })
+      .catch((e) => setLoadError((e as Error).message))
       .finally(() => setLoading(false));
   };
 
@@ -88,15 +94,23 @@ export default function Favorites({
   const saveNote = async (img: ImageRow) => {
     const draft = (notes[img.id] ?? "").trim();
     if (draft === (img.note ?? "")) return;
-    await api.patchImage(img.id, { note: draft });
-    img.note = draft;
-    onChanged?.();
+    try {
+      await api.patchImage(img.id, { note: draft });
+      img.note = draft;
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const unfavorite = async (img: ImageRow) => {
-    await api.patchImage(img.id, { starred: false });
-    load();
-    onChanged?.();
+    try {
+      await api.patchImage(img.id, { starred: false });
+      load();
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
   };
 
   const copyPrompt = async (g: Generation) => {
@@ -162,6 +176,13 @@ export default function Favorites({
       {loading ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
           <span className="spinner" /> {t("loading")}
+        </div>
+      ) : loadError ? (
+        <div className={`panel history-panel${compact ? " compact" : ""}`}>
+          <div className="load-error">
+            <span className="small">{t("load_error", { msg: loadError })}</span>
+            <button onClick={load}>{t("retry")}</button>
+          </div>
         </div>
       ) : gens.length === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
@@ -291,6 +312,7 @@ export default function Favorites({
                         alt={im.filename}
                         title={im.filename}
                         onClick={() => onOpenViewer(im, g.inputs ?? [])}
+                        {...pressable(() => onOpenViewer(im, g.inputs ?? []))}
                       />
                     ),
                   )}
@@ -307,6 +329,7 @@ export default function Favorites({
                         alt="output"
                         title={t("open_viewer")}
                         onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
+                        {...pressable(() => onOpenViewer(g.outputImage!, pageOutputs))}
                       />
                       {g.outputImage.tags && g.outputImage.tags.length > 0 && (
                         <div className="card-tags">

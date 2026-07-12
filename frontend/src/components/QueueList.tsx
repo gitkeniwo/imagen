@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, memo, useEffect, useState } from "react";
 import { ImageRow, QueueTask, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 
@@ -21,7 +21,6 @@ export default function QueueList({
   onReuse,
   onReuseGenerate,
   onOpenViewer,
-  now,
   concurrency,
   setConcurrency,
   maxConcurrency,
@@ -34,7 +33,6 @@ export default function QueueList({
   onReuse: (task: QueueTask) => void;
   onReuseGenerate: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
-  now: number;
   concurrency: number;
   setConcurrency: (n: number) => void;
   maxConcurrency: number;
@@ -103,7 +101,6 @@ export default function QueueList({
             onReuse={onReuse}
             onReuseGenerate={onReuseGenerate}
             onOpenViewer={onOpenViewer}
-            now={now}
           />
         ))}
       </div>
@@ -111,7 +108,9 @@ export default function QueueList({
   );
 }
 
-function QueueItem({
+// Memoized: only the card whose task object changed re-renders. The undo-send
+// countdown ticks locally here so it never re-renders App or the other cards.
+const QueueItem = memo(function QueueItem({
   task,
   onRemove,
   onAbort,
@@ -119,7 +118,6 @@ function QueueItem({
   onReuse,
   onReuseGenerate,
   onOpenViewer,
-  now,
 }: {
   task: QueueTask;
   onRemove: (id: string) => void;
@@ -128,10 +126,16 @@ function QueueItem({
   onReuse: (task: QueueTask) => void;
   onReuseGenerate: (task: QueueTask) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
-  now: number;
 }) {
   const { t, reason } = useI18n();
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const counting = task.status === "pending" && task.dispatchAt > now;
+  useEffect(() => {
+    if (!counting) return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [counting]);
   const [w, h] = task.aspectRatio.split(":").map(Number);
   const promptNeedsToggle =
     task.prompt.length > PROMPT_PREVIEW_CHARS ||
@@ -251,7 +255,7 @@ function QueueItem({
         {task.status === "success" && task.outputImage && (
           <div className="q-result">
             <img
-              src={imgFileUrl(task.outputImage.id)}
+              src={imgThumbUrl(task.outputImage.id)}
               alt="result"
               className="q-result-img"
               title={t("open_viewer")}
@@ -280,4 +284,4 @@ function QueueItem({
       </div>
     </div>
   );
-}
+});

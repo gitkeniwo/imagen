@@ -126,7 +126,7 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const chartMax = Math.max(1, ...chartPoints.map((d) => d.total));
 
   return (
-    <div className="manager-overlay">
+    <div className="manager-overlay" role="dialog" aria-modal="true">
       <div className="manager-header">
         <h3 style={{ margin: 0 }}>📊 {t("usage_title")}</h3>
         <div className="seg density-seg" title={t("usage_period")}>

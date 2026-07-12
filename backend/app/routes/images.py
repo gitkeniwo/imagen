@@ -1,4 +1,5 @@
 """Image upload, listing, file serving, metadata edit, delete."""
+import asyncio
 import io
 import zipfile
 
@@ -15,21 +16,26 @@ router = APIRouter(prefix="/api/images", tags=["images"])
 @router.post("")
 async def upload_images(files: list[UploadFile] = File(...)):
     """Upload one or more images. Returns the stored image rows (deduped)."""
-    out = []
-    with get_conn() as conn:
-        for f in files:
-            data = await f.read()
-            if not data:
-                continue
-            try:
-                row = storage.store_image(
-                    conn, data, f.filename or "upload", f.content_type or "image/png",
-                    source="upload",
-                )
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            out.append(row)
-        tagging.attach_tags(conn, out)
+    payloads = []
+    for f in files:
+        data = await f.read()
+        if data:
+            payloads.append((data, f.filename or "upload", f.content_type or "image/png"))
+
+    # Pillow decode + thumbnailing is CPU-bound — run off the event loop. The
+    # thread opens its own connection (sqlite3 conns are thread-bound).
+    def _store() -> list[dict]:
+        out = []
+        with get_conn() as conn:
+            for data, name, mime in payloads:
+                out.append(storage.store_image(conn, data, name, mime, source="upload"))
+            tagging.attach_tags(conn, out)
+        return out
+
+    try:
+        out = await asyncio.to_thread(_store)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"images": out}
 
 
@@ -76,7 +82,10 @@ def list_images(
 
 @router.get("/batch-download")
 def batch_download(ids: str = Query(...)):
-    id_list = [int(x) for x in ids.split(",") if x.strip()]
+    try:
+        id_list = [int(x) for x in ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ids must be comma-separated integers")
     if not id_list:
         raise HTTPException(status_code=400, detail="No valid ids provided")
     buf = io.BytesIO()

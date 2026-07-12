@@ -54,7 +54,7 @@ export default function FullscreenManager({
   };
 
   return (
-    <div className="manager-overlay">
+    <div className="manager-overlay" role="dialog" aria-modal="true">
       <div className="manager-header">
         <div className="side-tabs manager-tabs">
           {(

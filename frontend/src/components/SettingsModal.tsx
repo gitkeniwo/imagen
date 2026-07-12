@@ -26,6 +26,15 @@ export default function SettingsModal({
     });
   }, []);
 
+  // Escape closes, matching the other modals.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const save = async () => {
     setSaving(true);
     setErr(null);
@@ -41,7 +50,7 @@ export default function SettingsModal({
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 style={{ marginTop: 0 }}>{t("settings_title")}</h3>
         <p className="muted small">{t("settings_desc")}</p>

@@ -2,7 +2,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -56,8 +56,13 @@ if DIST.exists():
 
     @app.get("/{full_path:path}")
     def spa(full_path: str):
+        # Unmatched API routes must 404 as JSON, not fall back to index.html.
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
         # Fall back to index.html for client-side routing (non-/api paths).
-        candidate = DIST / full_path
-        if candidate.is_file():
+        # Resolve and require containment in DIST so `..` segments can't
+        # escape the build directory.
+        candidate = (DIST / full_path).resolve()
+        if candidate.is_relative_to(DIST) and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(DIST / "index.html")

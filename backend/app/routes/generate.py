@@ -23,6 +23,11 @@ PROGRESS: dict[str, dict] = {}
 # learns the true outcome (success-kept / aborted) instead of a closed socket.
 CANCELLED: set[str] = set()
 
+# Client task ids with an open /api/generate request. Cancel signals are only
+# accepted for these — otherwise a cancel for an already-finished (or never
+# started) task would sit in CANCELLED forever.
+INFLIGHT: set[str] = set()
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -37,6 +42,8 @@ def generate_progress(cid: str):
 @router.post("/generate/cancel/{cid}")
 def cancel_generate(cid: str):
     """Signal a running generation to stop retrying (cooperative cancel)."""
+    if cid not in INFLIGHT:
+        return {"ok": False}
     CANCELLED.add(cid)
     return {"ok": True}
 
@@ -53,14 +60,21 @@ async def generate(body: GenerateRequest, request: Request):
         if i not in ordered_ids:
             ordered_ids.append(i)
 
-    input_images: list[gemini.InputImage] = []
+    # Resolve rows first (fast DB reads); the file reads happen off the event
+    # loop so a batch of large inputs can't stall concurrent requests.
+    input_rows: list[dict] = []
     with get_conn() as conn:
         for img_id in ordered_ids:
             row = storage.get_image(conn, img_id)
             if not row:
                 raise HTTPException(status_code=404, detail=f"Input image {img_id} does not exist.")
-            data = storage.file_on_disk(row).read_bytes()
-            input_images.append(gemini.InputImage(data=data, mime=row["mime"]))
+            input_rows.append(row)
+
+    def _read_inputs() -> list[gemini.InputImage]:
+        return [
+            gemini.InputImage(data=storage.file_on_disk(r).read_bytes(), mime=r["mime"])
+            for r in input_rows
+        ]
 
     # Cooperative cancel: stop signal comes from POST /generate/cancel/{cid}
     # (CANCELLED) — the request stays open so we can return the true result.
@@ -83,8 +97,11 @@ async def generate(body: GenerateRequest, request: Request):
         except asyncio.CancelledError:
             pass
 
+    if cid:
+        INFLIGHT.add(cid)
     watch_task = asyncio.ensure_future(_watch())
     try:
+        input_images = await asyncio.to_thread(_read_inputs)
         result = await gemini.generate(
             project=project,
             location=location,
@@ -100,48 +117,63 @@ async def generate(body: GenerateRequest, request: Request):
     finally:
         watch_task.cancel()
         if cid:
+            INFLIGHT.discard(cid)
             PROGRESS.pop(cid, None)
             CANCELLED.discard(cid)
 
-    output_image = None
-    with get_conn() as conn:
-        if result.status == "success":
-            ext = "jpg" if (result.image_mime or "").endswith("jpeg") else "png"
-            output_image = storage.store_image(
-                conn, result.image_bytes, f"gen-{_now()}.{ext}",
-                result.image_mime or "image/png", source="generated",
-            )
+    # Persist in a worker thread (Pillow decode + thumbnail are CPU-bound and
+    # would otherwise stall the event loop). The thread opens its own
+    # connection — sqlite3 connections are bound to their creating thread.
+    def _persist() -> tuple[str, str | None, dict, dict | None]:
+        status, message = result.status, result.message
+        output_image = None
+        with get_conn() as conn:
+            if result.status == "success":
+                try:
+                    ext = "jpg" if (result.image_mime or "").endswith("jpeg") else "png"
+                    output_image = storage.store_image(
+                        conn, result.image_bytes, f"gen-{_now()}.{ext}",
+                        result.image_mime or "image/png", source="generated",
+                    )
+                except Exception as e:  # noqa: BLE001
+                    # The (billable) call succeeded but we couldn't keep the
+                    # bytes — still record the generation so history is honest.
+                    status = "error"
+                    message = f"Image generated but could not be stored: {e}"
 
-        cur = conn.execute(
-            """INSERT INTO generations
-               (prompt, model, aspect_ratio, resolution, status, error_message,
-                raw_finish, output_image_id, created_at, source)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (body.prompt, body.model, body.aspectRatio, body.resolution,
-             result.status, result.message, result.raw_finish,
-             output_image["id"] if output_image else None, _now(), "vertex"),
-        )
-        gen_id = cur.lastrowid
-        for pos, img_id in enumerate(ordered_ids):
-            conn.execute(
-                "INSERT INTO generation_inputs (generation_id, image_id, position) "
-                "VALUES (?, ?, ?)",
-                (gen_id, img_id, pos),
+            cur = conn.execute(
+                """INSERT INTO generations
+                   (prompt, model, aspect_ratio, resolution, status, error_message,
+                    raw_finish, output_image_id, created_at, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (body.prompt, body.model, body.aspectRatio, body.resolution,
+                 status, message, result.raw_finish,
+                 output_image["id"] if output_image else None, _now(), "vertex"),
             )
-        # Auto-archive into chosen tags only on success: output + input images.
-        if body.tagIds and output_image:
-            targets = [*ordered_ids, output_image["id"]]
-            tagging.apply_tags(conn, targets, body.tagIds)
-        conn.commit()
-        if output_image:
-            tagging.attach_tags(conn, [output_image])
-        generation = dict(
-            conn.execute("SELECT * FROM generations WHERE id = ?", (gen_id,)).fetchone()
-        )
+            gen_id = cur.lastrowid
+            for pos, img_id in enumerate(ordered_ids):
+                conn.execute(
+                    "INSERT INTO generation_inputs (generation_id, image_id, position) "
+                    "VALUES (?, ?, ?)",
+                    (gen_id, img_id, pos),
+                )
+            # Auto-archive into chosen tags only on success: output + input images.
+            if body.tagIds and output_image:
+                targets = [*ordered_ids, output_image["id"]]
+                tagging.apply_tags(conn, targets, body.tagIds)
+            conn.commit()
+            if output_image:
+                tagging.attach_tags(conn, [output_image])
+            generation = dict(
+                conn.execute("SELECT * FROM generations WHERE id = ?", (gen_id,)).fetchone()
+            )
+        return status, message, generation, output_image
+
+    status, message, generation, output_image = await asyncio.to_thread(_persist)
 
     return {
-        "status": result.status,
-        "message": result.message,
+        "status": status,
+        "message": message,
         "text": result.text,
         "generation": generation,
         "outputImage": output_image,
