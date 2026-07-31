@@ -336,13 +336,30 @@ export default function App() {
                   } as QueueTask
                 : t,
             );
-            // "Retry until one succeeds": on a successful outcome, skip every
-            // still-pending task that opted in. On any non-success outcome
+            // "Retry until one succeeds" is scoped to a group: a non-opted-in
+            // task plus the consecutive opted-in tasks right after it. On a
+            // successful outcome, skip only the still-pending opted-in tasks
+            // in the succeeded task's own group — later groups are independent
+            // retries of a different job. On any non-success outcome
             // (blocked/error) we leave those tasks untouched so a later success
             // can still skip them.
             if (res.status === "success") {
-              return afterSelf.map((t) =>
-                t.status === "pending" && t.skipIfPrecedingSucceeds
+              const idx = afterSelf.findIndex((t) => t.id === task.id);
+              if (idx === -1) return afterSelf;
+              let start = idx;
+              while (start > 0 && afterSelf[start].skipIfPrecedingSucceeds)
+                start -= 1;
+              let end = idx;
+              while (
+                end + 1 < afterSelf.length &&
+                afterSelf[end + 1].skipIfPrecedingSucceeds
+              )
+                end += 1;
+              return afterSelf.map((t, i) =>
+                i >= start &&
+                i <= end &&
+                t.status === "pending" &&
+                t.skipIfPrecedingSucceeds
                   ? {
                       ...t,
                       status: "aborted" as const,
