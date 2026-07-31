@@ -29,10 +29,13 @@ interface PriceRow {
 }
 const PRICE_ROWS: PriceRow[] = [
   { key: "flash", model: "gemini-2.5-flash-image", resolution: null, label: "Nano Banana (Flash)", defaultPrice: 0.039 },
-  { key: "pro-1K", model: "gemini-3-pro-image-preview", resolution: "1K", label: "Nano Banana Pro · 1K", defaultPrice: 0.134 },
-  { key: "pro-2K", model: "gemini-3-pro-image-preview", resolution: "2K", label: "Nano Banana Pro · 2K", defaultPrice: 0.134 },
-  { key: "pro-4K", model: "gemini-3-pro-image-preview", resolution: "4K", label: "Nano Banana Pro · 4K", defaultPrice: 0.24 },
+  { key: "pro-1K", model: "gemini-3-pro-image", resolution: "1K", label: "Nano Banana Pro · 1K", defaultPrice: 0.134 },
+  { key: "pro-2K", model: "gemini-3-pro-image", resolution: "2K", label: "Nano Banana Pro · 2K", defaultPrice: 0.134 },
+  { key: "pro-4K", model: "gemini-3-pro-image", resolution: "4K", label: "Nano Banana Pro · 4K", defaultPrice: 0.24 },
 ];
+
+// Keep the totals for generations made before the Preview model was retired.
+const PRO_IMAGE_MODEL_IDS = new Set(["gemini-3-pro-image", "gemini-3-pro-image-preview"]);
 
 function loadPrices(): { currency: string; prices: Record<string, number> } {
   try {
@@ -107,10 +110,11 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
     const counts: Record<string, number> = Object.fromEntries(PRICE_ROWS.map((r) => [r.key, 0]));
     for (const cb of p?.cost_basis ?? []) {
       const res = cb.resolution ?? "1K";
-      const row =
-        cb.model === "gemini-2.5-flash-image"
-          ? "flash"
-          : PRICE_ROWS.find((r) => r.model === cb.model && r.resolution === res)?.key;
+      const row = cb.model === "gemini-2.5-flash-image"
+        ? "flash"
+        : PRO_IMAGE_MODEL_IDS.has(cb.model)
+          ? PRICE_ROWS.find((r) => r.resolution === res)?.key
+          : undefined;
       if (row) counts[row] = (counts[row] ?? 0) + cb.count;
     }
     return counts;

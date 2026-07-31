@@ -29,8 +29,20 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
+# Preview IDs can remain in browser state and historical generations after a
+# model graduates. Normalize them at the API boundary so old clients keep
+# working without sending retired model IDs to Vertex.
+MODEL_ALIASES = {
+    "gemini-3-pro-image-preview": "gemini-3-pro-image",
+}
+
+
+def normalize_model(model: str) -> str:
+    return MODEL_ALIASES.get(model, model)
+
+
 # Models that support the imageConfig.image_size (1K/2K/4K) knob.
-PRO_MODELS = {"gemini-3-pro-image-preview"}
+PRO_MODELS = {"gemini-3-pro-image"}
 
 MAX_ATTEMPTS = 30
 MAX_NON_429_ATTEMPTS = 6

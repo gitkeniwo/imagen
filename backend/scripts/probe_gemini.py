@@ -9,7 +9,7 @@ Usage (from the backend/ directory):
 
 With no image arg it does text->image; with an image it does image->image editing.
 Test Pro + resolution:
-    PROJECT=my-proj MODEL=gemini-3-pro-image-preview RESOLUTION=2K \
+    PROJECT=my-proj MODEL=gemini-3-pro-image RESOLUTION=2K \
         uv run python scripts/probe_gemini.py
 """
 import os
@@ -22,7 +22,7 @@ MODEL = os.environ.get("MODEL", "gemini-2.5-flash-image")
 RESOLUTION = os.environ.get("RESOLUTION")  # "1K" | "2K" | "4K" (Pro only)
 PROJECT = os.environ.get("PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
 LOCATION = os.environ.get("LOCATION") or os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
-PRO = MODEL == "gemini-3-pro-image-preview"
+PRO = MODEL == "gemini-3-pro-image"
 
 
 def main() -> None:

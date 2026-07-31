@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Prefill } from "../App";
-import { ImageRow, MODELS, QueueTask } from "../api";
+import { ImageRow, MODELS, normalizeModelId, QueueTask } from "../api";
 import { useI18n } from "../i18n";
 import ReferenceTray from "../components/ReferenceTray";
 import OptionBar from "../components/OptionBar";
@@ -59,7 +59,7 @@ export default function Generate({
   useEffect(() => {
     if (prefill) {
       setPrompt(prefill.prompt);
-      setModel(prefill.model);
+      setModel(normalizeModelId(prefill.model));
       if (prefill.aspectRatio) setAspectRatio(prefill.aspectRatio);
       if (prefill.resolution) setResolution(prefill.resolution);
       consumePrefill();

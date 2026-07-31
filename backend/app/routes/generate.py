@@ -53,6 +53,7 @@ async def generate(body: GenerateRequest, request: Request):
     project, location = read_vertex()
     if not project:
         raise HTTPException(status_code=400, detail="Vertex project not set. Please enter your Project ID in Settings.")
+    model = gemini.normalize_model(body.model)
 
     # Ordered, de-duplicated input image ids: library refs first, then uploads.
     ordered_ids: list[int] = []
@@ -106,7 +107,7 @@ async def generate(body: GenerateRequest, request: Request):
             project=project,
             location=location,
             prompt=body.prompt,
-            model=body.model,
+            model=model,
             aspect_ratio=body.aspectRatio,
             resolution=body.resolution,
             images=input_images,
@@ -146,7 +147,7 @@ async def generate(body: GenerateRequest, request: Request):
                    (prompt, model, aspect_ratio, resolution, status, error_message,
                     raw_finish, output_image_id, created_at, source)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (body.prompt, body.model, body.aspectRatio, body.resolution,
+                (body.prompt, model, body.aspectRatio, body.resolution,
                  status, message, result.raw_finish,
                  output_image["id"] if output_image else None, _now(), "vertex"),
             )

@@ -22,7 +22,7 @@ Imagen — a lightweight, single-user **image-to-image** web app. It calls
 Google's "Nano Banana" image models through **Vertex AI** using the official
 `google-genai` SDK with **ADC** auth (no API keys; org policy disallows them).
 
-- Models: `gemini-3-pro-image-preview` (Nano Banana Pro, **default**) and
+- Models: `gemini-3-pro-image` (Nano Banana Pro, **default**) and
   `gemini-2.5-flash-image` (Nano Banana).
 - Frontend: React + Vite + TypeScript. Backend: Python + FastAPI.
 - Storage: image files on local disk; metadata + Vertex config in SQLite.

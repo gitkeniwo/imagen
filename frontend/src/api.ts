@@ -153,6 +153,12 @@ export const imgThumbUrl = (id: number) => `/api/images/${id}/thumb`;
 export const batchDownloadUrl = (ids: number[]) =>
   `/api/images/batch-download?ids=${ids.join(",")}`;
 
+const MODEL_ALIASES: Record<string, string> = {
+  "gemini-3-pro-image-preview": "gemini-3-pro-image",
+};
+
+export const normalizeModelId = (model: string) => MODEL_ALIASES[model] ?? model;
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
@@ -259,7 +265,7 @@ export const api = {
       await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, model: normalizeModelId(body.model) }),
         signal,
       }),
     );
@@ -369,7 +375,7 @@ export const api = {
 
 // Pro is first so it is the default selection.
 export const MODELS = [
-  { id: "gemini-3-pro-image-preview", label: "Nano Banana Pro (3 Pro)", pro: true },
+  { id: "gemini-3-pro-image", label: "Nano Banana Pro (3 Pro)", pro: true },
   { id: "gemini-2.5-flash-image", label: "Nano Banana (2.5 Flash)", pro: false },
 ];
 
