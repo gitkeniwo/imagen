@@ -1,10 +1,11 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, Generation, ImageRow, Tag, imgThumbUrl } from "../api";
+import { api, Generation, ImageRow, MARKER_COLORS, Tag, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
+import generationPending from "../assets/generation-pending.svg";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -24,18 +25,21 @@ export default function History({
   onOpenViewer,
   compact = false,
   refreshKey = 0,
+  live = false,
 }: {
   onReuse: (g: Generation) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   compact?: boolean;
   refreshKey?: number;
+  live?: boolean;
 }) {
   const { t, reason } = useI18n();
   const toast = useToast();
   const [gens, setGens] = useState<Generation[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | null>(null);
-  const [kindFilter, setKindFilter] = useState<"vertex" | "manual" | "note" | null>(null);
+  const [kindFilter, setKindFilter] = useState<"vertex" | "manual" | null>(null);
+  const [onlyWithImage, setOnlyWithImage] = useState(false);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
@@ -47,9 +51,11 @@ export default function History({
   const [loadError, setLoadError] = useState<string | null>(null);
   const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
 
-  const load = () => {
-    setLoading(true);
-    setLoadError(null);
+  const load = (quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+      setLoadError(null);
+    }
     Promise.all([
       api.listGenerations({
         limit: pageSize,
@@ -57,6 +63,7 @@ export default function History({
         tag: tagFilter ?? undefined,
         q: query || undefined,
         kind: kindFilter ?? undefined,
+        withOutput: onlyWithImage,
       }),
       api.listTags(),
     ])
@@ -68,11 +75,26 @@ export default function History({
           setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
         }
       })
-      .catch((e) => setLoadError((e as Error).message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        // A background refresh should never replace the current card with a
+        // flashing error state. The next normal refresh can surface an error.
+        if (!quiet) setLoadError((e as Error).message);
+      })
+      .finally(() => {
+        if (!quiet) setLoading(false);
+      });
   };
 
-  useEffect(load, [page, pageSize, tagFilter, kindFilter, query, refreshKey]);
+  useEffect(load, [page, pageSize, tagFilter, kindFilter, onlyWithImage, query, refreshKey]);
+
+  // While a request is in flight, poll only when History is actually mounted.
+  // This makes the backend-created `running` placeholder appear without
+  // refreshing Library or the rest of the workspace.
+  useEffect(() => {
+    if (!live) return;
+    const id = window.setInterval(() => load(true), 3000);
+    return () => window.clearInterval(id);
+  }, [live, page, pageSize, tagFilter, kindFilter, onlyWithImage, query]);
 
   const toggleStar = async (img: ImageRow) => {
     try {
@@ -182,6 +204,16 @@ export default function History({
               {t("filter_all")}
             </button>
             <button
+              className={onlyWithImage ? "on" : ""}
+              title={t("hist_filter_with_image")}
+              onClick={() => {
+                setOnlyWithImage((value) => !value);
+                setPage(0);
+              }}
+            >
+              {t("hist_filter_with_image")}
+            </button>
+            <button
               className={kindFilter === "vertex" ? "on" : ""}
               title={t("hist_filter_vertex")}
               onClick={() => {
@@ -200,16 +232,6 @@ export default function History({
               }}
             >
               <i className="fa-solid fa-upload" />
-            </button>
-            <button
-              className={kindFilter === "note" ? "on" : ""}
-              title={t("hist_filter_notes")}
-              onClick={() => {
-                setKindFilter("note");
-                setPage(0);
-              }}
-            >
-              <i className="fa-solid fa-note-sticky" />
             </button>
           </div>
           <div className="seg density-seg history-cols-seg" title={t("columns_per_row")}>
@@ -236,7 +258,7 @@ export default function History({
         <div className={`panel history-panel${compact ? " compact" : ""}`}>
           <div className="load-error">
             <span className="small">{t("load_error", { msg: loadError })}</span>
-            <button onClick={load}>{t("retry")}</button>
+            <button onClick={() => load()}>{t("retry")}</button>
           </div>
         </div>
       ) : gens.length === 0 ? (
@@ -266,16 +288,19 @@ export default function History({
         >
           {gens.map((g) => {
             const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
-            const cornerKind =
-              g.status === "note" ? "note"
-              : g.source === "manual" ? "manual"
-              : null;
+            const cornerKind = g.source === "manual" ? "manual" : null;
             return (
-            <div className="panel history-panel" key={g.id}>
+            <div
+              className={`panel history-panel${g.marker_color ? " marked" : ""}`}
+              style={g.marker_color ? ({
+                "--marker-color": MARKER_COLORS.find((item) => item.id === g.marker_color)?.hex,
+              } as CSSProperties) : undefined}
+              key={g.id}
+            >
               {cornerKind && (
                 <span
                   className={`card-corner ${cornerKind}`}
-                  title={cornerKind === "manual" ? t("hist_filter_manual") : t("hist_filter_notes")}
+                  title={t("hist_filter_manual")}
                 />
               )}
               <div className="history-meta">
@@ -292,26 +317,40 @@ export default function History({
                     <i className={outImg.starred ? "fa-solid fa-star" : "fa-regular fa-star"} />
                   </button>
                 )}
-                <button
-                  className="icon-btn"
-                  title={t("edit_annotation")}
-                  onClick={() => setEditingGen(g)}
-                >
-                  <i className="fa-solid fa-pen" />
-                </button>
-                <button
-                  className="icon-btn"
-                  title={t("duplicate")}
-                  onClick={() => setDuplicatingGen(g)}
-                >
-                  <i className="fa-solid fa-clone" />
-                </button>
+                {g.status !== "running" && (
+                  <>
+                    <button
+                      className="icon-btn"
+                      title={t("edit_annotation")}
+                      onClick={() => setEditingGen(g)}
+                    >
+                      <i className="fa-solid fa-pen" />
+                    </button>
+                    <button
+                      className="icon-btn"
+                      title={t("duplicate")}
+                      onClick={() => setDuplicatingGen(g)}
+                    >
+                      <i className="fa-solid fa-clone" />
+                    </button>
+                  </>
+                )}
                 <div className="spacer" style={{ flex: 1 }} />
                 <button onClick={() => onReuse(g)}>{t("reuse")}</button>
               </div>
 
               {g.prompt && (
                 <div className="history-prompt-wrap">
+                  {expanded.has(g.id) &&
+                    (g.prompt.length > PROMPT_PREVIEW_CHARS ||
+                      g.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES) && (
+                      <button
+                        className="link-btn history-prompt-toggle history-prompt-toggle-top"
+                        onClick={() => toggleExpand(g.id)}
+                      >
+                        {t("show_less")}
+                      </button>
+                    )}
                   <p
                     className={`history-prompt${
                       expanded.has(g.id) ? " expanded" : ""
@@ -393,6 +432,11 @@ export default function History({
                           ))}
                         </div>
                       )}
+                    </div>
+                  ) : g.status === "running" ? (
+                    <div className="history-running-output" aria-label={t("generation_waiting")}>
+                      <img src={generationPending} alt="" className="history-running-placeholder" />
+                      <span className="small">{t("generation_waiting")}</span>
                     </div>
                   ) : (
                     <div

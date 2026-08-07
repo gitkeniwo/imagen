@@ -10,6 +10,7 @@ from ..models import GenerateRequest
 from .settings import read_vertex
 
 router = APIRouter(prefix="/api", tags=["generate"])
+_MARKER_COLORS = {"red", "orange", "yellow", "green", "blue", "purple", "pink"}
 
 # Ephemeral, best-effort live progress per client queue-task id (set by the
 # frontend as clientTaskId). Holds the latest gemini event ({"phase": ...}) so
@@ -54,6 +55,8 @@ async def generate(body: GenerateRequest, request: Request):
     if not project:
         raise HTTPException(status_code=400, detail="Vertex project not set. Please enter your Project ID in Settings.")
     model = gemini.normalize_model(body.model)
+    if body.markerColor is not None and body.markerColor not in _MARKER_COLORS:
+        raise HTTPException(status_code=400, detail="Invalid marker color")
 
     # Ordered, de-duplicated input image ids: library refs first, then uploads.
     ordered_ids: list[int] = []
@@ -77,6 +80,33 @@ async def generate(body: GenerateRequest, request: Request):
             for r in input_rows
         ]
 
+    input_images = await asyncio.to_thread(_read_inputs)
+
+    # Persist a History placeholder only once the request is ready to be sent.
+    # Pending client-side queue items never reach this endpoint, so they remain
+    # session-only. A crash/closed window can no longer lose the task prompt.
+    def _create_running() -> int:
+        with get_conn() as conn:
+            cur = conn.execute(
+                """INSERT INTO generations
+                   (prompt, model, aspect_ratio, resolution, status, error_message,
+                    raw_finish, output_image_id, created_at, source,
+                    client_task_id, marker_color)
+                   VALUES (?, ?, ?, ?, 'running', NULL, NULL, NULL, ?, 'vertex', ?, ?)""",
+                (body.prompt, model, body.aspectRatio, body.resolution, _now(),
+                 body.clientTaskId, body.markerColor),
+            )
+            gen_id = cur.lastrowid
+            for pos, img_id in enumerate(ordered_ids):
+                conn.execute(
+                    "INSERT INTO generation_inputs (generation_id, image_id, position) "
+                    "VALUES (?, ?, ?)",
+                    (gen_id, img_id, pos),
+                )
+            return gen_id
+
+    gen_id = await asyncio.to_thread(_create_running)
+
     # Cooperative cancel: stop signal comes from POST /generate/cancel/{cid}
     # (CANCELLED) — the request stays open so we can return the true result.
     # A disconnect watcher is the fallback (tab closed / navigated away).
@@ -98,11 +128,11 @@ async def generate(body: GenerateRequest, request: Request):
         except asyncio.CancelledError:
             pass
 
+    explicitly_cancelled = False
     if cid:
         INFLIGHT.add(cid)
     watch_task = asyncio.ensure_future(_watch())
     try:
-        input_images = await asyncio.to_thread(_read_inputs)
         result = await gemini.generate(
             project=project,
             location=location,
@@ -118,6 +148,7 @@ async def generate(body: GenerateRequest, request: Request):
     finally:
         watch_task.cancel()
         if cid:
+            explicitly_cancelled = cid in CANCELLED
             INFLIGHT.discard(cid)
             PROGRESS.pop(cid, None)
             CANCELLED.discard(cid)
@@ -125,10 +156,16 @@ async def generate(body: GenerateRequest, request: Request):
     # Persist in a worker thread (Pillow decode + thumbnail are CPU-bound and
     # would otherwise stall the event loop). The thread opens its own
     # connection — sqlite3 connections are bound to their creating thread.
-    def _persist() -> tuple[str, str | None, dict, dict | None]:
+    def _persist() -> tuple[str, str | None, dict | None, dict | None]:
         status, message = result.status, result.message
         output_image = None
         with get_conn() as conn:
+            if explicitly_cancelled and result.status != "success":
+                conn.execute("DELETE FROM generations WHERE id = ?", (gen_id,))
+                return "aborted", "User cancelled.", None, None
+            if result.status == "aborted":
+                status = "error"
+                message = "Client disconnected before a response was stored."
             if result.status == "success":
                 try:
                     ext = "jpg" if (result.image_mime or "").endswith("jpeg") else "png"
@@ -142,22 +179,14 @@ async def generate(body: GenerateRequest, request: Request):
                     status = "error"
                     message = f"Image generated but could not be stored: {e}"
 
-            cur = conn.execute(
-                """INSERT INTO generations
-                   (prompt, model, aspect_ratio, resolution, status, error_message,
-                    raw_finish, output_image_id, created_at, source)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (body.prompt, model, body.aspectRatio, body.resolution,
-                 status, message, result.raw_finish,
-                 output_image["id"] if output_image else None, _now(), "vertex"),
+            conn.execute(
+                """UPDATE generations
+                   SET status = ?, error_message = ?, raw_finish = ?, output_image_id = ?
+                   WHERE id = ?""",
+                (status, message,
+                 "CLIENT_DISCONNECTED" if result.status == "aborted" else result.raw_finish,
+                 output_image["id"] if output_image else None, gen_id),
             )
-            gen_id = cur.lastrowid
-            for pos, img_id in enumerate(ordered_ids):
-                conn.execute(
-                    "INSERT INTO generation_inputs (generation_id, image_id, position) "
-                    "VALUES (?, ?, ?)",
-                    (gen_id, img_id, pos),
-                )
             # Auto-archive into chosen tags only on success: output + input images.
             if body.tagIds and output_image:
                 targets = [*ordered_ids, output_image["id"]]

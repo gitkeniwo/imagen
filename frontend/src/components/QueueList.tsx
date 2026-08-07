@@ -1,11 +1,20 @@
 import { type CSSProperties, memo, useEffect, useState } from "react";
-import { ImageRow, QueueTask, imgFileUrl, imgThumbUrl } from "../api";
+import { ImageRow, MARKER_COLORS, MarkerColor, QueueTask, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 
 const QUEUE_COLUMNS_KEY = "imagen-queue-columns";
 const QUEUE_COLUMN_OPTIONS = [1, 2, 3];
 const PROMPT_PREVIEW_CHARS = 240;
 const PROMPT_PREVIEW_LINES = 4;
+const MARKER_COLOR_KEY = "imagen-marker-color";
+
+function initialMarkerColor(): MarkerColor {
+  const saved = localStorage.getItem(MARKER_COLOR_KEY);
+  return MARKER_COLORS.some((color) => color.id === saved) ? saved as MarkerColor : "red";
+}
+
+const markerHex = (color: MarkerColor | null | undefined) =>
+  MARKER_COLORS.find((item) => item.id === color)?.hex ?? MARKER_COLORS[0].hex;
 
 function initialQueueColumns() {
   const saved = Number(localStorage.getItem(QUEUE_COLUMNS_KEY));
@@ -20,6 +29,8 @@ export default function QueueList({
   onUseAsRef,
   onReuse,
   onReuseGenerate,
+  onSaveDraft,
+  onSetMarker,
   onOpenViewer,
   concurrency,
   setConcurrency,
@@ -32,6 +43,8 @@ export default function QueueList({
   onUseAsRef: (img: ImageRow) => void;
   onReuse: (task: QueueTask) => void;
   onReuseGenerate: (task: QueueTask) => void;
+  onSaveDraft: (task: QueueTask, move: boolean) => void;
+  onSetMarker: (id: string, color: MarkerColor | null) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   concurrency: number;
   setConcurrency: (n: number) => void;
@@ -39,10 +52,15 @@ export default function QueueList({
 }) {
   const { t } = useI18n();
   const [columns, setColumns] = useState(initialQueueColumns);
+  const [defaultMarkerColor, setDefaultMarkerColor] = useState(initialMarkerColor);
 
   useEffect(() => {
     localStorage.setItem(QUEUE_COLUMNS_KEY, String(columns));
   }, [columns]);
+
+  useEffect(() => {
+    localStorage.setItem(MARKER_COLOR_KEY, defaultMarkerColor);
+  }, [defaultMarkerColor]);
 
   if (queue.length === 0) return null;
 
@@ -100,6 +118,10 @@ export default function QueueList({
             onUseAsRef={onUseAsRef}
             onReuse={onReuse}
             onReuseGenerate={onReuseGenerate}
+            onSaveDraft={onSaveDraft}
+            onSetMarker={onSetMarker}
+            defaultMarkerColor={defaultMarkerColor}
+            onDefaultMarkerColor={setDefaultMarkerColor}
             onOpenViewer={onOpenViewer}
           />
         ))}
@@ -117,6 +139,10 @@ const QueueItem = memo(function QueueItem({
   onUseAsRef,
   onReuse,
   onReuseGenerate,
+  onSaveDraft,
+  onSetMarker,
+  defaultMarkerColor,
+  onDefaultMarkerColor,
   onOpenViewer,
 }: {
   task: QueueTask;
@@ -125,10 +151,15 @@ const QueueItem = memo(function QueueItem({
   onUseAsRef: (img: ImageRow) => void;
   onReuse: (task: QueueTask) => void;
   onReuseGenerate: (task: QueueTask) => void;
+  onSaveDraft: (task: QueueTask, move: boolean) => void;
+  onSetMarker: (id: string, color: MarkerColor | null) => void;
+  defaultMarkerColor: MarkerColor;
+  onDefaultMarkerColor: (color: MarkerColor) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
 }) {
   const { t, reason } = useI18n();
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [markerPickerOpen, setMarkerPickerOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const counting = task.status === "pending" && task.dispatchAt > now;
   useEffect(() => {
@@ -166,7 +197,10 @@ const QueueItem = memo(function QueueItem({
   }
 
   return (
-    <div className="qcard">
+    <div
+      className={`qcard${task.markerColor ? " marked" : ""}`}
+      style={{ "--marker-color": markerHex(task.markerColor) } as CSSProperties}
+    >
       <div className="q-inputs">
         {task.inputs.map((im) => (
           <img key={im.id} className="q-thumb" src={imgThumbUrl(im.id)} alt={im.filename} />
@@ -181,6 +215,40 @@ const QueueItem = memo(function QueueItem({
           <span className="muted small">· {task.aspectRatio}</span>
           {task.resolution && <span className="muted small">· {task.resolution}</span>}
           <div className="spacer" style={{ flex: 1 }} />
+          <div className="marker-control">
+            <button
+              className={`q-icon-btn marker-toggle${task.markerColor ? " marked" : ""}`}
+              style={{ "--marker-color": markerHex(task.markerColor ?? defaultMarkerColor) } as CSSProperties}
+              title={task.markerColor ? t("remove_marker") : t("add_marker")}
+              onClick={() => onSetMarker(task.id, task.markerColor ? null : defaultMarkerColor)}
+            >
+              <i className="fa-solid fa-bookmark" />
+            </button>
+            <button
+              className="q-icon-btn marker-picker-toggle"
+              title={t("choose_marker_color")}
+              onClick={() => setMarkerPickerOpen((value) => !value)}
+            >
+              <i className="fa-solid fa-caret-down" />
+            </button>
+            {markerPickerOpen && (
+              <div className="marker-picker" role="group" aria-label={t("choose_marker_color")}>
+                {MARKER_COLORS.map((color) => (
+                  <button
+                    key={color.id}
+                    className={defaultMarkerColor === color.id ? "selected" : ""}
+                    style={{ "--marker-color": color.hex } as CSSProperties}
+                    title={t(`marker_${color.id}`)}
+                    onClick={() => {
+                      onDefaultMarkerColor(color.id);
+                      onSetMarker(task.id, color.id);
+                      setMarkerPickerOpen(false);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
           <button
             className="q-icon-btn q-reuse"
             title={t("reuse")}
@@ -195,6 +263,22 @@ const QueueItem = memo(function QueueItem({
           >
             <i className="fa-solid fa-bolt" />
           </button>
+          <button
+            className="q-icon-btn"
+            title={t("save_copy_to_drafts")}
+            onClick={() => onSaveDraft(task, false)}
+          >
+            <i className="fa-solid fa-box-archive" />
+          </button>
+          {task.status === "pending" && (
+            <button
+              className="q-icon-btn"
+              title={t("move_to_drafts")}
+              onClick={() => onSaveDraft(task, true)}
+            >
+              <i className="fa-solid fa-box-open" />
+            </button>
+          )}
           {undoLeft > 0 && (
             <button
               className="q-undo"
@@ -226,6 +310,14 @@ const QueueItem = memo(function QueueItem({
 
         {task.prompt && (
           <div className="q-prompt-wrap">
+            {promptExpanded && promptNeedsToggle && (
+              <button
+                className="link-btn q-prompt-toggle q-prompt-toggle-top"
+                onClick={() => setPromptExpanded(false)}
+              >
+                {t("show_less")}
+              </button>
+            )}
             <p className={`q-prompt${promptExpanded ? " expanded" : ""}`}>
               {task.prompt}
             </p>

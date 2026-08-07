@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { api, ImageRow, Generation, QueueTask } from "./api";
+import { api, DraftBody, ImageRow, Generation, MarkerColor, QueueTask, TaskSpec } from "./api";
 import { useI18n } from "./i18n";
 import Generate from "./pages/Generate";
 import Library from "./pages/Library";
@@ -17,8 +17,10 @@ import AddHistoryModal from "./components/AddHistoryModal";
 import UsageDashboard from "./components/UsageDashboard";
 import ImageViewer from "./components/ImageViewer";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
+import Drafts from "./pages/Drafts";
+import { useToast } from "./components/Toast";
 
-export type SidebarPanel = "library" | "history" | "favorites";
+export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
 export interface Prefill {
   prompt: string;
@@ -75,6 +77,7 @@ function initialUndoSeconds() {
 
 export default function App() {
   const { t, lang, setLang } = useI18n();
+  const toast = useToast();
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>("library");
   const [managerOpen, setManagerOpen] = useState(false);
   const [managerPanel, setManagerPanel] = useState<ManagerPanel>("library");
@@ -103,6 +106,7 @@ export default function App() {
     null,
   );
   const [dataVersion, setDataVersion] = useState(0);
+  const [draftVersion, setDraftVersion] = useState(0);
   const openViewer = useCallback(
     (image: ImageRow, list: ImageRow[] = []) => setViewer({ image, list }),
     [],
@@ -214,7 +218,7 @@ export default function App() {
 
   // --- Generation queue (lives in App so it survives tab switches) ---
   const enqueue = useCallback(
-    (task: Omit<QueueTask, "id" | "status" | "dispatchAt">) =>
+    (task: TaskSpec) =>
       setQueue((q) => [
         ...q,
         {
@@ -317,6 +321,7 @@ export default function App() {
           uploadImageIds: [],
           tagIds: task.tagIds,
           clientTaskId: task.id,
+          markerColor: task.markerColor,
         })
         // The original request stays open through cancellation, so its result
         // (success / aborted / blocked / error) is the true final state and
@@ -437,8 +442,6 @@ export default function App() {
   }, []);
 
   // Reuse a queued task's settings AND enqueue it immediately (skip the form).
-  // enqueue expects Omit<QueueTask, "id"|"status"|"dispatchAt">; QueueTask already
-  // carries every field, so spreading is a direct, lossless match.
   const reuseGenerateTask = useCallback(
     (task: QueueTask) =>
       enqueue({
@@ -448,11 +451,52 @@ export default function App() {
         resolution: task.resolution,
         format: task.format,
         inputs: task.inputs,
+        outputImages: task.outputImages ?? [],
         tagIds: task.tagIds,
         skipIfPrecedingSucceeds: task.skipIfPrecedingSucceeds,
       }),
     [enqueue],
   );
+
+  const taskToDraftBody = useCallback((task: TaskSpec): DraftBody => ({
+    prompt: task.prompt,
+    model: task.model,
+    aspectRatio: task.aspectRatio,
+    resolution: task.resolution,
+    outputFormat: task.format,
+    skipIfPrecedingSucceeds: !!task.skipIfPrecedingSucceeds,
+    inputImageIds: task.inputs.map((img) => img.id),
+    outputImageIds: (task.outputImages ?? []).map((img) => img.id),
+    tagIds: task.tagIds,
+  }), []);
+
+  const saveTaskAsDraft = useCallback(async (task: TaskSpec) => {
+    try {
+      await api.createDraft(taskToDraftBody(task));
+      setDraftVersion((v) => v + 1);
+      toast(t("draft_saved"));
+      return true;
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+      return false;
+    }
+  }, [t, taskToDraftBody, toast]);
+
+  const saveQueueTaskAsDraft = useCallback(async (task: QueueTask, move: boolean) => {
+    const saved = await saveTaskAsDraft(task);
+    if (saved && move && task.status === "pending") removeTask(task.id);
+  }, [removeTask, saveTaskAsDraft]);
+
+  const setTaskMarker = useCallback((id: string, markerColor: MarkerColor | null) => {
+    const task = queueRef.current.find((item) => item.id === id);
+    setQueue((q) => q.map((item) => item.id === id ? { ...item, markerColor } : item));
+    if (!task || task.status === "pending") return;
+    // The running History placeholder is created just after dispatch. A very
+    // fast marker click can beat that INSERT, so retry once after it settles.
+    api.updateGenerationMarker(id, markerColor).catch(() => {
+      window.setTimeout(() => api.updateGenerationMarker(id, markerColor).catch(() => {}), 1000);
+    });
+  }, []);
 
   const completedRefreshKey =
     queue.filter((task) => task.status !== "pending" && task.status !== "running")
@@ -501,6 +545,7 @@ export default function App() {
                   ["library", "fa-images"],
                   ["history", "fa-clock-rotate-left"],
                   ["favorites", "fa-star"],
+                  ["drafts", "fa-box-archive"],
                 ] as [SidebarPanel, string][]
               ).map(([panel, icon]) => (
                 <button
@@ -543,14 +588,23 @@ export default function App() {
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
+                live={runningKey !== ""}
               />
-            ) : (
+            ) : sidebarPanel === "favorites" ? (
               <Favorites
                 onReuse={reuse}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
                 onChanged={bumpData}
+              />
+            ) : (
+              <Drafts
+                compact
+                refreshKey={draftVersion}
+                canQueue={!!configured}
+                onQueue={enqueue}
+                onOpenViewer={openViewer}
               />
             )}
           </div>
@@ -583,11 +637,14 @@ export default function App() {
             keyConfigured={!!configured}
             queue={queue}
             enqueue={enqueue}
+            onSaveDraft={saveTaskAsDraft}
             removeTask={removeTask}
             abortTask={abortTask}
             clearDone={clearDone}
             onReuseTask={reuseTask}
             onReuseGenerateTask={reuseGenerateTask}
+            onSaveQueueTaskAsDraft={saveQueueTaskAsDraft}
+            onSetTaskMarker={setTaskMarker}
             onOpenViewer={openViewer}
             concurrency={concurrency}
             setConcurrency={setConcurrency}
@@ -609,6 +666,7 @@ export default function App() {
         <AddHistoryModal
           onClose={() => setShowAddHistory(false)}
           onSaved={bumpData}
+          onDraftSaved={() => setDraftVersion((v) => v + 1)}
         />
       )}
 
@@ -621,6 +679,10 @@ export default function App() {
           onReuse={reuse}
           refreshKey={completedRefreshKey}
           onChanged={bumpData}
+          draftRefreshKey={draftVersion}
+          canQueue={!!configured}
+          onQueueDraft={enqueue}
+          historyLive={runningKey !== ""}
         />
       )}
 

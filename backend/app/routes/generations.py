@@ -5,12 +5,13 @@ from fastapi import APIRouter, HTTPException, Query
 
 from .. import storage, tagging
 from ..db import get_conn
-from ..models import ManualGenerationRequest
+from ..models import ManualGenerationRequest, MarkerPatch
 
 router = APIRouter(prefix="/api/generations", tags=["generations"])
 
-_STATUSES = {"success", "blocked", "error", "note"}
+_STATUSES = {"success", "blocked", "error"}
 _SOURCES = {"vertex", "manual"}
+_MARKER_COLORS = {"red", "orange", "yellow", "green", "blue", "purple", "pink"}
 
 
 def _now() -> str:
@@ -93,8 +94,7 @@ def _validate_manual_body(body: ManualGenerationRequest) -> None:
 
 
 def _resolved_source(body: ManualGenerationRequest) -> str:
-    # A note is inherently a manual record — never "generated in app".
-    return "manual" if body.status == "note" else body.source
+    return body.source
 
 
 def _check_images_exist(conn, body: ManualGenerationRequest) -> None:
@@ -208,13 +208,14 @@ def list_generations(
     q: str | None = None,
     starred: bool | None = None,
     kind: str | None = None,
+    with_output: bool = False,
 ):
     # Filter by the output image's tag (i.e. generations archived into that tag),
     # by a substring of the prompt, by whether the output is starred (the
     # "favorites" / saved-prompt view), and/or by record kind:
     # 'vertex' (real generation via this app), 'manual' (a logged result from
-    # elsewhere, excluding notes), or 'note' (a manually-logged idea/note).
-    clauses, params = [], []
+    # elsewhere. Legacy notes are preserved for rollback but no longer shown.
+    clauses, params = ["status != 'note'"], []
     if tag is not None:
         clauses.append(
             "output_image_id IN "
@@ -226,15 +227,19 @@ def list_generations(
             "output_image_id IN "
             "(SELECT id FROM images WHERE starred = 1 AND deleted_at IS NULL)"
         )
+    if with_output:
+        # Only retain records with a live output image. This deliberately
+        # excludes running, blocked, cancelled, failed, and deleted-output
+        # records while remaining compatible with all other filters.
+        clauses.append(
+            "output_image_id IN (SELECT id FROM images WHERE deleted_at IS NULL)"
+        )
     if kind == "vertex":
         clauses.append("source = ?")
         params.append("vertex")
     elif kind == "manual":
         clauses.append("source = ? AND status != ?")
         params.extend(["manual", "note"])
-    elif kind == "note":
-        clauses.append("status = ?")
-        params.append("note")
     if q and q.strip():
         clauses.append("prompt LIKE ?")
         params.append(f"%{q.strip()}%")
@@ -257,7 +262,7 @@ def generation_by_output(image_id: int):
     Lets the image lightbox surface the prompt behind a generated image."""
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM generations WHERE output_image_id = ? "
+            "SELECT * FROM generations WHERE output_image_id = ? AND status != 'note' "
             "ORDER BY id DESC LIMIT 1",
             (image_id,),
         ).fetchone()
@@ -267,6 +272,23 @@ def generation_by_output(image_id: int):
         g["inputs"] = _inputs_for(conn, g["id"])
         g["outputImage"] = _output_for(conn, g["output_image_id"])
     return g
+
+
+@router.patch("/by-client/{client_task_id}/marker")
+def update_generation_marker(client_task_id: str, body: MarkerPatch):
+    if body.markerColor is not None and body.markerColor not in _MARKER_COLORS:
+        raise HTTPException(status_code=400, detail="Invalid marker color")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM generations WHERE client_task_id = ?", (client_task_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Generation not found")
+        conn.execute(
+            "UPDATE generations SET marker_color = ? WHERE id = ?",
+            (body.markerColor, row["id"]),
+        )
+    return {"updated": row["id"], "markerColor": body.markerColor}
 
 
 @router.get("/{gen_id}")

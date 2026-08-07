@@ -15,8 +15,8 @@ import LibraryPickerModal from "./LibraryPickerModal";
 import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
 
-type Kind = "vertex" | "manual" | "note";
-const KINDS: Kind[] = ["vertex", "manual", "note"];
+type Kind = "vertex" | "manual" | "draft";
+const KINDS: Kind[] = ["vertex", "manual", "draft"];
 type RealStatus = "success" | "blocked" | "error";
 const REAL_STATUSES: RealStatus[] = ["success", "blocked", "error"];
 
@@ -44,11 +44,16 @@ export default function AddHistoryModal({
   duplicate,
   onClose,
   onSaved,
+  onDraftSaved,
+  aboveViewer = false,
 }: {
   existing?: Generation;
   duplicate?: Generation;
   onClose: () => void;
   onSaved: () => void;
+  onDraftSaved?: () => void;
+  /** Render above the image viewer when opened from its metadata panel. */
+  aboveViewer?: boolean;
 }) {
   const { t } = useI18n();
   // Source record to pre-fill from: an explicit edit target, else a duplicate.
@@ -59,7 +64,7 @@ export default function AddHistoryModal({
   const [aspectRatio, setAspectRatio] = useState(src?.aspect_ratio ?? ASPECT_RATIOS[0]);
   const [resolution, setResolution] = useState(src?.resolution ?? RESOLUTIONS[0]);
   const [kind, setKind] = useState<Kind>(
-    src ? (src.status === "note" ? "note" : src.source) : "manual",
+    src ? src.source : "manual",
   );
   const [status, setStatus] = useState<RealStatus>(initialStatus(src));
   const [errorMessage, setErrorMessage] = useState(src?.error_message ?? "");
@@ -158,7 +163,32 @@ export default function AddHistoryModal({
   };
 
   const save = async () => {
-    const finalStatus: RealStatus | "note" = kind === "note" ? "note" : status;
+    if (kind === "draft") {
+      setSaving(true);
+      setErr(null);
+      try {
+        await api.createDraft({
+          prompt,
+          model,
+          aspectRatio,
+          resolution,
+          outputFormat: "image/jpeg",
+          skipIfPrecedingSucceeds: false,
+          inputImageIds: inputImages.map((img) => img.id),
+          outputImageIds: outputImages.map((img) => img.id),
+          tagIds: outputTagIds,
+        });
+        onDraftSaved?.();
+        onSaved();
+        onClose();
+      } catch (e) {
+        setErr((e as Error).message);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+    const finalStatus: RealStatus = status;
     if (finalStatus === "success" && outputImages.length === 0) {
       setErr(t("add_history_need_output"));
       return;
@@ -172,7 +202,7 @@ export default function AddHistoryModal({
         aspectRatio,
         resolution,
         status: finalStatus,
-        source: kind === "note" ? ("manual" as const) : kind,
+        source: kind,
         errorMessage: errorMessage.trim() || null,
         inputImageIds: inputImages.map((i) => i.id),
         createdAt: createdAt ? new Date(createdAt).toISOString() : null,
@@ -201,7 +231,7 @@ export default function AddHistoryModal({
 
   return createPortal(
     <div
-      className="overlay"
+      className={`overlay${aboveViewer ? " overlay-above-viewer" : ""}`}
       role="dialog"
       aria-modal="true"
       onPointerDown={(e) => {
@@ -304,7 +334,7 @@ export default function AddHistoryModal({
               {t("batch_output_hint", { n: outputImages.length })}
             </p>
           )}
-          {outputImages.length > 0 && (
+          {outputImages.length > 0 && kind !== "draft" && (
             <div style={{ marginTop: 10 }}>
               <label>{t("note_label")}</label>
               <textarea
@@ -314,6 +344,12 @@ export default function AddHistoryModal({
                 onChange={(e) => setOutputNote(e.target.value)}
               />
               <label style={{ marginTop: 8 }}>{t("tags_label")}</label>
+              <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
+            </div>
+          )}
+          {kind === "draft" && (
+            <div style={{ marginTop: 10 }}>
+              <label>{t("archive_to")}</label>
               <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
             </div>
           )}
@@ -369,7 +405,7 @@ export default function AddHistoryModal({
         <div style={{ marginTop: 14 }}>
           <label>{t("add_history_kind")}</label>
           <div className="seg">
-            {KINDS.map((k) => (
+            {(existing ? KINDS.filter((k) => k !== "draft") : KINDS).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -380,13 +416,13 @@ export default function AddHistoryModal({
                   ? t("hist_filter_vertex")
                   : k === "manual"
                   ? t("hist_filter_manual")
-                  : t("status_note")}
+                  : t("status_draft")}
               </button>
             ))}
           </div>
         </div>
 
-        {kind !== "note" && (
+        {kind !== "draft" && (
           <div style={{ marginTop: 14 }}>
             <label>{t("add_history_status")}</label>
             <div className="seg">
@@ -404,21 +440,21 @@ export default function AddHistoryModal({
           </div>
         )}
 
-        {kind !== "note" && (status === "blocked" || status === "error") && (
+        {kind !== "draft" && (status === "blocked" || status === "error") && (
           <div style={{ marginTop: 14 }}>
             <label>{t("add_history_error_message")}</label>
             <textarea value={errorMessage} onChange={(e) => setErrorMessage(e.target.value)} />
           </div>
         )}
 
-        <div style={{ marginTop: 14 }}>
+        {kind !== "draft" && <div style={{ marginTop: 14 }}>
           <label>{t("add_history_created_at")}</label>
           <input
             type="datetime-local"
             value={createdAt}
             onChange={(e) => setCreatedAt(e.target.value)}
           />
-        </div>
+        </div>}
 
         {err && (
           <div className="notice error small" style={{ marginTop: 12 }}>

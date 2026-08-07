@@ -32,15 +32,29 @@ export interface Generation {
   model: string;
   aspect_ratio: string | null;
   resolution: string | null;
-  status: "success" | "blocked" | "error" | "aborted" | "note";
+  status: "running" | "success" | "blocked" | "error" | "aborted" | "note";
   error_message: string | null;
   raw_finish: string | null;
   output_image_id: number | null;
   created_at: string;
   source: "vertex" | "manual";
+  client_task_id: string | null;
+  marker_color: MarkerColor | null;
   inputs?: ImageRow[];
   outputImage?: ImageRow | null;
 }
+
+export type MarkerColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+
+export const MARKER_COLORS: Array<{ id: MarkerColor; hex: string }> = [
+  { id: "red", hex: "#ef4444" },
+  { id: "orange", hex: "#f97316" },
+  { id: "yellow", hex: "#eab308" },
+  { id: "green", hex: "#22c55e" },
+  { id: "blue", hex: "#3b82f6" },
+  { id: "purple", hex: "#8b5cf6" },
+  { id: "pink", hex: "#ec4899" },
+];
 
 export type TaskStatus =
   | "pending"
@@ -51,17 +65,24 @@ export type TaskStatus =
   | "error"
   | "aborted";
 
-// A client-side queued generation task (snapshot of the composer at submit time).
-export interface QueueTask {
-  id: string;
+// The durable, reusable part of a generation task. Composer, drafts and queue
+// all exchange this shape so fields cannot silently drift between features.
+export interface TaskSpec {
   prompt: string;
   model: string;
   aspectRatio: string;
   resolution: string | null;
   format: string;
   inputs: ImageRow[];
+  outputImages?: ImageRow[];
   tagIds: number[];
   skipIfPrecedingSucceeds?: boolean;
+  markerColor?: MarkerColor | null;
+}
+
+// A client-side queued generation task (snapshot of the composer at submit time).
+export interface QueueTask extends TaskSpec {
+  id: string;
   status: TaskStatus;
   // When (ms epoch) this task may actually be dispatched to the backend. Until
   // then it sits in the "undo send" countdown window and can be cancelled with
@@ -75,11 +96,53 @@ export interface QueueTask {
   outputImage?: ImageRow | null;
 }
 
+export interface Draft {
+  id: number;
+  prompt: string;
+  model: string;
+  aspect_ratio: string | null;
+  resolution: string | null;
+  output_format: string;
+  skip_if_preceding_succeeds: number;
+  pinned: number;
+  legacy_generation_id: number | null;
+  created_at: string;
+  updated_at: string;
+  inputImages: ImageRow[];
+  outputImages: ImageRow[];
+  tags: TagRef[];
+}
+
+export interface DraftBody {
+  prompt: string;
+  model: string;
+  aspectRatio?: string | null;
+  resolution?: string | null;
+  outputFormat: string;
+  skipIfPrecedingSucceeds: boolean;
+  pinned?: boolean;
+  inputImageIds: number[];
+  outputImageIds: number[];
+  tagIds: number[];
+}
+
+export const draftToTaskSpec = (draft: Draft): TaskSpec => ({
+  prompt: draft.prompt,
+  model: normalizeModelId(draft.model),
+  aspectRatio: draft.aspect_ratio ?? "1:1",
+  resolution: draft.resolution,
+  format: draft.output_format,
+  inputs: draft.inputImages,
+  outputImages: draft.outputImages,
+  tagIds: draft.tags.map((tag) => tag.id),
+  skipIfPrecedingSucceeds: !!draft.skip_if_preceding_succeeds,
+});
+
 export interface GenerateResult {
-  status: "success" | "blocked" | "error";
+  status: "success" | "blocked" | "error" | "aborted";
   message: string | null;
   text: string | null;
-  generation: Generation;
+  generation: Generation | null;
   outputImage: ImageRow | null;
   inputImageIds: number[];
 }
@@ -94,6 +157,7 @@ export interface GenerateBody {
   uploadImageIds: number[];
   tagIds?: number[];
   clientTaskId?: string;
+  markerColor?: MarkerColor | null;
 }
 
 export interface ManualGenerationBody {
@@ -101,7 +165,7 @@ export interface ManualGenerationBody {
   model: string;
   aspectRatio?: string | null;
   resolution?: string | null;
-  status: "success" | "blocked" | "error" | "note";
+  status: "success" | "blocked" | "error";
   source: "vertex" | "manual";
   errorMessage?: string | null;
   inputImageIds: number[];
@@ -278,8 +342,48 @@ export const api = {
       await fetch(`/api/generate/cancel/${cid}`, { method: "POST" }),
     );
   },
+  async updateGenerationMarker(cid: string, markerColor: MarkerColor | null) {
+    return handle(
+      await fetch(`/api/generations/by-client/${encodeURIComponent(cid)}/marker`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markerColor }),
+      }),
+    );
+  },
   async getStats(): Promise<Stats> {
     return handle(await fetch("/api/stats"));
+  },
+  async listDrafts(
+    params: { limit?: number; offset?: number; q?: string; pinned?: boolean } = {},
+  ): Promise<{ drafts: Draft[]; total: number }> {
+    const q = new URLSearchParams();
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    if (params.q && params.q.trim()) q.set("q", params.q.trim());
+    if (params.pinned !== undefined) q.set("pinned", String(params.pinned));
+    return handle(await fetch(`/api/drafts?${q.toString()}`));
+  },
+  async createDraft(body: DraftBody): Promise<Draft> {
+    return handle(
+      await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  },
+  async updateDraft(id: number, body: Partial<DraftBody>): Promise<Draft> {
+    return handle(
+      await fetch(`/api/drafts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  },
+  async deleteDraft(id: number): Promise<{ deleted: number }> {
+    return handle(await fetch(`/api/drafts/${id}`, { method: "DELETE" }));
   },
   async listGenerations(
     params: {
@@ -288,7 +392,8 @@ export const api = {
       tag?: number;
       q?: string;
       starred?: boolean;
-      kind?: "vertex" | "manual" | "note";
+      kind?: "vertex" | "manual";
+      withOutput?: boolean;
     } = {},
   ): Promise<{ generations: Generation[]; total: number }> {
     const q = new URLSearchParams();
@@ -298,6 +403,7 @@ export const api = {
     if (params.q && params.q.trim()) q.set("q", params.q.trim());
     if (params.starred) q.set("starred", "true");
     if (params.kind) q.set("kind", params.kind);
+    if (params.withOutput) q.set("with_output", "true");
     return handle(await fetch(`/api/generations?${q.toString()}`));
   },
   async generationByOutput(imageId: number): Promise<Generation | null> {

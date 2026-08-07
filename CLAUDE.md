@@ -33,11 +33,11 @@ Google's "Nano Banana" image models through **Vertex AI** using the official
 backend/
   app/
     main.py        FastAPI app; CORS; mounts routes; serves built frontend (frontend/dist)
-    db.py          SQLite connection + schema; DATA_DIR (honors IMAGEN_DATA_DIR)
+    db.py          SQLite connection + schema/migrations; DATA_DIR (honors IMAGEN_DATA_DIR)
     storage.py     file persistence: sha256 dedup + Pillow WebP thumbnails
     gemini.py      Vertex call: request build, parse, normalize, + retry/backoff layer
     models.py      pydantic request models (GenerateRequest, VertexConfig)
-    routes/        images.py, generate.py, generations.py, settings.py
+    routes/        images.py, generate.py, generations.py, drafts.py, settings.py
   scripts/probe_gemini.py   one-off ADC connectivity probe
   pyproject.toml   deps managed by uv (uv.lock)
 frontend/
@@ -45,8 +45,8 @@ frontend/
     App.tsx        two-pane workspace + in-memory generation queue (processor lives here)
     api.ts         fetch wrapper + shared types + MODELS/ASPECT_RATIOS/RESOLUTIONS/OUTPUT_FORMATS
     i18n.tsx       tiny no-dependency i18n (zh/en dictionaries)
-    components/    OptionBar, QueueList, ReferenceTray, SettingsModal
-    pages/         Generate, Library, History
+    components/    OptionBar, QueueList, ReferenceTray, DraftEditorModal, SettingsModal
+    pages/         Generate, Drafts, Library, History
 ```
 
 ## Dev commands
@@ -101,7 +101,13 @@ global (one credential file); the account needs the `Vertex AI User` role.
 - Uploaded and generated images share the `images` table; `source` distinguishes them
   (`upload` | `generated`). Generated images auto-enter the library.
 - **Lineage**: `generation_inputs` (ordered many-to-many inputs) + `generations.output_image_id`
-  (the result). Deleting an image referenced by any generation is refused.
+  (the result). Soft deletion keeps lineage renderable; permanent purge detaches
+  generation references and cascades draft attachments.
+- **Drafts** are independent from generation history and usage stats. `draft_images`
+  stores ordered `input` / `output` attachments and `draft_tags` stores future
+  auto-archive targets. Deleting a draft never deletes an image.
+- Legacy `generations.status='note'` rows are copied idempotently into drafts via
+  `drafts.legacy_generation_id`; originals remain preserved but hidden from History/Stats.
 
 ## Generate flow & contract
 
@@ -131,6 +137,9 @@ baseline image filter, so `IMAGE_SAFETY` can still occur and is surfaced as `blo
 - The generation **queue is client-side and in-memory**, owned by `App` (survives
   panel switches; **a page refresh loses not-yet-run tasks** — completed generations are
   already persisted server-side in history/library).
+- Drafts are backend-persisted and survive refresh. Composer tasks and pending
+  queue tasks can be copied/moved to Drafts; output attachments are preserved in
+  the task snapshot but are never sent to Vertex as inputs.
 - Processor runs up to `MAX_CONCURRENT_GENERATIONS = 10` in parallel (bounded FIFO).
 - Submitting snapshots the composer into the queue and **keeps the prompt** (intentional,
   for quick edits/re-runs). Each card shows a shimmer while pending/running, then result

@@ -7,6 +7,7 @@ A lightweight, single-user **image-to-image** web app powered by Google Vertex A
 - **Image library** with dedup (sha256) and lineage tracking
 - **Generation history** — one-click reuse of prompts + reference images
 - **Queue** with delayed send, cancellation, configurable concurrency, live status
+- **Persistent drafts** with input/output attachments, pinning, inline prompt editing, and safe queue/copy/move actions
 - English / Chinese UI (localStorage)
 
 <img width="1389" height="844" alt="Screenshot 2026-06-21 at 22 23 48" src="https://github.com/user-attachments/assets/e23dfa9d-5a02-4e50-b59a-d201d9329034" />
@@ -77,5 +78,6 @@ PROJECT=<your-project> uv run python scripts/probe_gemini.py
 ## Data & Privacy
 
 - All data lives in the mounted volume (`./imagen-data` with the command above, or `./backend/data` with compose).
+- Drafts are stored in SQLite; deleting a draft never deletes its attached library images.
 - ADC credentials (`~/.config/gcloud/application_default_credentials.json`) are mounted read-only.
 - Single-user, no access control — add your own if exposing to a network.

@@ -274,6 +274,16 @@ export default function Favorites({
 
               {g.prompt && (
                 <div className="history-prompt-wrap">
+                  {expanded.has(g.id) &&
+                    (g.prompt.length > PROMPT_PREVIEW_CHARS ||
+                      g.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES) && (
+                      <button
+                        className="link-btn history-prompt-toggle history-prompt-toggle-top"
+                        onClick={() => toggleExpand(g.id)}
+                      >
+                        {t("show_less")}
+                      </button>
+                    )}
                   <p
                     className={`history-prompt${
                       expanded.has(g.id) ? " expanded" : ""

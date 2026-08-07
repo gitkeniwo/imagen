@@ -2,6 +2,7 @@
 import contextlib
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -39,12 +40,14 @@ CREATE TABLE IF NOT EXISTS generations (
     model           TEXT,
     aspect_ratio    TEXT,
     resolution      TEXT,
-    status          TEXT,             -- 'success' | 'blocked' | 'error' | 'note'
+    status          TEXT,             -- 'running' | 'success' | 'blocked' | 'error' | 'note'
     error_message   TEXT,
     raw_finish      TEXT,
     output_image_id INTEGER REFERENCES images(id),
     created_at      TEXT,
-    source          TEXT NOT NULL DEFAULT 'vertex'  -- 'vertex' (real call) | 'manual' (logged)
+    source          TEXT NOT NULL DEFAULT 'vertex', -- 'vertex' (real call) | 'manual' (logged)
+    client_task_id  TEXT,
+    marker_color    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS generation_inputs (
@@ -74,6 +77,34 @@ CREATE TABLE IF NOT EXISTS image_tags (
     created_at TEXT,
     PRIMARY KEY (image_id, tag_id)
 );
+
+CREATE TABLE IF NOT EXISTS drafts (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt                      TEXT NOT NULL DEFAULT '',
+    model                       TEXT NOT NULL,
+    aspect_ratio                TEXT,
+    resolution                  TEXT,
+    output_format               TEXT NOT NULL DEFAULT 'image/jpeg',
+    skip_if_preceding_succeeds  INTEGER NOT NULL DEFAULT 0,
+    pinned                      INTEGER NOT NULL DEFAULT 0,
+    legacy_generation_id        INTEGER UNIQUE REFERENCES generations(id),
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS draft_images (
+    draft_id  INTEGER REFERENCES drafts(id) ON DELETE CASCADE,
+    image_id  INTEGER REFERENCES images(id) ON DELETE CASCADE,
+    role      TEXT NOT NULL CHECK (role IN ('input', 'output')),
+    position  INTEGER NOT NULL,
+    PRIMARY KEY (draft_id, role, image_id)
+);
+
+CREATE TABLE IF NOT EXISTS draft_tags (
+    draft_id INTEGER REFERENCES drafts(id) ON DELETE CASCADE,
+    tag_id   INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (draft_id, tag_id)
+);
 """
 
 
@@ -84,6 +115,11 @@ CREATE INDEX IF NOT EXISTS idx_generations_output_image_id ON generations(output
 CREATE INDEX IF NOT EXISTS idx_generation_inputs_image_id ON generation_inputs(image_id);
 CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_images_source ON images(source);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_generations_client_task_id
+    ON generations(client_task_id) WHERE client_task_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_drafts_order ON drafts(pinned DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_draft_images_image_id ON draft_images(image_id);
+CREATE INDEX IF NOT EXISTS idx_draft_tags_tag_id ON draft_tags(tag_id);
 """
 
 
@@ -112,6 +148,72 @@ def _migrate(conn) -> None:
         conn.execute(
             "ALTER TABLE generations ADD COLUMN source TEXT NOT NULL DEFAULT 'vertex'"
         )
+    if "client_task_id" not in gen_cols:
+        conn.execute("ALTER TABLE generations ADD COLUMN client_task_id TEXT")
+    if "marker_color" not in gen_cols:
+        conn.execute("ALTER TABLE generations ADD COLUMN marker_color TEXT")
+
+    # A process restart necessarily interrupts every in-flight request. Keep
+    # its prompt/history record, but do not leave a permanent "waiting" card.
+    conn.execute(
+        """UPDATE generations
+           SET status = 'error',
+               error_message = COALESCE(error_message, 'Generation interrupted before a response was stored.'),
+               raw_finish = COALESCE(raw_finish, 'INTERRUPTED')
+           WHERE status = 'running'"""
+    )
+
+    # Notes used to be represented as generation rows. Copy them into the
+    # dedicated draft domain without deleting or modifying the originals. The
+    # unique legacy_generation_id makes this migration safe to run repeatedly.
+    notes = conn.execute(
+        "SELECT * FROM generations WHERE status = 'note' ORDER BY id"
+    ).fetchall()
+    for note in notes:
+        existing = conn.execute(
+            "SELECT id FROM drafts WHERE legacy_generation_id = ?", (note["id"],)
+        ).fetchone()
+        if existing:
+            continue
+        now = note["created_at"] or datetime.now(timezone.utc).isoformat()
+        cur = conn.execute(
+            """INSERT INTO drafts
+               (prompt, model, aspect_ratio, resolution, output_format,
+                skip_if_preceding_succeeds, pinned, legacy_generation_id,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'image/jpeg', 0, 0, ?, ?, ?)""",
+            (
+                note["prompt"] or "",
+                (
+                    "gemini-3-pro-image"
+                    if note["model"] == "gemini-3-pro-image-preview"
+                    else note["model"] or "gemini-3-pro-image"
+                ),
+                note["aspect_ratio"],
+                note["resolution"],
+                note["id"],
+                now,
+                now,
+            ),
+        )
+        draft_id = cur.lastrowid
+        inputs = conn.execute(
+            """SELECT image_id, position FROM generation_inputs
+               WHERE generation_id = ? ORDER BY position""",
+            (note["id"],),
+        ).fetchall()
+        for row in inputs:
+            conn.execute(
+                """INSERT OR IGNORE INTO draft_images
+                   (draft_id, image_id, role, position) VALUES (?, ?, 'input', ?)""",
+                (draft_id, row["image_id"], row["position"]),
+            )
+        if note["output_image_id"]:
+            conn.execute(
+                """INSERT OR IGNORE INTO draft_images
+                   (draft_id, image_id, role, position) VALUES (?, ?, 'output', 0)""",
+                (draft_id, note["output_image_id"]),
+            )
     conn.commit()
 
 

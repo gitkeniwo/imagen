@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Generation, ImageRow } from "../api";
+import { Generation, ImageRow, TaskSpec } from "../api";
 import { useI18n } from "../i18n";
 import Library from "../pages/Library";
 import History from "../pages/History";
 import Favorites from "../pages/Favorites";
 import Bin from "../pages/Bin";
+import Drafts from "../pages/Drafts";
 
-export type ManagerPanel = "library" | "history" | "favorites" | "bin";
+export type ManagerPanel = "library" | "history" | "favorites" | "drafts" | "bin";
 
 // Full-screen overlay that hosts Library / History / Bin in their non-compact
 // "full" mode, so the same components (and all their features) render large.
@@ -19,6 +20,10 @@ export default function FullscreenManager({
   onReuse,
   refreshKey,
   onChanged,
+  draftRefreshKey,
+  canQueue,
+  onQueueDraft,
+  historyLive,
 }: {
   initialPanel: ManagerPanel;
   onClose: () => void;
@@ -27,6 +32,10 @@ export default function FullscreenManager({
   onReuse: (g: Generation) => void;
   refreshKey: number;
   onChanged?: () => void;
+  draftRefreshKey: number;
+  canQueue: boolean;
+  onQueueDraft: (task: TaskSpec) => void;
+  historyLive: boolean;
 }) {
   const { t } = useI18n();
   const [panel, setPanel] = useState<ManagerPanel>(initialPanel);
@@ -62,6 +71,7 @@ export default function FullscreenManager({
               ["library", "fa-images"],
               ["history", "fa-clock-rotate-left"],
               ["favorites", "fa-star"],
+              ["drafts", "fa-box-archive"],
               ["bin", "fa-trash-can"],
             ] as [ManagerPanel, string][]
           ).map(([p, icon]) => (
@@ -92,6 +102,7 @@ export default function FullscreenManager({
             onReuse={handleReuse}
             onOpenViewer={onOpenViewer}
             refreshKey={refreshKey}
+            live={historyLive}
           />
         ) : panel === "favorites" ? (
           <Favorites
@@ -99,6 +110,13 @@ export default function FullscreenManager({
             onOpenViewer={onOpenViewer}
             refreshKey={refreshKey}
             onChanged={onChanged}
+          />
+        ) : panel === "drafts" ? (
+          <Drafts
+            refreshKey={draftRefreshKey}
+            canQueue={canQueue}
+            onQueue={onQueueDraft}
+            onOpenViewer={onOpenViewer}
           />
         ) : (
           <Bin

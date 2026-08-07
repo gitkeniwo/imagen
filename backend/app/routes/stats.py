@@ -98,7 +98,8 @@ def get_stats():
         gens = [
             (_parse_dt(r["created_at"]), r["status"], r["model"], r["resolution"])
             for r in conn.execute(
-                "SELECT created_at, status, model, resolution FROM generations"
+                "SELECT created_at, status, model, resolution FROM generations "
+                "WHERE status NOT IN ('note', 'running')"
             )
         ]
         gens = [g for g in gens if g[0] is not None]

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Prefill } from "../App";
-import { ImageRow, MODELS, normalizeModelId, QueueTask } from "../api";
+import { ImageRow, MODELS, normalizeModelId, QueueTask, TaskSpec } from "../api";
 import { useI18n } from "../i18n";
 import ReferenceTray from "../components/ReferenceTray";
 import OptionBar from "../components/OptionBar";
@@ -17,11 +17,14 @@ export default function Generate({
   keyConfigured,
   queue,
   enqueue,
+  onSaveDraft,
   removeTask,
   abortTask,
   clearDone,
   onReuseTask,
   onReuseGenerateTask,
+  onSaveQueueTaskAsDraft,
+  onSetTaskMarker,
   onOpenViewer,
   concurrency,
   setConcurrency,
@@ -35,12 +38,15 @@ export default function Generate({
   moveInTray: (from: number, to: number) => void;
   keyConfigured: boolean;
   queue: QueueTask[];
-  enqueue: (task: Omit<QueueTask, "id" | "status" | "dispatchAt">) => void;
+  enqueue: (task: TaskSpec) => void;
+  onSaveDraft: (task: TaskSpec) => Promise<boolean>;
   removeTask: (id: string) => void;
   abortTask: (id: string) => void;
   clearDone: () => void;
   onReuseTask: (task: QueueTask) => void;
   onReuseGenerateTask: (task: QueueTask) => void;
+  onSaveQueueTaskAsDraft: (task: QueueTask, move: boolean) => void;
+  onSetTaskMarker: (id: string, color: import("../api").MarkerColor | null) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   concurrency: number;
   setConcurrency: (n: number) => void;
@@ -69,19 +75,22 @@ export default function Generate({
   const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
 
+  const currentTask = (): TaskSpec => ({
+    prompt,
+    model,
+    aspectRatio,
+    resolution: isPro ? resolution : null,
+    format,
+    inputs: [...tray],
+    outputImages: [],
+    tagIds: [...tagIds],
+    skipIfPrecedingSucceeds,
+  });
+
   // Submit: snapshot the composer into the queue. Keep the prompt in place so
   // repeated generations and small edits don't require retyping it.
   const submit = () => {
-    enqueue({
-      prompt,
-      model,
-      aspectRatio,
-      resolution: isPro ? resolution : null,
-      format,
-      inputs: [...tray],
-      tagIds: [...tagIds],
-      skipIfPrecedingSucceeds,
-    });
+    enqueue(currentTask());
   };
 
   const useAsRef = useCallback(
@@ -138,6 +147,9 @@ export default function Generate({
           >
             {t("generate")}
           </button>
+          <button onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
+            <i className="fa-solid fa-box-archive" /> {t("save_draft")}
+          </button>
           <span className="muted small">
             {t("ref_count", { n: tray.length })}
             {!keyConfigured && t("need_key_inline")}
@@ -161,6 +173,8 @@ export default function Generate({
         onUseAsRef={useAsRef}
         onReuse={onReuseTask}
         onReuseGenerate={onReuseGenerateTask}
+        onSaveDraft={onSaveQueueTaskAsDraft}
+        onSetMarker={onSetTaskMarker}
         onOpenViewer={onOpenViewer}
         concurrency={concurrency}
         setConcurrency={setConcurrency}
