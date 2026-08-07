@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import TagPicker from "./TagPicker";
 import { useToast } from "./Toast";
+import AddHistoryModal from "./AddHistoryModal";
 
 // Full-screen lightbox: big image + metadata + inline tag editing + actions.
 // For generated images it also surfaces the prompt behind the image (copy /
@@ -43,6 +44,8 @@ export default function ImageViewer({
   const [note, setNote] = useState(current.note ?? "");
   const [source, setSource] = useState(current.source);
   const [copied, setCopied] = useState(false);
+  const [editingGen, setEditingGen] = useState<Generation | null>(null);
+  const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
 
   // Reset editable tags when navigating to another image.
   useEffect(() => {
@@ -126,9 +129,18 @@ export default function ImageViewer({
       else if (e.key === "ArrowRight")
         setIdx((i) => Math.min(items.length - 1, i + 1));
     };
+    if (editingGen || duplicatingGen) return;
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items.length, onClose]);
+  }, [items.length, onClose, editingGen, duplicatingGen]);
+
+  const refreshGeneration = () => {
+    if (source !== "generated") return;
+    api
+      .generationByOutput(current.id)
+      .then(setGen)
+      .catch(() => setGen(null));
+  };
 
   const applyTags = async (next: number[]) => {
     const prev = tagIds;
@@ -239,6 +251,22 @@ export default function ImageViewer({
                   {t("reuse")}
                 </button>
               )}
+              <div className="viewer-prompt-actions">
+                <button
+                  className="icon-btn"
+                  title={t("edit_annotation")}
+                  onClick={() => setEditingGen(gen)}
+                >
+                  <i className="fa-solid fa-pen" />
+                </button>
+                <button
+                  className="icon-btn"
+                  title={t("duplicate")}
+                  onClick={() => setDuplicatingGen(gen)}
+                >
+                  <i className="fa-solid fa-clone" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -279,6 +307,30 @@ export default function ImageViewer({
         >
           ›
         </button>
+      )}
+
+      {editingGen && (
+        <AddHistoryModal
+          existing={editingGen}
+          aboveViewer
+          onClose={() => setEditingGen(null)}
+          onSaved={() => {
+            setEditingGen(null);
+            refreshGeneration();
+            onChanged?.();
+          }}
+        />
+      )}
+      {duplicatingGen && (
+        <AddHistoryModal
+          duplicate={duplicatingGen}
+          aboveViewer
+          onClose={() => setDuplicatingGen(null)}
+          onSaved={() => {
+            setDuplicatingGen(null);
+            onChanged?.();
+          }}
+        />
       )}
     </div>
   );
