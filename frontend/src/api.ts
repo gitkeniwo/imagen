@@ -495,3 +495,6 @@ export const OUTPUT_FORMATS = [
   { id: "image/jpeg", label: "JPG" },
   { id: "image/png", label: "PNG" },
 ];
+
+// Upper bound for "enqueue this task N times" (a retry group).
+export const MAX_TASK_ATTEMPTS = 20;

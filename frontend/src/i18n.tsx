@@ -283,6 +283,9 @@ const zh: Dict = {
   skip_if_preceding_succeeds: "自动跳过",
   skip_if_preceding_succeeds_title: "若正在生成的任务成功则跳过此任务",
   skipped_by_preceding_success: "已跳过：前置任务已成功生成",
+  attempts: "重试次数",
+  attempts_hint:
+    "一次提交排入 N 个相同任务：第一个按当前“自动跳过”设置，其余自动开启自动跳过——任意一次成功后，本组剩余任务自动跳过，不影响后续其它任务。",
 };
 
 const en: Dict = {
@@ -563,6 +566,9 @@ const en: Dict = {
   skip_if_preceding_succeeds: "Auto-skip",
   skip_if_preceding_succeeds_title: "Skip if the running task succeeds",
   skipped_by_preceding_success: "Skipped: preceding task succeeded",
+  attempts: "Tries",
+  attempts_hint:
+    "One submit enqueues N copies of this task: the first uses the Auto-skip toggle, the rest are auto-skip. The first success cancels the remaining copies of this task only — later tasks are unaffected.",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };

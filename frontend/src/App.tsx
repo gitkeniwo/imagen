@@ -6,7 +6,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { api, DraftBody, ImageRow, Generation, MarkerColor, QueueTask, TaskSpec } from "./api";
+import {
+  api,
+  DraftBody,
+  ImageRow,
+  Generation,
+  MarkerColor,
+  MAX_TASK_ATTEMPTS,
+  QueueTask,
+  TaskSpec,
+} from "./api";
 import { useI18n } from "./i18n";
 import Generate from "./pages/Generate";
 import Library from "./pages/Library";
@@ -217,17 +226,25 @@ export default function App() {
   }, [queue, dispatchTick]);
 
   // --- Generation queue (lives in App so it survives tab switches) ---
+  // Enqueue a task `count` times as one retry group: the first copy keeps the
+  // composer's own auto-skip setting, every later copy is opted in, so the first
+  // success cancels the remaining retries of *this* task only.
   const enqueue = useCallback(
-    (task: TaskSpec) =>
-      setQueue((q) => [
-        ...q,
-        {
+    (task: TaskSpec, count = 1) => {
+      const n = Math.max(1, Math.min(MAX_TASK_ATTEMPTS, Math.floor(count) || 1));
+      setQueue((q) => {
+        const dispatchAt = Date.now() + undoSeconds * 1000;
+        const added: QueueTask[] = Array.from({ length: n }, (_, i) => ({
           ...task,
+          skipIfPrecedingSucceeds:
+            i === 0 ? task.skipIfPrecedingSucceeds : true,
           id: crypto.randomUUID(),
           status: "pending",
-          dispatchAt: Date.now() + undoSeconds * 1000,
-        },
-      ]),
+          dispatchAt,
+        }));
+        return [...q, ...added];
+      });
+    },
     [undoSeconds],
   );
 

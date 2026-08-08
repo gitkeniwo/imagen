@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { Prefill } from "../App";
-import { ImageRow, MODELS, normalizeModelId, QueueTask, TaskSpec } from "../api";
+import {
+  ImageRow,
+  MAX_TASK_ATTEMPTS,
+  MODELS,
+  normalizeModelId,
+  QueueTask,
+  TaskSpec,
+} from "../api";
 import { useI18n } from "../i18n";
 import ReferenceTray from "../components/ReferenceTray";
 import OptionBar from "../components/OptionBar";
 import QueueList from "../components/QueueList";
 import TagPicker from "../components/TagPicker";
+
+const ATTEMPTS_KEY = "imagen-task-attempts";
 
 export default function Generate({
   tray,
@@ -38,7 +47,7 @@ export default function Generate({
   moveInTray: (from: number, to: number) => void;
   keyConfigured: boolean;
   queue: QueueTask[];
-  enqueue: (task: TaskSpec) => void;
+  enqueue: (task: TaskSpec, count?: number) => void;
   onSaveDraft: (task: TaskSpec) => Promise<boolean>;
   removeTask: (id: string) => void;
   abortTask: (id: string) => void;
@@ -60,6 +69,18 @@ export default function Generate({
   const [format, setFormat] = useState("image/jpeg");
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [skipIfPrecedingSucceeds, setSkipIfPrecedingSucceeds] = useState(false);
+  // "Try up to N times": one submit enqueues N copies of the task as a retry
+  // group (copies 2..N are auto-skip, so the first success cancels the rest).
+  const [attempts, setAttempts] = useState(() => {
+    const raw = Number(localStorage.getItem(ATTEMPTS_KEY));
+    return Number.isInteger(raw) && raw >= 1 && raw <= MAX_TASK_ATTEMPTS
+      ? raw
+      : 1;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(ATTEMPTS_KEY, String(attempts));
+  }, [attempts]);
 
   // Apply a "reuse" prefill coming from the History tab.
   useEffect(() => {
@@ -90,7 +111,7 @@ export default function Generate({
   // Submit: snapshot the composer into the queue. Keep the prompt in place so
   // repeated generations and small edits don't require retyping it.
   const submit = () => {
-    enqueue(currentTask());
+    enqueue(currentTask(), attempts);
   };
 
   const useAsRef = useCallback(
@@ -161,6 +182,34 @@ export default function Generate({
           >
             {t("skip_if_preceding_succeeds")}
           </button>
+          <div className="attempts-field" title={t("attempts_hint")}>
+            <span className="muted small">{t("attempts")}</span>
+            <button
+              onClick={() => setAttempts((n) => Math.max(1, n - 1))}
+              disabled={attempts <= 1}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min={1}
+              max={MAX_TASK_ATTEMPTS}
+              value={attempts}
+              onChange={(e) => {
+                const v = Math.floor(Number(e.target.value));
+                if (!Number.isFinite(v)) return;
+                setAttempts(Math.max(1, Math.min(MAX_TASK_ATTEMPTS, v || 1)));
+              }}
+            />
+            <button
+              onClick={() =>
+                setAttempts((n) => Math.min(MAX_TASK_ATTEMPTS, n + 1))
+              }
+              disabled={attempts >= MAX_TASK_ATTEMPTS}
+            >
+              +
+            </button>
+          </div>
           <div className="spacer" />
         </div>
       </div>

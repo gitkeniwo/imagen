@@ -323,6 +323,15 @@ body.resizing-sidebar {
 .skip-toggle.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .skip-toggle.on:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
 
+.attempts-field { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.attempts-field button { font-size: 12px; padding: 4px 9px; box-shadow: none; line-height: 1; }
+.attempts-field input {
+  width: 48px; text-align: center; padding: 4px 2px; font-size: 12px;
+  -moz-appearance: textfield;
+}
+.attempts-field input::-webkit-outer-spin-button,
+.attempts-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
 .aspect-row { display: flex; gap: 8px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
 .aspect-btn {
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
