@@ -875,6 +875,24 @@ body.resizing-sidebar {
   min-height: 2px; display: flex; align-items: flex-end; position: relative;
 }
 .daily-bar-ok { width: 100%; background: var(--badge-running-text); border-radius: 3px 3px 0 0; }
+.daily-col.on .daily-bar { filter: brightness(0.92); }
+.daily-col.on .daily-bar::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 4px;
+  border: 1px solid var(--badge-running-text); pointer-events: none;
+}
+
+/* Hover readout for a single bucket (day / hour / month / year). */
+.daily-chart-wrap { position: relative; }
+.daily-tip {
+  position: absolute; bottom: calc(100% + 8px); z-index: 3;
+  min-width: 150px; padding: 8px 10px; pointer-events: none;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14); font-size: 12px;
+}
+.daily-tip-label { font-weight: 600; margin-bottom: 4px; }
+.daily-tip-row { display: flex; justify-content: space-between; gap: 16px; line-height: 1.6; }
+.daily-tip-row.muted { color: var(--muted); }
+.daily-tip-row.cost { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
 
 .cost-currency-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
 .cost-currency-input { width: 64px; }

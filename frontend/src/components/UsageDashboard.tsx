@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, MODELS, StatPeriod, Stats } from "../api";
+import { api, CostBasisRow, MODELS, StatPeriod, Stats } from "../api";
 import { useI18n } from "../i18n";
 
 // Full-screen usage dashboard (mirrors FullscreenManager's overlay shell).
@@ -51,6 +51,26 @@ function loadPrices(): { currency: string; prices: Record<string, number> } {
   }
 }
 
+// Map raw (model, resolution) success counts onto the editable price rows.
+function countsByPriceRow(rows: CostBasisRow[] | undefined): Record<string, number> {
+  const counts: Record<string, number> = Object.fromEntries(PRICE_ROWS.map((r) => [r.key, 0]));
+  for (const cb of rows ?? []) {
+    const res = cb.resolution ?? "1K";
+    const key = cb.model === "gemini-2.5-flash-image"
+      ? "flash"
+      : PRO_IMAGE_MODEL_IDS.has(cb.model)
+        ? PRICE_ROWS.find((r) => r.resolution === res)?.key
+        : undefined;
+    if (key) counts[key] = (counts[key] ?? 0) + cb.count;
+  }
+  return counts;
+}
+
+function costOf(rows: CostBasisRow[] | undefined, prices: Record<string, number>): number {
+  const counts = countsByPriceRow(rows);
+  return PRICE_ROWS.reduce((sum, r) => sum + (counts[r.key] ?? 0) * (prices[r.key] ?? 0), 0);
+}
+
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -68,6 +88,7 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const [currency, setCurrency] = useState("$");
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [period, setPeriod] = useState<StatPeriod>("all");
+  const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
     const { currency, prices } = loadPrices();
@@ -92,6 +113,8 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
+  useEffect(() => setHover(null), [period]);
+
   const setPrice = (key: string, value: number) =>
     setPrices((p) => {
       const next = { ...p, [key]: value };
@@ -106,28 +129,18 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const p = stats?.periods[period];
 
   // Successful generations per price-row (model + resolution; null res → 1K).
-  const successCounts = useMemo(() => {
-    const counts: Record<string, number> = Object.fromEntries(PRICE_ROWS.map((r) => [r.key, 0]));
-    for (const cb of p?.cost_basis ?? []) {
-      const res = cb.resolution ?? "1K";
-      const row = cb.model === "gemini-2.5-flash-image"
-        ? "flash"
-        : PRO_IMAGE_MODEL_IDS.has(cb.model)
-          ? PRICE_ROWS.find((r) => r.resolution === res)?.key
-          : undefined;
-      if (row) counts[row] = (counts[row] ?? 0) + cb.count;
-    }
-    return counts;
-  }, [p]);
+  const successCounts = useMemo(() => countsByPriceRow(p?.cost_basis), [p]);
 
   const costTotal = PRICE_ROWS.reduce(
     (sum, r) => sum + (successCounts[r.key] ?? 0) * (prices[r.key] ?? 0),
     0,
   );
 
+
   const successRate = p && p.total > 0 ? Math.round(((p.by_status.success ?? 0) / p.total) * 100) : 0;
   const chartPoints = p?.chart ?? [];
   const chartMax = Math.max(1, ...chartPoints.map((d) => d.total));
+  const hovered = hover !== null ? chartPoints[hover] : undefined;
 
   return (
     <div className="manager-overlay" role="dialog" aria-modal="true">
@@ -205,17 +218,59 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
                 {/* Trend chart for the selected window */}
                 <div className="panel">
                   <h4 className="dash-h">{t("usage_series")}</h4>
-                  <div className="daily-chart">
-                    {chartPoints.map((d, i) => (
-                      <div key={`${d.label}-${i}`} className="daily-col" title={`${d.label}: ${d.total}`}>
-                        <div className="daily-bar" style={{ height: `${(d.total / chartMax) * 100}%` }}>
-                          <div
-                            className="daily-bar-ok"
-                            style={{ height: d.total ? `${(d.success / d.total) * 100}%` : "0%" }}
-                          />
+                  <div className="daily-chart-wrap" onMouseLeave={() => setHover(null)}>
+                    <div className="daily-chart">
+                      {chartPoints.map((d, i) => (
+                        <div
+                          key={`${d.label}-${i}`}
+                          className={`daily-col${hover === i ? " on" : ""}`}
+                          onMouseEnter={() => setHover(i)}
+                        >
+                          <div className="daily-bar" style={{ height: `${(d.total / chartMax) * 100}%` }}>
+                            <div
+                              className="daily-bar-ok"
+                              style={{ height: d.total ? `${(d.success / d.total) * 100}%` : "0%" }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {hovered && (
+                      <div
+                        className="daily-tip"
+                        style={{
+                          left: `${((hover! + 0.5) / chartPoints.length) * 100}%`,
+                          // Keep the box inside the panel at both ends.
+                          transform: `translateX(${
+                            hover! < chartPoints.length / 4
+                              ? "0"
+                              : hover! > (chartPoints.length * 3) / 4
+                                ? "-100%"
+                                : "-50%"
+                          })`,
+                        }}
+                      >
+                        <div className="daily-tip-label">{hovered.label}</div>
+                        <div className="daily-tip-row">
+                          <span>{t("stat_total")}</span>
+                          <b>{hovered.total}</b>
+                        </div>
+                        <div className="daily-tip-row">
+                          <span>{t("status_success")}</span>
+                          <b>{hovered.success}</b>
+                        </div>
+                        {hovered.total > hovered.success && (
+                          <div className="daily-tip-row muted">
+                            <span>{t("stat_other")}</span>
+                            <b>{hovered.total - hovered.success}</b>
+                          </div>
+                        )}
+                        <div className="daily-tip-row cost">
+                          <span>{t("cost_estimate")}</span>
+                          <b>≈ {currency}{costOf(hovered.cost_basis, prices).toFixed(2)}</b>
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
                   <div className="daily-axis">
                     <span className="muted small">{chartPoints[0]?.label}</span>

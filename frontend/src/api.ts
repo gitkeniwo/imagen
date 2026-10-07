@@ -193,6 +193,8 @@ export interface SeriesPoint {
   label: string;
   total: number;
   success: number;
+  // Per-bucket success counts, so the chart tooltip can price a single bar.
+  cost_basis: CostBasisRow[];
 }
 
 // All metrics for a single time window — the whole dashboard switches together.

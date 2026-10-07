@@ -42,16 +42,31 @@ def _in_window(d: date, period: str, today: date) -> bool:
 
 
 def _series_from(rows, ordered_keys, keyfn):
-    """Aggregate (dt,status) rows into ordered {label,total,success} buckets."""
+    """Aggregate (dt,status,model,resolution) rows into ordered buckets.
+
+    Each bucket carries its own ``cost_basis`` (same shape as the period-level
+    one) so the chart tooltip can price a single day/hour/month with the user's
+    unit prices without a second request.
+    """
     agg = {k: [0, 0] for k, _ in ordered_keys}
-    for dt, st in rows:
+    cost = {k: {} for k, _ in ordered_keys}
+    for dt, st, model, res in rows:
         k = keyfn(dt)
         if k in agg:
             agg[k][0] += 1
             if st == "success":
                 agg[k][1] += 1
+                cost[k][(model, res)] = cost[k].get((model, res), 0) + 1
     return [
-        {"label": lbl, "total": agg[k][0], "success": agg[k][1]}
+        {
+            "label": lbl,
+            "total": agg[k][0],
+            "success": agg[k][1],
+            "cost_basis": [
+                {"model": m, "resolution": r, "count": c}
+                for (m, r), c in cost[k].items()
+            ],
+        }
         for k, lbl in ordered_keys
     ]
 
@@ -83,7 +98,7 @@ def _chart(rows, period: str, today: date):
             lambda dt: f"{dt.year}-{dt.month:02d}",
         )
     # all → by year
-    yrs = [dt.year for dt, _ in rows]
+    yrs = [r[0].year for r in rows]
     first = min(yrs, default=today.year)
     return _series_from(
         rows,
@@ -140,7 +155,7 @@ def get_stats():
                 for (m, r), c in cost.items()
             ],
             "images": {"total": len(isub), "by_source": by_source, "bytes": bytes_sum},
-            "chart": _chart([(g[0], g[1]) for g in gsub], p, today),
+            "chart": _chart(gsub, p, today),
         }
 
     dts = [g[0] for g in gens]
