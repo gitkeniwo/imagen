@@ -1,5 +1,7 @@
 """FastAPI application: wires routes and serves the built frontend."""
 import logging
+import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -35,7 +37,13 @@ def _startup() -> None:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    # `token` lets the desktop shell verify it is talking to *its* backend on
+    # the shared, fixed port. Docker runs without the env var, so it stays None.
+    return {
+        "ok": True,
+        "app": "imagen",
+        "token": os.environ.get("IMAGEN_INSTANCE_TOKEN"),
+    }
 
 
 app.include_router(settings.router)
@@ -47,7 +55,21 @@ app.include_router(tags.router)
 app.include_router(drafts.router)
 
 # Serve the production build of the frontend if present.
-DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+def _resolve_dist() -> Path:
+    """Locate the built frontend.
+
+    Order: explicit override -> PyInstaller bundle -> repo-relative checkout.
+    """
+    override = os.environ.get("IMAGEN_FRONTEND_DIST")
+    if override:
+        return Path(override).expanduser().resolve()
+    if getattr(sys, "frozen", False):
+        # onedir: resources land in `_internal/` (sys._MEIPASS).
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "frontend_dist"
+    return Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+
+DIST = _resolve_dist()
 if DIST.exists():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
