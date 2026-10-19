@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Desktop-only changes do not affect the Docker image. GitHub skips path
+    # filters for tag pushes, so releases still publish an image.
+    paths-ignore: ['desktop/**', 'docs/**']
   workflow_dispatch:
 
 env:

@@ -13,3 +13,8 @@ frontend/tsconfig.tsbuildinfo
 *.local
 .env
 .env.*
+desktop/
+backend/build/
+backend/dist/
+backend/build-desktop/
+*.spec

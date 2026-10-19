@@ -46,3 +46,11 @@ pnpm-debug.log*
 # Misc
 .DS_Store
 Thumbs.db
+
+# Desktop app (Tauri) build artifacts
+desktop/src-tauri/target/
+desktop/src-tauri/resources/
+desktop/src-tauri/binaries/
+desktop/node_modules/
+backend/build-desktop/
+backend/*.spec
