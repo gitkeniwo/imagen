@@ -51,6 +51,7 @@ Thumbs.db
 desktop/src-tauri/target/
 desktop/src-tauri/resources/
 desktop/src-tauri/binaries/
+desktop/src-tauri/gen/
 desktop/node_modules/
 backend/build-desktop/
 backend/*.spec

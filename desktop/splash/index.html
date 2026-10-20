@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imagen</title>
+  <style>
+    :root { color-scheme: light dark; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; align-items: center; justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+      background: radial-gradient(circle at 30% 20%, #eef4ff, #dbe6f7 55%, #cfdcef);
+      color: #1f2a3d; user-select: none;
+    }
+    main { text-align: center; }
+    .mark {
+      width: 84px; height: 84px; margin: 0 auto 22px; border-radius: 20px;
+      background: #205cb4; position: relative;
+      box-shadow: 0 18px 40px rgba(32, 92, 180, .28);
+    }
+    .mark::before {
+      content: ""; position: absolute; inset: 20px 20px 30px 20px;
+      border-radius: 50%; background: #f5f8ff;
+    }
+    .mark::after {
+      content: ""; position: absolute; right: 20px; bottom: 20px;
+      width: 22px; height: 22px; border-radius: 6px; background: #205cb4;
+    }
+    h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; letter-spacing: .2px; }
+    p { margin: 0; color: #4b5a73; font-size: 13px; }
+    .spinner {
+      width: 18px; height: 18px; margin: 26px auto 10px;
+      border: 2px solid rgba(32, 92, 180, .22); border-top-color: #205cb4;
+      border-radius: 50%; animation: spin .9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hint { margin-top: 18px; font-size: 12px; color: #6b7a93; }
+    @media (prefers-color-scheme: dark) {
+      body { background: radial-gradient(circle at 30% 20%, #243247, #172133 55%, #101827); color: #e6ecf6; }
+      p { color: #a9b8ce; }
+      .hint { color: #8595ad; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true"></div>
+    <h1>Imagen</h1>
+    <p>正在启动…</p>
+    <div class="spinner" aria-hidden="true"></div>
+    <p class="hint">正在准备本地服务，首次启动可能需要几秒。</p>
+  </main>
+</body>
+</html>
