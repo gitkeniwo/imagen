@@ -1,8 +1,11 @@
 """Generation entry point: assemble inputs, call Gemini, persist lineage."""
 import asyncio
+import json
+import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from .. import gemini, storage, tagging
 from ..db import get_conn
@@ -10,7 +13,19 @@ from ..models import GenerateRequest
 from .settings import read_vertex
 
 router = APIRouter(prefix="/api", tags=["generate"])
+logger = logging.getLogger("imagen.generate")
 _MARKER_COLORS = {"red", "orange", "yellow", "green", "blue", "purple", "pink"}
+
+# WebKit drops idle HTTP responses at ~61 s (stage-0 spike), and a real Vertex
+# call can stay silent for minutes, so /api/generate streams a keep-alive space
+# before the result. Whitespace is valid leading JSON, so `res.json()` in the
+# frontend needs no change.
+KEEPALIVE_INTERVAL_S = 15.0
+
+# Strong references to the detached generation tasks. Starlette cancels the
+# response generator when the client disconnects, so the work must live in its
+# own task; without this set the event loop could garbage-collect it mid-flight.
+_ACTIVE_TASKS: set[asyncio.Task] = set()
 
 # Ephemeral, best-effort live progress per client queue-task id (set by the
 # frontend as clientTaskId). Holds the latest gemini event ({"phase": ...}) so
@@ -49,8 +64,34 @@ def cancel_generate(cid: str):
     return {"ok": True}
 
 
+def _payload(
+    status: str,
+    message: str | None,
+    text: str | None,
+    generation: dict | None,
+    output_image: dict | None,
+    input_ids: list[int],
+) -> dict:
+    return {
+        "status": status,
+        "message": message,
+        "text": text,
+        "generation": generation,
+        "outputImage": output_image,
+        "inputImageIds": input_ids,
+    }
+
+
 @router.post("/generate")
-async def generate(body: GenerateRequest, request: Request):
+async def generate(body: GenerateRequest):
+    """Run one generation and stream its result.
+
+    Validation, the Vertex project check and input existence checks all happen
+    before the response starts, so failures still return plain 4xx JSON. The
+    success path is a StreamingResponse: the heavy work runs in a detached task
+    (strong-referenced in ``_ACTIVE_TASKS``) while this generator emits a
+    keep-alive space every 15 s and finally the same JSON body as before.
+    """
     project, location = read_vertex()
     if not project:
         raise HTTPException(status_code=400, detail="Vertex project not set. Please enter your Project ID in Settings.")
@@ -109,10 +150,12 @@ async def generate(body: GenerateRequest, request: Request):
 
     # Cooperative cancel: stop signal comes from POST /generate/cancel/{cid}
     # (CANCELLED) — the request stays open so we can return the true result.
-    # A disconnect watcher is the fallback (tab closed / navigated away).
-    # gemini.generate checks should_abort at retry boundaries, so it finishes
-    # the current in-flight attempt (keeping a completed/billable result) but
-    # skips all further retries.
+    # A client disconnect is the fallback (tab closed / the window navigated
+    # away): StreamingResponse cancels this generator, which sets the flag
+    # below. gemini.generate checks should_abort at retry boundaries, so it
+    # finishes the current in-flight attempt (keeping a completed/billable
+    # result) but skips all further retries. The work task is NEVER cancelled
+    # on disconnect — it must run to completion so the history row is honest.
     cid = body.clientTaskId
     disconnected = {"v": False}
 
@@ -120,43 +163,13 @@ async def generate(body: GenerateRequest, request: Request):
         if cid:
             PROGRESS[cid] = ev
 
-    async def _watch() -> None:
-        try:
-            while not await request.is_disconnected():
-                await asyncio.sleep(0.3)
-            disconnected["v"] = True
-        except asyncio.CancelledError:
-            pass
-
-    explicitly_cancelled = False
-    if cid:
-        INFLIGHT.add(cid)
-    watch_task = asyncio.ensure_future(_watch())
-    try:
-        result = await gemini.generate(
-            project=project,
-            location=location,
-            prompt=body.prompt,
-            model=model,
-            aspect_ratio=body.aspectRatio,
-            resolution=body.resolution,
-            images=input_images,
-            output_mime=body.outputFormat,
-            on_event=on_event,
-            should_abort=lambda: disconnected["v"] or (cid in CANCELLED),
-        )
-    finally:
-        watch_task.cancel()
-        if cid:
-            explicitly_cancelled = cid in CANCELLED
-            INFLIGHT.discard(cid)
-            PROGRESS.pop(cid, None)
-            CANCELLED.discard(cid)
+    def _should_abort() -> bool:
+        return disconnected["v"] or bool(cid and cid in CANCELLED)
 
     # Persist in a worker thread (Pillow decode + thumbnail are CPU-bound and
     # would otherwise stall the event loop). The thread opens its own
     # connection — sqlite3 connections are bound to their creating thread.
-    def _persist() -> tuple[str, str | None, dict | None, dict | None]:
+    def _persist(result: gemini.GeminiResult, explicitly_cancelled: bool) -> tuple[str, str | None, dict | None, dict | None]:
         status, message = result.status, result.message
         output_image = None
         with get_conn() as conn:
@@ -199,13 +212,111 @@ async def generate(body: GenerateRequest, request: Request):
             )
         return status, message, generation, output_image
 
-    status, message, generation, output_image = await asyncio.to_thread(_persist)
+    async def _run_generation() -> dict:
+        """Detached worker: call Gemini, persist the row, return the payload.
 
-    return {
-        "status": status,
-        "message": message,
-        "text": result.text,
-        "generation": generation,
-        "outputImage": output_image,
-        "inputImageIds": ordered_ids,
-    }
+        Runs in its own task so a client disconnect (which cancels the response
+        generator) does not cancel the generation. Never raises: any crash is
+        turned into a valid `status="error"` payload so the stream can always
+        finish with parseable JSON.
+        """
+        try:
+            result = await gemini.generate(
+                project=project,
+                location=location,
+                prompt=body.prompt,
+                model=model,
+                aspect_ratio=body.aspectRatio,
+                resolution=body.resolution,
+                images=input_images,
+                output_mime=body.outputFormat,
+                on_event=on_event,
+                should_abort=_should_abort,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — last-resort guard for the row
+            logger.exception("generation task crashed (gen_id=%s)", gen_id)
+            result = gemini.GeminiResult(
+                status="error", message=f"Unexpected backend error: {exc}"
+            )
+
+        explicitly_cancelled = bool(cid and cid in CANCELLED)
+        try:
+            status, message, generation, output_image = await asyncio.to_thread(
+                _persist, result, explicitly_cancelled
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("failed to persist generation (gen_id=%s)", gen_id)
+            status, message, output_image = "error", f"Failed to store result: {exc}", None
+            try:
+                with get_conn() as conn:
+                    conn.execute(
+                        "UPDATE generations SET status = 'error', error_message = ? WHERE id = ?",
+                        (message, gen_id),
+                    )
+                    conn.commit()
+                    generation = dict(
+                        conn.execute("SELECT * FROM generations WHERE id = ?", (gen_id,)).fetchone()
+                    )
+            except Exception:  # noqa: BLE001
+                generation = None
+
+        try:
+            text = result.text
+        except Exception:  # noqa: BLE001
+            text = None
+        return _payload(status, message, text, generation, output_image, ordered_ids)
+
+    async def _run() -> dict:
+        """Own the lifecycle sets: they must clear even if the response was
+        cancelled and nobody is left to read the payload."""
+        try:
+            return await _run_generation()
+        finally:
+            if cid:
+                INFLIGHT.discard(cid)
+                PROGRESS.pop(cid, None)
+                CANCELLED.discard(cid)
+
+    if cid:
+        INFLIGHT.add(cid)
+    task = asyncio.create_task(_run())
+    _ACTIVE_TASKS.add(task)
+    task.add_done_callback(_ACTIVE_TASKS.discard)
+
+    async def _stream():
+        try:
+            yield b" "  # flush headers/first byte immediately
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=KEEPALIVE_INTERVAL_S)
+                if task in done:
+                    break
+                yield b" "
+        except (asyncio.CancelledError, GeneratorExit):
+            # Starlette cancels this generator when the client goes away. Detect
+            # the disconnect here (request.is_disconnected() is unreliable once
+            # the response has started) and let the work task stop cooperatively
+            # at its next retry boundary. The task itself is left running.
+            disconnected["v"] = True
+            raise
+
+        if task.cancelled():
+            payload = _payload(
+                "error", "Generation was cancelled.", None, None, None, ordered_ids
+            )
+        else:
+            try:
+                payload = task.result()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("generation task raised (gen_id=%s)", gen_id)
+                payload = _payload(
+                    "error", f"Unexpected backend error: {exc}", None, None, None, ordered_ids
+                )
+        yield json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+
+    # No `finally` cleanup here: the work task owns INFLIGHT/PROGRESS/CANCELLED
+    # so they stay accurate even when this response is cancelled mid-stream.
+    return StreamingResponse(_stream(), media_type="application/json")

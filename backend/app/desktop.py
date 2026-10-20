@@ -40,9 +40,17 @@ def _force_exit() -> None:
 
 
 def _watch_parent(server) -> None:
-    """Block on stdin until EOF (= parent died) and ask uvicorn to stop."""
-    stream = getattr(sys.stdin, "buffer", None)
-    if stream is None:  # no stdin at all: nothing to watch
+    """Block on stdin until EOF (= parent died) and ask uvicorn to stop.
+
+    Uses a raw ``os.read`` instead of the buffered reader: when uvicorn exits
+    on its own (for example the port is already taken) and Python finalizes
+    while this daemon thread is still blocked, the buffered reader's internal
+    lock aborts the interpreter (``_enter_buffered_busy``). A raw fd read has
+    no such lock.
+    """
+    try:
+        fd = sys.stdin.fileno()
+    except (AttributeError, OSError, ValueError):
         print(
             "imagen-backend: IMAGEN_PARENT_WATCH set but stdin is unavailable",
             file=sys.stderr,
@@ -50,7 +58,7 @@ def _watch_parent(server) -> None:
         )
         return
     try:
-        while stream.read(1):
+        while os.read(fd, 1):
             pass
     except (OSError, ValueError):
         pass
@@ -59,6 +67,34 @@ def _watch_parent(server) -> None:
     timer = threading.Timer(PARENT_WATCH_TIMEOUT_S, _force_exit)
     timer.daemon = True
     timer.start()
+
+
+def build_server(app, port: int):
+    """Build the uvicorn server with the frozen-friendly settings.
+
+    Explicit loop/http/ws implementations avoid uvicorn's dynamic imports so
+    PyInstaller needs no extra hidden imports. Shared with the test backend.
+    """
+    import uvicorn
+
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        loop="asyncio",
+        http="h11",
+        ws="none",
+        lifespan="on",
+        access_log=False,
+        log_level="info",
+    )
+    return uvicorn.Server(config)
+
+
+def start_parent_watch(server) -> None:
+    """Start the stdin-EOF watcher when the shell asked for it."""
+    if os.environ.get("IMAGEN_PARENT_WATCH") == "1":
+        threading.Thread(target=_watch_parent, args=(server,), daemon=True).start()
 
 
 def main() -> int:
@@ -84,25 +120,10 @@ def main() -> int:
     if __package__ in (None, ""):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-    import uvicorn
-
     from app.main import app
 
-    config = uvicorn.Config(
-        app,
-        host="127.0.0.1",
-        port=port,
-        loop="asyncio",
-        http="h11",
-        ws="none",
-        lifespan="on",
-        access_log=False,
-        log_level="info",
-    )
-    server = uvicorn.Server(config)
-
-    if os.environ.get("IMAGEN_PARENT_WATCH") == "1":
-        threading.Thread(target=_watch_parent, args=(server,), daemon=True).start()
+    server = build_server(app, port)
+    start_parent_watch(server)
 
     print(f"imagen-backend: listening on 127.0.0.1:{port}", file=sys.stderr, flush=True)
     server.run()
