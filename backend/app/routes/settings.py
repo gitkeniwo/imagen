@@ -3,9 +3,11 @@
 Auth itself uses Application Default Credentials (ADC) on the machine — no
 secret is stored here; only the (non-secret) project id and location.
 """
+import os
+
 from fastapi import APIRouter
 
-from ..db import get_conn
+from ..db import DATA_DIR, get_conn
 from ..models import VertexConfig
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -26,6 +28,20 @@ def read_vertex() -> tuple[str | None, str]:
         project = _get(conn, PROJECT_KEY)
         location = _get(conn, LOCATION_KEY) or DEFAULT_LOCATION
     return project, location
+
+
+@router.get("/library")
+def get_library():
+    """Read-only library location for the Settings dialog.
+
+    `desktop` is true only for the desktop entry point, which sets
+    IMAGEN_LIBRARY_MODE after validating/locking/backing up the library.
+    Docker and dev uvicorn do not set it.
+    """
+    return {
+        "path": str(DATA_DIR),
+        "desktop": bool(os.environ.get("IMAGEN_LIBRARY_MODE")),
+    }
 
 
 @router.get("/vertex")

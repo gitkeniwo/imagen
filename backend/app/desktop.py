@@ -15,9 +15,9 @@ DEFAULT_PORT = 47860
 PARENT_WATCH_TIMEOUT_S = 5.0
 
 
-def _fail(message: str) -> int:
+def _fail(message: str, code: int = 2) -> int:
     print(f"imagen-backend: fatal: {message}", file=sys.stderr, flush=True)
-    return 2
+    return code
 
 
 def _parse_port(raw: str) -> int:
@@ -119,6 +119,28 @@ def main() -> int:
     # frozen bundle and `python -m app.desktop` this is already importable.
     if __package__ in (None, ""):
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+    # Validate the library, take the single-instance lock, and back it up
+    # BEFORE importing app.main/app.db or running init_storage.  An invalid
+    # path therefore cannot be created or initialized as a side effect.
+    try:
+        from app.library import LibraryError, prepare_library
+
+        library_path, library_mode = prepare_library(
+            data_dir, os.environ.get("IMAGEN_LIBRARY_MODE") or "auto"
+        )
+    except LibraryError as exc:
+        return _fail(str(exc), exc.code)
+    except Exception as exc:  # defensive: never continue with an unvalidated library
+        return _fail(f"图库准备失败：{exc}", 3)
+
+    os.environ["IMAGEN_DATA_DIR"] = str(library_path)
+    os.environ["IMAGEN_LIBRARY_MODE"] = library_mode
+    print(
+        f"imagen-backend: library mode={library_mode} path={library_path}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     from app.main import app
 
