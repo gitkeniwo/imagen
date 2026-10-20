@@ -183,12 +183,19 @@ fn main() {
             } else {
                 "library.html"
             };
+            let nav_handle = handle.clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App(initial.into()))
                 .title("Imagen")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(960.0, 640.0)
                 .disable_drag_drop_handler()
-                .on_navigation(move |url| backend::navigation_allowed(url, port))
+                .on_navigation(move |url| {
+                    if url.scheme() == library::ACTION_SCHEME {
+                        library::handle_action_url(&nav_handle, url);
+                        return false;
+                    }
+                    backend::navigation_allowed(url, port)
+                })
                 .on_download(download::handle)
                 .build()?;
 

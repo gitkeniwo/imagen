@@ -20,6 +20,9 @@ use tauri_plugin_dialog::DialogExt;
 use crate::backend::{self, BackendState};
 
 pub const CHANGE_LIBRARY_MENU_ID: &str = "change-library";
+pub const ACTION_SCHEME: &str = "imagen-action";
+pub const CHANGE_LIBRARY_ACTION: &str = "change-library";
+pub const REVEAL_LIBRARY_ACTION: &str = "reveal-library";
 pub const CONFIG_VERSION: u64 = 1;
 const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
 
@@ -323,37 +326,76 @@ fn library_url(query: &str) -> String {
     }
 }
 
-fn navigate(app: &AppHandle, url: String) {
+fn navigate(app: &AppHandle, url: String) -> bool {
     let Some(window) = app.get_webview_window("main") else {
-        return;
+        return false;
     };
     match url.parse::<Url>() {
         Ok(url) => {
             if let Err(err) = window.navigate(url) {
                 backend::log_line(app, &format!("navigate failed: {err}"));
+                false
+            } else {
+                true
             }
         }
-        Err(err) => backend::log_line(app, &format!("invalid local url {url}: {err}")),
+        Err(err) => {
+            backend::log_line(app, &format!("invalid local url {url}: {err}"));
+            false
+        }
     }
 }
 
-pub fn open_chooser(app: &AppHandle) {
-    let current = {
-        let state = app.state::<BackendState>();
-        let config = state
-            .config
-            .read()
-            .unwrap_or_else(|p| p.into_inner());
-        config.library.as_ref().map(|lib| lib.path.clone())
-    };
-    let query = match current {
-        Some(path) => format!(
-            "change=1&{}",
-            query_pair("path", &path.to_string_lossy())
-        ),
-        None => String::new(),
-    };
-    navigate(app, library_url(&query));
+fn finish_library_change(app: &AppHandle) {
+    let state = app.state::<BackendState>();
+    if state
+        .library_change_pending
+        .swap(false, std::sync::atomic::Ordering::SeqCst)
+    {
+        backend::log_line(app, "library change finished");
+    }
+}
+
+/// The one entry point used by both the menu and the `imagen-action://` page
+/// hook. It is deliberately off the UI thread because the flow can stop and
+/// restart the backend.
+pub fn request_change_library(app: &AppHandle) {
+    let handle = app.clone();
+    thread::spawn(move || {
+        let state = handle.state::<BackendState>();
+        if state
+            .library_change_pending
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            backend::log_line(&handle, "library change ignored: already in progress");
+            return;
+        }
+        let current = {
+            let config = state
+                .config
+                .read()
+                .unwrap_or_else(|p| p.into_inner());
+            config.library.as_ref().map(|lib| lib.path.clone())
+        };
+        let mut query = match current {
+            Some(path) => format!(
+                "change=1&{}",
+                query_pair("path", &path.to_string_lossy())
+            ),
+            None => String::new(),
+        };
+        // In a debug build with an injected pick path, auto-select it so the
+        // same flow can be exercised without a human at the dialogs.
+        if debug_pick_path().is_some() {
+            if !query.is_empty() {
+                query.push('&');
+            }
+            query.push_str("auto=existing");
+        }
+        if !navigate(&handle, library_url(&query)) {
+            finish_library_change(&handle);
+        }
+    });
 }
 
 pub fn show_problem(app: &AppHandle, path: &Path, reason: &str) {
@@ -438,6 +480,16 @@ fn candidate_valid(path: &Path, mode: LibraryMode) -> Result<(), String> {
 /// start the new backend. On validation failure the old library is restarted
 /// and its config is left untouched.
 pub fn apply_selection(app: &AppHandle, path: PathBuf, mode: LibraryMode) -> Result<(), String> {
+    let result = apply_selection_inner(app, path, mode);
+    finish_library_change(app);
+    result
+}
+
+fn apply_selection_inner(
+    app: &AppHandle,
+    path: PathBuf,
+    mode: LibraryMode,
+) -> Result<(), String> {
     let (old_library, config_path, was_healthy) = {
         let state = app.state::<BackendState>();
         let config = state
@@ -630,12 +682,16 @@ pub fn choose_library(app: AppHandle, mode: String) -> Result<(), String> {
                     }
                 });
             }
-            None => eval_notice(&handle, "已取消选择。", "info"),
+            None => {
+                finish_library_change(&handle);
+                eval_notice(&handle, "已取消选择。", "info");
+            }
         });
     Ok(())
 }
 
 pub fn retry_library(app: AppHandle) -> Result<(), String> {
+    finish_library_change(&app);
     let (config_path, library) = {
         let state = app.state::<BackendState>();
         let config = state
@@ -714,6 +770,7 @@ pub fn reveal_config(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn return_to_current(app: AppHandle) -> Result<(), String> {
+    finish_library_change(&app);
     if backend::is_healthy(&app) {
         backend::navigate_to_app(&app);
         Ok(())
@@ -722,8 +779,73 @@ pub fn return_to_current(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Only the two fixed, parameterless actions are accepted. A path is never
+/// parsed from this URL; the library comes from the validated config state.
+fn is_fixed_action(url: &Url, action: &str) -> bool {
+    url.scheme() == ACTION_SCHEME
+        && url.host_str() == Some(action)
+        && url.path().is_empty()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+}
+
+pub fn handle_action_url(app: &AppHandle, url: &Url) {
+    if is_fixed_action(url, CHANGE_LIBRARY_ACTION) {
+        backend::log_line(app, "imagen action: change-library");
+        request_change_library(app);
+        return;
+    }
+    if is_fixed_action(url, REVEAL_LIBRARY_ACTION) {
+        backend::log_line(app, "imagen action: reveal-library");
+        let handle = app.clone();
+        thread::spawn(move || {
+            if let Err(err) = reveal_library(&handle) {
+                backend::log_line(&handle, &format!("reveal library failed: {err}"));
+            }
+        });
+        return;
+    }
+    backend::log_line(app, &format!("imagen action ignored: {url}"));
+}
+
+pub fn reveal_library(app: &AppHandle) -> Result<(), String> {
+    let path = {
+        let state = app.state::<BackendState>();
+        let config = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        config.library.as_ref().map(|lib| lib.path.clone())
+    };
+    let Some(path) = path else {
+        return Err("尚未选择图库。".to_string());
+    };
+    backend::log_line(app, &format!("reveal library: open -R {}", path.display()));
+    #[cfg(debug_assertions)]
+    if env::var("IMAGEN_DEV_REVEAL_DRY_RUN")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        backend::log_line(app, "reveal library dry-run: skipped open");
+        return Ok(());
+    }
+    let status = Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .status()
+        .map_err(|e| format!("无法打开 Finder：{e}"))?;
+    if !status.success() {
+        return Err(format!("Finder 返回失败：{status}"));
+    }
+    Ok(())
+}
+
 pub fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
     if event.id() == CHANGE_LIBRARY_MENU_ID {
-        open_chooser(app);
+        request_change_library(app);
     }
 }

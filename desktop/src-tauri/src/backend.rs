@@ -45,6 +45,7 @@ pub struct BackendState {
     pub startup_notice: Option<String>,
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub auto_change_done: AtomicBool,
+    pub library_change_pending: AtomicBool,
     pub child: Mutex<Option<Child>>,
     pub stdin: Mutex<Option<ChildStdin>>,
     pub started: Mutex<Option<Instant>>,
@@ -105,6 +106,7 @@ impl BackendState {
             startup_problem: startup.problem,
             startup_notice: startup.notice,
             auto_change_done: AtomicBool::new(false),
+            library_change_pending: AtomicBool::new(false),
             child: Mutex::new(None),
             stdin: Mutex::new(None),
             started: Mutex::new(None),
