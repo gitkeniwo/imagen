@@ -284,6 +284,11 @@ export interface VertexConfig {
   configured: boolean;
 }
 
+export interface LibraryInfo {
+  path: string;
+  desktop: boolean;
+}
+
 // Short-lived tags cache: Library/History/TagPicker all request /api/tags on
 // mount and on every refresh, usually within the same second. The TTL is kept
 // short because tag *counts* change as images are tagged/removed elsewhere.
@@ -297,6 +302,9 @@ function invalidateTags() {
 export const api = {
   async getVertex(): Promise<VertexConfig> {
     return handle(await fetch("/api/settings/vertex"));
+  },
+  async getLibrary(): Promise<LibraryInfo> {
+    return handle(await fetch("/api/settings/library"));
   },
   async setVertex(project: string, location: string): Promise<VertexConfig> {
     return handle(

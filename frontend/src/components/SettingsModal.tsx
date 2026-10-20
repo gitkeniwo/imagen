@@ -16,6 +16,7 @@ export default function SettingsModal({
   const { t } = useI18n();
   const [project, setProject] = useState("");
   const [location, setLocation] = useState("global");
+  const [library, setLibrary] = useState<{ path: string; desktop: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -24,6 +25,7 @@ export default function SettingsModal({
       if (v.project) setProject(v.project);
       if (v.location) setLocation(v.location);
     });
+    api.getLibrary().then(setLibrary).catch(() => setLibrary(null));
   }, []);
 
   // Escape closes, matching the other modals.
@@ -54,6 +56,28 @@ export default function SettingsModal({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 style={{ marginTop: 0 }}>{t("settings_title")}</h3>
         <p className="muted small">{t("settings_desc")}</p>
+
+        <label>{t("settings_library")}</label>
+        <div
+          style={{
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontSize: 12,
+            background: "var(--surface-2, rgba(127,127,127,.08))",
+            border: "1px solid var(--border, rgba(127,127,127,.18))",
+            borderRadius: 8,
+            padding: "8px 10px",
+            overflowWrap: "anywhere",
+            userSelect: "text",
+            marginBottom: 6,
+          }}
+        >
+          {library ? library.path : "—"}
+        </div>
+        {library?.desktop && (
+          <p className="muted small" style={{ marginTop: 0 }}>
+            {t("settings_library_hint")}
+          </p>
+        )}
 
         <label>{t("settings_project")}</label>
         <input
