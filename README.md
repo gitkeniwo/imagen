@@ -74,16 +74,30 @@ the backend, desktop package, Cargo manifest, and Tauri config versions agree.
 
 ### Data, logs, and port
 
-- Data: `~/Library/Application Support/com.gitkeniwo.imagen`
-  - `app.db`, `images/`, `thumbs/`
-- Logs: `~/Library/Logs/com.gitkeniwo.imagen`
+The app does **not** create or copy a library by default. On first launch it
+asks you to open an existing library or create a new one; that folder becomes
+the library in place. To create one, choose an empty folder (or make a new empty
+folder in the picker).
+
+- Config: `~/.config/imagen/desktop.json`
+  - `{"version":1,"library":"/absolute/path/to/library"}`
+- Logs: `~/.config/imagen/logs`
   - `backend.log`, `shell.log`
+- Library: the folder you choose
+  - `app.db`, `images/`, `thumbs/`, plus `backups/` and `.imagen.lock`
 - Backend: `127.0.0.1:47860` (loopback only; no network exposure)
 
-For tests, set `IMAGEN_DATA_DIR` to a throwaway directory and optionally
-`IMAGEN_PORT` to another loopback port. Setting `IMAGEN_DATA_DIR` also disables
-the single-instance and window-state plugins, so a test instance cannot touch
-the real app-support directory.
+Set `IMAGEN_CONFIG_PATH` to use a different config file (useful for tests).
+Set `IMAGEN_DATA_DIR` to run in test mode with a throwaway library; test mode
+does not read `desktop.json`, but still validates/locks/backs up an existing
+`app.db`. Either variable also disables the single-instance and window-state
+plugins, so a test instance cannot touch the real app-support directory.
+
+For a test library, `IMAGEN_LIBRARY_MODE=existing` refuses to initialize, and
+`create` requires a missing or empty folder. The desktop shell chooses one mode
+automatically; the default `auto` (used by test scripts) treats a folder with
+`app.db` as existing and anything else as new. Validation failures exit with
+code 3, and a library already in use exits with code 4.
 
 ### Unsigned build
 
@@ -106,17 +120,26 @@ Once a GitHub release and the tap exist, the intended install command is:
 brew install --cask gitkeniwo/imagen/imagen   # available after release
 ```
 
-### Migrating from Docker
+### Using an existing library (from Docker or elsewhere)
 
 1. Stop the Docker container: `docker compose down`.
-2. Copy the **entire** contents of the Docker data directory to
-   `~/Library/Application Support/com.gitkeniwo.imagen/`. Include `app.db`,
-   `app.db-wal`, `app.db-shm` (if present), `images/`, and `thumbs/`.
-3. Open `Imagen.app`.
+2. Open `Imagen.app` and choose **打开已有图库… / Open Existing Library…**.
+   Point it at the **host folder** that Docker mounted as the data directory
+   (for example the `./imagen-data` or `backend/data` folder from your compose
+   file).
+3. The database and images are used **in place**. Nothing is copied or migrated.
+   The app validates the folder, backs up `app.db` once per day before opening
+   it, and writes only `backups/` and `.imagen.lock` inside the library.
 
-The database stores the Vertex project/location, so those settings come along.
-Image files are resolved by basename inside the current data directory, so old
-absolute paths do not matter.
+Docker and the desktop app can take turns using the same library, but they
+**must not run at the same time**. The `.imagen.lock` file only guards desktop
+instances; it cannot see a Docker container. Run `docker compose down` before
+opening the app, and quit the app before starting Docker.
+
+If the library lives in Documents, Desktop, iCloud Drive, or on an external
+disk, macOS may ask for permission the first time. Grant it to `Imagen`; if you
+move or unmount the disk, the app shows an error page with a retry button and
+does **not** create a new empty library there.
 
 ### System proxy
 

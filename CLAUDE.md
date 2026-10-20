@@ -81,17 +81,37 @@ cd backend && IMAGEN_DATA_DIR=/tmp/imagen-verify uv run uvicorn app.main:app --p
 
 ## Desktop App (Tauri) and test conventions
 
-- The packaged app runs the backend on `127.0.0.1:47860` and stores data in
-  `~/Library/Application Support/com.gitkeniwo.imagen`; logs go to
-  `~/Library/Logs/com.gitkeniwo.imagen`.
+- The packaged app runs the backend on `127.0.0.1:47860`. The user chooses the
+  library folder; the app uses it in place (no copy). Config lives at
+  `~/.config/imagen/desktop.json` and logs at `~/.config/imagen/logs`.
+- **Never read the user's real `~/.config/imagen/`** (or its logs/config) during
+  testing. All tests use a temp `IMAGEN_CONFIG_PATH` or `IMAGEN_DATA_DIR`.
 - Build with `desktop/build.sh` (app) or `desktop/build.sh --dmg` (app + DMG).
 - **Do not kill whatever is listening on port 47860** — it may be the user's
   running app. Tests must use `IMAGEN_PORT` in the 47901–47999 range.
-- Set `IMAGEN_DATA_DIR` for every test run. That also means "test mode": the
-  shell does **not** register the single-instance or window-state plugins, and
-  writes logs under `$IMAGEN_DATA_DIR/logs` (override with `IMAGEN_LOG_DIR`).
-  Seed the directory with `desktop/scripts/seed_synthetic.py`; never use
-  `backend/data/` or the real Application Support directory.
+- Set `IMAGEN_DATA_DIR` (legacy test mode) or `IMAGEN_CONFIG_PATH` (config test)
+  for every test run. Either one means "test mode": the shell does **not**
+  register the single-instance or window-state plugins. Logs go to
+  `<IMAGEN_DATA_DIR>/logs` or `<config dir>/logs` (override with
+  `IMAGEN_LOG_DIR`). Seed libraries with `desktop/scripts/seed_synthetic.py`;
+  never use `backend/data/` or the real Application Support directory.
+- `IMAGEN_LIBRARY_MODE` is set by the Rust shell and understood by
+  `backend/app/desktop.py`:
+  - `existing`: require a directory with a regular `app.db` whose first 16
+    bytes are `SQLite format 3\0`; also require `images` and `generations`
+    tables via a read-only SQLite connection. Never `mkdir` or create `app.db`.
+  - `create`: require a missing or empty folder (`.DS_Store` and the
+    seed-script `.synthetic` marker are ignored; any other file rejects it).
+  - `auto`: test mode default; existing if `app.db` exists, otherwise create.
+  Validation failures exit **3**; a library already locked by another desktop
+  backend exits **4**.
+- The backend validates before importing `app.main`/`app.db`, takes a
+  `fcntl.flock` on `<library>/.imagen.lock` for its lifetime, and (existing mode
+  only) makes one SQLite backup per local day under `<library>/backups/` before
+  `init_storage` migrations. It keeps only the newest 7 files matching
+  `^app-\d{8}-\d{6}\.db$`; never touch other files.
+- The lock does **not** guard against Docker. README tells users to run
+  `docker compose down` before opening the desktop app.
 - `POST /api/generate` is a streaming response: a leading space is sent
   immediately, then one space every 15 s, then the JSON body. The leading
   whitespace is valid JSON; this exists because WebKit drops idle responses at
