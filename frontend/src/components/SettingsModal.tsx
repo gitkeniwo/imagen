@@ -58,23 +58,48 @@ export default function SettingsModal({
         <p className="muted small">{t("settings_desc")}</p>
 
         <label>{t("settings_library")}</label>
-        <div
-          style={{
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            fontSize: 12,
-            background: "var(--surface-2, rgba(127,127,127,.08))",
-            border: "1px solid var(--border, rgba(127,127,127,.18))",
-            borderRadius: 8,
-            padding: "8px 10px",
-            overflowWrap: "anywhere",
-            userSelect: "text",
-            marginBottom: 6,
-          }}
-        >
-          {library ? library.path : "—"}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div
+            style={{
+              flex: "1 1 180px",
+              minWidth: 0,
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              fontSize: 12,
+              background: "var(--surface-2, rgba(127,127,127,.08))",
+              border: "1px solid var(--border, rgba(127,127,127,.18))",
+              borderRadius: 8,
+              padding: "8px 10px",
+              overflowWrap: "anywhere",
+              userSelect: "text",
+            }}
+          >
+            {library ? library.path : "—"}
+          </div>
+          {library?.desktop && (
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              <button
+                type="button"
+                style={{ fontSize: 12, padding: "7px 10px" }}
+                onClick={() => {
+                  window.location.href = "imagen-action://change-library";
+                }}
+              >
+                {t("settings_change_library")}
+              </button>
+              <button
+                type="button"
+                style={{ fontSize: 12, padding: "7px 10px" }}
+                onClick={() => {
+                  window.location.href = "imagen-action://reveal-library";
+                }}
+              >
+                {t("settings_reveal_library")}
+              </button>
+            </div>
+          )}
         </div>
         {library?.desktop && (
-          <p className="muted small" style={{ marginTop: 0 }}>
+          <p className="muted small" style={{ marginTop: 6 }}>
             {t("settings_library_hint")}
           </p>
         )}

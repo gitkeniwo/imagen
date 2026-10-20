@@ -34,7 +34,9 @@ const zh: Dict = {
   settings_adc_hint:
     "前置条件：在本机运行 `gcloud auth application-default login` 和 `... set-quota-project <PROJECT_ID>`，账号需具备 Vertex AI User 角色并已启用 aiplatform API。Location 通常填 `global`。",
   settings_library: "图库位置",
-  settings_library_hint: "在菜单 Imagen → 更改图库位置… 中修改",
+  settings_change_library: "更换图库…",
+  settings_reveal_library: "在 Finder 中显示",
+  settings_library_hint: "也可在菜单 Imagen → 更改图库位置… 中修改",
   cancel: "取消",
   confirm: "确定",
   confirm_title: "确认操作",
@@ -326,7 +328,9 @@ const en: Dict = {
   settings_adc_hint:
     "Prerequisite: run `gcloud auth application-default login` and `... set-quota-project <PROJECT_ID>` on this machine, with the Vertex AI User role and the aiplatform API enabled. Location is usually `global`.",
   settings_library: "Library location",
-  settings_library_hint: "Change it in the menu Imagen → Change Library Location…",
+  settings_change_library: "Change Library…",
+  settings_reveal_library: "Show in Finder",
+  settings_library_hint: "You can also change it in the menu Imagen → Change Library Location…",
   cancel: "Cancel",
   confirm: "Confirm",
   confirm_title: "Confirm action",
