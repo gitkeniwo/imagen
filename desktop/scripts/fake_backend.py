@@ -191,14 +191,36 @@ async function runDownloads(){
   const id = imgs[0].id;
   const token = new URLSearchParams(location.search).get("token") || String(Date.now());
   const name = "imagen-dl-test-"+token+"-"+id+".png";
+  const events = [];
+  const onDownload = (e) => { events.push(e.detail); };
+  window.addEventListener("imagen:download", onDownload);
   clickDownload("/api/images/"+id+"/file", name);
-  await sleep(1800);
+  await sleep(900);
   clickDownload("/api/images/"+id+"/file", name);
-  await sleep(1800);
+  await sleep(900);
   const ids = imgs.slice(0,2).map(i=>i.id).join(",");
   clickDownload("/api/images/batch-download?ids="+ids, "images.zip");
-  await sleep(1800);
-  await report({phase:"downloads", image_id:id, filename:name, token, batch_ids:ids});
+  for(let i=0; i<200 && events.length<3; i++) await sleep(100);
+  window.removeEventListener("imagen:download", onDownload);
+  const second = name.endsWith(".png") ? name.slice(0, -4) + " (1).png" : name + " (1)";
+  const expected = [name, second, "images.zip"];
+  const names = events.map(e => e && e.name);
+  const ok = events.length===3 && events.every(e => e && e.ok===true)
+    && expected.every((n,i) => names[i]===n);
+  await report({phase:"downloads", image_id:id, filename:name, token, batch_ids:ids,
+    expected, events, ok});
+}
+async function runBundle(){
+  const html = await (await fetch("/")).text();
+  const match = html.match(/<script[^>]+src="([^"]+[.]js)"/i);
+  if(!match){ await report({phase:"bundle", error:"no JS asset in index.html"}); return; }
+  const js = await (await fetch(match[1])).text();
+  const needles = ["window.confirm", "window.alert", "window.prompt"];
+  const hits = needles.filter(n => js.includes(n));
+  const confirmSource = String(window.confirm);
+  await report({phase:"bundle", script:match[1], bytes:js.length, hits,
+    ok:hits.length===0, confirm_async:confirmSource.includes("async"),
+    confirm_source:confirmSource.slice(0,220)});
 }
 (async ()=>{
   try {
@@ -207,6 +229,7 @@ async function runDownloads(){
     else if(CHECK==="clipboard") await runClipboard();
     else if(CHECK==="confirm") await runConfirm();
     else if(CHECK==="downloads") await runDownloads();
+    else if(CHECK==="bundle") await runBundle();
     else await report({phase:"error", error:"unknown check"});
     state.textContent = "done";
   } catch(e){ state.textContent = "fatal"; await report({phase:"fatal", error:String(e)+" | "+e.stack}); }
