@@ -47,6 +47,89 @@ cd frontend && npm run build
 cd backend && uv run uvicorn app.main:app --port 8000    # → http://localhost:8000
 ```
 
+## Desktop App (macOS)
+
+`Imagen.app` is a Tauri shell around the same FastAPI backend and React UI. The
+backend is bundled, so the desktop app does not need Docker or a terminal.
+
+### Requirements
+
+- macOS 15 (Sequoia) or newer
+- Apple Silicon (`arm64` / `aarch64`)
+- For source builds: Xcode command line tools, Rust, Node.js, and `uv`
+
+### Build from source
+
+From the repository root:
+
+```bash
+desktop/build.sh          # builds Imagen.app
+desktop/build.sh --dmg    # builds the app and Imagen_<version>_aarch64.dmg
+```
+
+The app is written to
+`desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Imagen.app`.
+The DMG is written to the sibling `bundle/dmg/` directory. The build checks that
+the backend, desktop package, Cargo manifest, and Tauri config versions agree.
+
+### Data, logs, and port
+
+- Data: `~/Library/Application Support/com.gitkeniwo.imagen`
+  - `app.db`, `images/`, `thumbs/`
+- Logs: `~/Library/Logs/com.gitkeniwo.imagen`
+  - `backend.log`, `shell.log`
+- Backend: `127.0.0.1:47860` (loopback only; no network exposure)
+
+For tests, set `IMAGEN_DATA_DIR` to a throwaway directory and optionally
+`IMAGEN_PORT` to another loopback port. Setting `IMAGEN_DATA_DIR` also disables
+the single-instance and window-state plugins, so a test instance cannot touch
+the real app-support directory.
+
+### Unsigned build
+
+The app is **not signed with a Developer ID and is not notarized**. Other people
+should build it from source. If you received a `.app` from somewhere else,
+remove the quarantine attribute once before opening it:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Imagen.app
+```
+
+Gatekeeper may still require **System Settings → Privacy & Security → Open
+Anyway** depending on how the file was transferred.
+
+### Homebrew (after release)
+
+Once a GitHub release and the tap exist, the intended install command is:
+
+```bash
+brew install --cask gitkeniwo/imagen/imagen   # available after release
+```
+
+### Migrating from Docker
+
+1. Stop the Docker container: `docker compose down`.
+2. Copy the **entire** contents of the Docker data directory to
+   `~/Library/Application Support/com.gitkeniwo.imagen/`. Include `app.db`,
+   `app.db-wal`, `app.db-shm` (if present), `images/`, and `thumbs/`.
+3. Open `Imagen.app`.
+
+The database stores the Vertex project/location, so those settings come along.
+Image files are resolved by basename inside the current data directory, so old
+absolute paths do not matter.
+
+### System proxy
+
+An app launched from Finder does not inherit `HTTPS_PROXY` from a shell. The
+backend uses Python's system-proxy lookup, so macOS system proxy settings and
+TUN-style proxies still apply. There is no proxy configuration screen.
+
+### Docker still works
+
+The Docker and desktop paths share the same backend. `docker build`, Compose,
+and the GHCR workflow remain supported; the desktop changes do not remove or
+replace them.
+
 ## Docker
 
 Via GHCR (pre-built image):

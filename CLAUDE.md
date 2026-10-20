@@ -79,6 +79,39 @@ Isolated test instance (does NOT touch real data):
 cd backend && IMAGEN_DATA_DIR=/tmp/imagen-verify uv run uvicorn app.main:app --port 8000
 ```
 
+## Desktop App (Tauri) and test conventions
+
+- The packaged app runs the backend on `127.0.0.1:47860` and stores data in
+  `~/Library/Application Support/com.gitkeniwo.imagen`; logs go to
+  `~/Library/Logs/com.gitkeniwo.imagen`.
+- Build with `desktop/build.sh` (app) or `desktop/build.sh --dmg` (app + DMG).
+- **Do not kill whatever is listening on port 47860** — it may be the user's
+  running app. Tests must use `IMAGEN_PORT` in the 47901–47999 range.
+- Set `IMAGEN_DATA_DIR` for every test run. That also means "test mode": the
+  shell does **not** register the single-instance or window-state plugins, and
+  writes logs under `$IMAGEN_DATA_DIR/logs` (override with `IMAGEN_LOG_DIR`).
+  Seed the directory with `desktop/scripts/seed_synthetic.py`; never use
+  `backend/data/` or the real Application Support directory.
+- `POST /api/generate` is a streaming response: a leading space is sent
+  immediately, then one space every 15 s, then the JSON body. The leading
+  whitespace is valid JSON; this exists because WebKit drops idle responses at
+  about 61 s while a Vertex call can take minutes. Validation errors still
+  return ordinary 4xx JSON before the stream starts.
+- Desktop scripts:
+  - `desktop/build.sh` — frontend, PyInstaller backend, Tauri app, optional DMG.
+  - `desktop/scripts/seed_synthetic.py` — synthetic images/drafts/history for an
+    isolated data directory.
+  - `desktop/scripts/smoke_backend.sh` — uv and frozen backend health/API,
+    thumbnail MIME, download filename, and stdin-EOF checks.
+  - `desktop/scripts/check_generate_stream.sh` — long request/TTFB, disconnect,
+    cancel, and missing-project checks against `fake_backend.py`.
+  - `desktop/scripts/fake_backend.py` — test-only backend plus `/__test/*` pages
+    for WKWebView checks; never bundled.
+  - `desktop/scripts/check_frontend.sh` — rejects native `confirm`/`alert`/
+    `prompt` calls (the dialog plugin turns `confirm` into an async shim).
+  - `desktop/scripts/check_versions.py` — keeps the four version declarations
+    in sync.
+
 ## Auth (ADC — no secrets)
 
 The app stores **no key**. Settings only persist `vertex_project` and
