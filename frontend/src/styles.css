@@ -161,7 +161,7 @@ input, textarea, select {
 textarea { resize: vertical; min-height: 110px; line-height: 1.55; }
 label { font-size: 13px; font-weight: 500; color: var(--text); display: block; margin-bottom: 6px; }
 
-.app { max-width: 1420px; margin: 0 auto; padding: 0 20px 60px; }
+.app { padding: 0 20px 60px; }
 
 .topbar {
   position: sticky; top: 0; z-index: 10;
@@ -172,7 +172,6 @@ label { font-size: 13px; font-weight: 500; color: var(--text); display: block; m
 .topbar-inner {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 20px;
-  max-width: 1460px; margin: 0 auto;
 }
 .brand { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 6px; }
 .brand .banana { color: var(--accent); }
