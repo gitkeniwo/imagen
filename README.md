@@ -81,6 +81,8 @@ folder in the picker).
 
 - Config: `~/.config/imagen/desktop.json`
   - `{"version":1,"library":"/absolute/path/to/library"}`
+- Page zoom: View menu — `实际大小` (⌘0), `放大` (⌘= or ⌘+), `缩小` (⌘-).
+  - Remembered in `~/.config/imagen/ui.json` as `{"version":1,"zoom":1.25}`.
 - Logs: `~/.config/imagen/logs`
   - `backend.log`, `shell.log`
 - Library: the folder you choose

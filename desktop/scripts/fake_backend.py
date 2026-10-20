@@ -237,6 +237,29 @@ async function runBundle(){
 </script></body></html>
 """
 
+ZOOM_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>imagen zoom probe</title>
+<style>body{font-family:-apple-system,sans-serif;margin:24px}#w{font-size:32px;font-weight:600}</style>
+</head><body>
+<h1>Imagen page-zoom probe</h1>
+<p id="w">innerWidth: …</p>
+<p>Every 300 ms this page posts <code>window.innerWidth</code> to <code>/__test/report</code>.</p>
+<script>
+const w = document.getElementById("w");
+async function reportWidth(){
+  const width = window.innerWidth;
+  w.textContent = "innerWidth: " + width;
+  try {
+    await fetch("/__test/report", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({check:"zoom", phase:"width", innerWidth:width,
+        outerWidth:window.outerWidth, devicePixelRatio:window.devicePixelRatio})});
+  } catch(e) {}
+}
+reportWidth();
+setInterval(reportWidth, 300);
+</script></body></html>
+"""
+
 
 def install_test_routes(app) -> None:
     """Mount /__test/* *before* app.main's SPA catch-all route.
@@ -280,6 +303,10 @@ def install_test_routes(app) -> None:
     @test_api.get("/__test/health")
     def _test_health():
         return JSONResponse({"ok": True, "test": True})
+
+    @test_api.get("/__test/zoom", response_class=HTMLResponse)
+    def _zoom_probe():
+        return ZOOM_PAGE
 
     routes = app.router.routes
     insert_at = len(routes)

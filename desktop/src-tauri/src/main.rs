@@ -5,8 +5,10 @@
 mod backend;
 mod download;
 mod library;
+mod zoom;
 
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 
 #[tauri::command]
@@ -83,11 +85,38 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::select_all(app, None)?,
         ],
     )?;
+    let actual_size = MenuItem::with_id(
+        app,
+        zoom::ZOOM_RESET_MENU_ID,
+        "实际大小",
+        true,
+        Some("CmdOrCtrl+0"),
+    )?;
+    let zoom_in = MenuItem::with_id(
+        app,
+        zoom::ZOOM_IN_MENU_ID,
+        "放大",
+        true,
+        Some("CmdOrCtrl+="),
+    )?;
+    let zoom_out = MenuItem::with_id(
+        app,
+        zoom::ZOOM_OUT_MENU_ID,
+        "缩小",
+        true,
+        Some("CmdOrCtrl+-"),
+    )?;
     let view_menu = Submenu::with_items(
         app,
         "View",
         true,
-        &[&PredefinedMenuItem::fullscreen(app, None)?],
+        &[
+            &actual_size,
+            &zoom_in,
+            &zoom_out,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+        ],
     )?;
     let window_menu = Submenu::with_items(
         app,
@@ -143,7 +172,11 @@ fn main() {
         // Keep a standard macOS menu: Edit provides ⌘C/⌘V/⌘A/⌘Z inside
         // WKWebView, and Imagen adds the library-location command.
         .menu(build_menu)
-        .on_menu_event(library::handle_menu_event)
+        .on_menu_event(|app, event| {
+            if !zoom::handle_menu_event(app, &event) {
+                library::handle_menu_event(app, event);
+            }
+        })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
                 window.app_handle().exit(0);
@@ -169,6 +202,7 @@ fn main() {
             let problem = state.startup_problem.clone();
             let notice = state.startup_notice.clone();
             app.manage(state);
+            app.manage(zoom::ZoomState::init(&handle));
 
             backend::log_line(
                 &handle,
@@ -197,7 +231,14 @@ fn main() {
                     backend::navigation_allowed(url, port)
                 })
                 .on_download(download::handle)
+                .on_page_load(|window, payload| {
+                    if matches!(payload.event(), PageLoadEvent::Finished) {
+                        zoom::on_page_load(window.app_handle(), payload.url());
+                    }
+                })
                 .build()?;
+
+            zoom::install_plus_alias(&handle);
 
             if has_library {
                 if let Err(e) = backend::spawn(&handle) {

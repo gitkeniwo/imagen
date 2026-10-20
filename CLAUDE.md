@@ -84,6 +84,13 @@ cd backend && IMAGEN_DATA_DIR=/tmp/imagen-verify uv run uvicorn app.main:app --p
 - The packaged app runs the backend on `127.0.0.1:47860`. The user chooses the
   library folder; the app uses it in place (no copy). Config lives at
   `~/.config/imagen/desktop.json` and logs at `~/.config/imagen/logs`.
+- Page zoom is shell-side (`View` menu: 实际大小 ⌘0, 放大 ⌘= / ⌘+, 缩小 ⌘-).
+  The level is stored separately from the library config in `ui.json`
+  (`{"version":1,"zoom":1.25}`), next to `desktop.json`; `desktop.json` stays
+  library-only. With `IMAGEN_CONFIG_PATH`, `ui.json` sits beside that file.
+  Data-directory-only test mode never writes `ui.json` (memory only). Missing,
+  corrupt, or off-step values fall back to 1.0 with a shell-log warning. The
+  level is reapplied after every page load (splash, restart, library change).
 - **Never read the user's real `~/.config/imagen/`** (or its logs/config) during
   testing. All tests use a temp `IMAGEN_CONFIG_PATH` or `IMAGEN_DATA_DIR`.
 - Build with `desktop/build.sh` (app) or `desktop/build.sh --dmg` (app + DMG).
