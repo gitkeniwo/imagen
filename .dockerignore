@@ -17,4 +17,4 @@ desktop/
 backend/build/
 backend/dist/
 backend/build-desktop/
-*.spec
+**/*.spec

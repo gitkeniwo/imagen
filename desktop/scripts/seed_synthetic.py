@@ -168,6 +168,11 @@ def http_ok(res: httpx.Response, what: str) -> dict:
     return res.json()
 
 
+def _slice(seq: list, start: int, stop: int) -> list:
+    """Safe slice helper: tiny `--images` values leave most picks empty."""
+    return list(seq[start:stop])
+
+
 def seed(client: httpx.Client, count: int) -> dict:
     created: list[dict] = []
     hashes: set[str] = set()
@@ -205,7 +210,10 @@ def seed(client: httpx.Client, count: int) -> dict:
         http_ok(client.patch(f"/api/images/{image_id}", json={"starred": True, "note": "synthetic favorite"}),
                 "star image")
 
-    binned = ids[-2:]
+    # The plan asks for two binned images, but always keep at least one live row
+    # so the draft/manual picks below never come up empty for tiny seeds.
+    bin_count = min(2, max(0, len(ids) - 1))
+    binned = ids[-bin_count:] if bin_count else []
     for image_id in binned:
         http_ok(client.delete(f"/api/images/{image_id}"), "bin image")
 
@@ -214,13 +222,15 @@ def seed(client: httpx.Client, count: int) -> dict:
     draft_specs = [
         {"prompt": PROMPTS[0], "model": "gemini-3-pro-image", "aspectRatio": "16:9",
          "resolution": "2K", "outputFormat": "image/jpeg",
-         "inputImageIds": live[0:2], "outputImageIds": live[5:6], "tagIds": tag_ids[0:1], "pinned": True},
+         "inputImageIds": _slice(live, 0, 2), "outputImageIds": _slice(live, 5, 6),
+         "tagIds": tag_ids[0:1], "pinned": True},
         {"prompt": PROMPTS[1], "model": "gemini-3-pro-image", "aspectRatio": "1:1",
          "resolution": "1K", "outputFormat": "image/png",
-         "inputImageIds": live[7:8], "outputImageIds": [], "tagIds": tag_ids[1:2]},
+         "inputImageIds": _slice(live, 7, 8), "outputImageIds": [], "tagIds": tag_ids[1:2]},
         {"prompt": PROMPTS[2], "model": "gemini-2.5-flash-image", "aspectRatio": "4:3",
          "resolution": None, "outputFormat": "image/jpeg", "skipIfPrecedingSucceeds": True,
-         "inputImageIds": live[9:11], "outputImageIds": [live[12]], "tagIds": tag_ids[2:4]},
+         "inputImageIds": _slice(live, 9, 11), "outputImageIds": _slice(live, 12, 13),
+         "tagIds": tag_ids[2:4]},
         {"prompt": PROMPTS[3], "model": "gemini-3-pro-image", "aspectRatio": "3:2",
          "resolution": "4K", "outputFormat": "image/png",
          "inputImageIds": [], "outputImageIds": [], "tagIds": []},
@@ -229,9 +239,11 @@ def seed(client: httpx.Client, count: int) -> dict:
         drafts.append(http_ok(client.post("/api/drafts", json=spec), "create draft"))
 
     now = datetime.now(timezone.utc)
+    success_output_a = (live[0:1] or [None])[0]
+    success_output_b = (live[1:2] or live[0:1] or [None])[0]
     manual_specs = [
-        ("success", live[20], None, "Synthetic success (logged manually)"),
-        ("success", live[21], None, "Synthetic success #2"),
+        ("success", success_output_a, None, "Synthetic success (logged manually)"),
+        ("success", success_output_b, None, "Synthetic success #2"),
         ("blocked", None, "IMAGE_SAFETY", "Synthetic blocked"),
         ("blocked", None, "IMAGE_SAFETY", "Synthetic blocked #2"),
         ("error", None, "Synthetic upstream error (no Vertex call)", "Synthetic error"),
@@ -299,6 +311,15 @@ def main() -> int:
         parser.error("--port out of range")
 
     data_dir = check_data_dir(args.data_dir)
+    # Claim the directory before the first API write. A crash mid-seed must
+    # never leave a partially populated directory that a later run refuses to
+    # reuse just because the marker is missing.
+    marker_path = data_dir / MARKER
+    marker_path.write_text(
+        json.dumps({"ok": False, "state": "seeding", "data_dir": str(data_dir),
+                    "requested_images": args.images, "port": args.port}, indent=2) + "\n",
+        encoding="utf-8",
+    )
     print(f"seeding {data_dir} via 127.0.0.1:{args.port}", file=sys.stderr, flush=True)
 
     token = secrets.token_hex(16)
@@ -346,7 +367,7 @@ def main() -> int:
         "backend": f"{Path(sys.executable).name} -m app.desktop",
         **summary_payload,
     }
-    (data_dir / MARKER).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    marker_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
 
