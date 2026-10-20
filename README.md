@@ -1,4 +1,8 @@
-# Imagen
+<p align="center">
+  <img src="desktop/icon/imagen-icon-1024.png" width="256" height="256" alt="Imagen app icon">
+</p>
+
+<h1 align="center">Imagen</h1>
 
 A lightweight, single-user **image-to-image** web app powered by Google Vertex AI (Nano Banana models).
 
