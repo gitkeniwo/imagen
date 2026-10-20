@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { copyText } from "../clipboard";
 import { pressable } from "../a11y";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
@@ -114,13 +115,13 @@ export default function Favorites({
   };
 
   const copyPrompt = async (g: Generation) => {
-    try {
-      await navigator.clipboard.writeText(g.prompt);
-      setCopiedId(g.id);
-      setTimeout(() => setCopiedId((c) => (c === g.id ? null : c)), 1500);
-    } catch {
-      /* clipboard blocked */
+    const ok = await copyText(g.prompt);
+    if (!ok) {
+      toast(t("copy_failed"));
+      return;
     }
+    setCopiedId(g.id);
+    setTimeout(() => setCopiedId((c) => (c === g.id ? null : c)), 1500);
   };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));

@@ -3,6 +3,7 @@ import { api, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import { useToast } from "../components/Toast";
+import { useConfirm } from "../components/ConfirmDialog";
 
 const PAGE_SIZE = 60;
 
@@ -18,6 +19,7 @@ export default function Bin({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const askConfirm = useConfirm();
   const [images, setImages] = useState<ImageRow[]>([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -53,7 +55,12 @@ export default function Bin({
   };
 
   const purge = async (img: ImageRow) => {
-    if (!window.confirm(t("confirm_purge"))) return;
+    const ok = await askConfirm({
+      message: t("confirm_purge"),
+      confirmLabel: t("delete_forever"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.purgeImage(img.id);
       load();
@@ -64,7 +71,12 @@ export default function Bin({
   };
 
   const emptyBin = async () => {
-    if (!window.confirm(t("confirm_empty_bin"))) return;
+    const ok = await askConfirm({
+      message: t("confirm_empty_bin"),
+      confirmLabel: t("empty_bin"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.emptyBin();
       load();

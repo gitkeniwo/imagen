@@ -1,5 +1,5 @@
 import { type CSSProperties, memo, useEffect, useState } from "react";
-import { ImageRow, MARKER_COLORS, MarkerColor, QueueTask, imgFileUrl, imgThumbUrl } from "../api";
+import { ImageRow, MARKER_COLORS, MarkerColor, QueueTask, downloadName, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 
 const QUEUE_COLUMNS_KEY = "imagen-queue-columns";
@@ -355,7 +355,7 @@ const QueueItem = memo(function QueueItem({
             />
             <div className="row" style={{ marginTop: 10 }}>
               <button onClick={() => onUseAsRef(task.outputImage!)}>{t("use_as_ref")}</button>
-              <a href={imgFileUrl(task.outputImage.id)} download>
+              <a href={imgFileUrl(task.outputImage.id)} download={downloadName(task.outputImage)}>
                 <button style={{ width: "100%" }}>{t("download")}</button>
               </a>
             </div>

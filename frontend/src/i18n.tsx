@@ -16,6 +16,7 @@ const zh: Dict = {
   note_placeholder: "命名 / 标注这条提示词…",
   copy_prompt: "复制提示词",
   copied: "已复制",
+  copy_failed: "复制失败，请手动选择文本。",
   prompt_label: "提示词",
   favorites_empty:
     "还没有收藏。在生成的图片上（查看器或图库里）点 ☆，它的提示词就会出现在这里。",
@@ -33,6 +34,8 @@ const zh: Dict = {
   settings_adc_hint:
     "前置条件：在本机运行 `gcloud auth application-default login` 和 `... set-quota-project <PROJECT_ID>`，账号需具备 Vertex AI User 角色并已启用 aiplatform API。Location 通常填 `global`。",
   cancel: "取消",
+  confirm: "确定",
+  confirm_title: "确认操作",
   save: "保存",
   saving: "保存中…",
   show_more: "展开",
@@ -60,6 +63,8 @@ const zh: Dict = {
   gen_success: "成功",
   use_as_ref: "用作参考图",
   download: "下载",
+  download_done: "已下载到「下载」：{name}",
+  download_failed: "下载失败：{name}",
   blocked_title: "被安全策略拦截",
   error_title: "出错",
   blocked_fallback: "结果被 Google 拦截。",
@@ -301,6 +306,7 @@ const en: Dict = {
   note_placeholder: "Name / annotate this prompt…",
   copy_prompt: "Copy prompt",
   copied: "Copied",
+  copy_failed: "Copy failed. Please select the text manually.",
   prompt_label: "Prompt",
   favorites_empty:
     "No favorites yet. Hit ☆ on a generated image (in the viewer or library) and its prompt shows up here.",
@@ -318,6 +324,8 @@ const en: Dict = {
   settings_adc_hint:
     "Prerequisite: run `gcloud auth application-default login` and `... set-quota-project <PROJECT_ID>` on this machine, with the Vertex AI User role and the aiplatform API enabled. Location is usually `global`.",
   cancel: "Cancel",
+  confirm: "Confirm",
+  confirm_title: "Confirm action",
   save: "Save",
   saving: "Saving…",
   show_more: "Show more",
@@ -345,6 +353,8 @@ const en: Dict = {
   gen_success: "Success",
   use_as_ref: "Use as reference",
   download: "Download",
+  download_done: "Downloaded to Downloads: {name}",
+  download_failed: "Download failed: {name}",
   blocked_title: "Blocked by safety policy",
   error_title: "Error",
   blocked_fallback: "The result was blocked by Google.",

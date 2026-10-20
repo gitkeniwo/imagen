@@ -130,6 +130,19 @@ export default function App() {
     refreshConfig();
   }, []);
 
+  // The Tauri shell dispatches this after a download finishes. Browsers never
+  // send it, so the same frontend works there without any Tauri JS.
+  useEffect(() => {
+    const onDownload = (event: Event) => {
+      const detail = (event as CustomEvent<{ ok?: boolean; name?: string }>).detail;
+      if (!detail || typeof detail.name !== "string" || !detail.name) return;
+      const ok = detail.ok === true;
+      toast(ok ? t("download_done", { name: detail.name }) : t("download_failed", { name: detail.name }), ok ? "success" : "error");
+    };
+    window.addEventListener("imagen:download", onDownload);
+    return () => window.removeEventListener("imagen:download", onDownload);
+  }, [t, toast]);
+
   useEffect(() => {
     if (!resizingSidebar) return;
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
+import { api, Generation, ImageRow, downloadName, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { copyText } from "../clipboard";
 import { pressable } from "../a11y";
 import TagPicker from "./TagPicker";
 import { useToast } from "./Toast";
@@ -113,13 +114,13 @@ export default function ImageViewer({
 
   const copyPrompt = async () => {
     if (!gen?.prompt) return;
-    try {
-      await navigator.clipboard.writeText(gen.prompt);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard blocked — no-op */
+    const ok = await copyText(gen.prompt);
+    if (!ok) {
+      toast(t("copy_failed"));
+      return;
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   useEffect(() => {
@@ -289,7 +290,7 @@ export default function ImageViewer({
 
           <div className="row" style={{ marginTop: 16 }}>
             <button onClick={() => onAddToTray(current)}>{t("add_to_input")}</button>
-            <a href={imgFileUrl(current.id)} download>
+            <a href={imgFileUrl(current.id)} download={downloadName(current)}>
               <button style={{ width: "100%" }}>{t("download")}</button>
             </a>
           </div>

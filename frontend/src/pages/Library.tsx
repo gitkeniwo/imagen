@@ -1,9 +1,10 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { api, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
+import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
+import { useConfirm } from "../components/ConfirmDialog";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -39,6 +40,7 @@ export default function Library({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const askConfirm = useConfirm();
   const [images, setImages] = useState<ImageRow[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [source, setSource] = useState<string>("");
@@ -129,12 +131,17 @@ export default function Library({
   const download = (img: ImageRow) => {
     const a = document.createElement("a");
     a.href = imgFileUrl(img.id);
-    a.download = img.filename || "";
+    a.download = downloadName(img);
     a.click();
   };
 
   const remove = async (img: ImageRow) => {
-    if (!window.confirm(t("confirm_delete"))) return;
+    const ok = await askConfirm({
+      message: t("confirm_delete"),
+      confirmLabel: t("delete"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteImage(img.id);
       load();

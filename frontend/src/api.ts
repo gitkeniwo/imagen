@@ -219,6 +219,46 @@ export const imgThumbUrl = (id: number) => `/api/images/${id}/thumb`;
 export const batchDownloadUrl = (ids: number[]) =>
   `/api/images/batch-download?ids=${ids.join(",")}`;
 
+const DOWNLOAD_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/**
+ * User-facing download name, matching the backend Content-Disposition rule.
+ * Keeps a valid existing extension (including .jpeg), otherwise appends or
+ * replaces it from the image MIME. Colons in generated timestamps become
+ * hyphens; the stored filename in the database is unchanged.
+ */
+export function downloadName(img: ImageRow): string {
+  const ext = DOWNLOAD_EXT[(img.mime || "").toLowerCase()] ?? "png";
+  const raw = (img.filename || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop()
+    ?.replace(/[\u0000-\u001f\u007f]/g, "") ?? "";
+  if (!raw || raw === "." || raw === "..") {
+    return `imagen-${img.id}.${ext}`;
+  }
+
+  const dot = raw.lastIndexOf(".");
+  const suffix = dot > 0 ? raw.slice(dot + 1).toLowerCase() : "";
+  const valid = ext === "jpg" ? ["jpg", "jpeg"] : [ext];
+  let name: string;
+  if (valid.includes(suffix)) {
+    name = raw;
+  } else if (dot > 0) {
+    name = `${raw.slice(0, dot)}.${ext}`;
+  } else {
+    name = `${raw}.${ext}`;
+  }
+  return name.replace(/:/g, "-");
+}
+
 const MODEL_ALIASES: Record<string, string> = {
   "gemini-3-pro-image-preview": "gemini-3-pro-image",
 };
