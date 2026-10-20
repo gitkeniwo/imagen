@@ -2,6 +2,7 @@
 import asyncio
 import io
 import zipfile
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -151,6 +152,48 @@ def get_thumb(image_id: int):
     return _serve(image_id, "thumb_path")
 
 
+# Canonical extension for the MIME types storage accepts, plus one alias so a
+# stored `photo.jpeg` keeps its existing (valid) extension.
+_MIME_EXT = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+_EXT_ALIASES = {"jpg": {"jpg", "jpeg"}}
+
+
+def download_name(row: dict) -> str:
+    """Return a safe, user-facing filename consistent with the image's MIME.
+
+    Generated images are stored as ``gen-<ISO timestamp>.jpg``; the colons in
+    the timestamp are replaced because they are awkward in Finder and in
+    Content-Disposition headers. The database value is never modified.
+    """
+    mime = (row.get("mime") or "").lower()
+    ext = _MIME_EXT.get(mime, "png")
+    raw = (row.get("filename") or "").strip().replace("\\", "/").rsplit("/", 1)[-1]
+    raw = "".join(ch for ch in raw if ch >= " " and ch != "\x7f")
+    if not raw or raw in (".", ".."):
+        return f"imagen-{row['id']}.{ext}"
+
+    dot = raw.rfind(".")
+    if dot > 0:
+        stem, suffix = raw[:dot], raw[dot + 1:].lower()
+    else:
+        stem, suffix = raw, ""
+
+    valid = _EXT_ALIASES.get(ext, {ext})
+    if suffix in valid:
+        name = raw
+    elif dot > 0:
+        name = f"{stem}.{ext}"
+    else:
+        name = f"{raw}.{ext}"
+    return name.replace(":", "-")
+
+
 def _serve(image_id: int, col: str):
     with get_conn() as conn:
         row = storage.get_image(conn, image_id)
@@ -159,7 +202,18 @@ def _serve(image_id: int, col: str):
     path = storage.file_on_disk(row, thumb=col == "thumb_path")
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing on disk")
-    return FileResponse(path, media_type=row["mime"])
+    if col == "thumb_path":
+        # Thumbnails are always WebP (storage._make_thumb), regardless of the
+        # original image's MIME type.
+        return FileResponse(path, media_type="image/webp")
+    filename = download_name(row)
+    return FileResponse(
+        path,
+        media_type=row["mime"],
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename, safe='')}"
+        },
+    )
 
 
 @router.patch("/{image_id}")

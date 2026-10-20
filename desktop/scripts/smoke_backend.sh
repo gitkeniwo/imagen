@@ -45,6 +45,39 @@ if sys.argv[2] not in data:
 PY
 }
 
+make_png() { # path
+  python3 - "$1" <<'PY'
+import struct, sys, zlib
+width = height = 2
+raw = b"".join(b"\x00" + bytes([40, 120, 220, 255]) * width for _ in range(height))
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(
+        ">I", zlib.crc32(kind + data) & 0xFFFFFFFF
+    )
+png = (
+    b"\x89PNG\r\n\x1a\n"
+    + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+    + chunk(b"IDAT", zlib.compress(raw))
+    + chunk(b"IEND", b"")
+)
+with open(sys.argv[1], "wb") as fh:
+    fh.write(png)
+PY
+}
+
+header_value() { # headers-file header-name
+  python3 - "$1" "$2" <<'PY'
+import sys
+needle = sys.argv[2].lower() + ":"
+with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        if line.lower().startswith(needle):
+            print(line.split(":", 1)[1].strip())
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 assert_port_free() { # port
   if lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; then
     die "port $1 is already in use by a process this script did not start"
@@ -143,6 +176,47 @@ run_instance() { # name port mode
     esac
     say "GET $endpoint -> 200"
   done
+
+  # Thumbnails are always WebP; /file advertises a correct inline filename.
+  local png="$TMP/upload-$port.png"
+  make_png "$png"
+  code="$(curl -sS --max-time 30 -o "$TMP/upload-$port.json" -w '%{http_code}' \
+    -F "files=@$png;filename=gen-2026-01-02T03:04:05.png;type=image/png" \
+    "http://127.0.0.1:$port/api/images")"
+  [ "$code" = "200" ] || die "[$name] upload PNG -> $code"
+  local image_id
+  image_id="$(python3 - "$TMP/upload-$port.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    print(json.load(fh)["images"][0]["id"])
+PY
+)"
+  code="$(curl -sS --max-time 30 -D "$TMP/thumb-$port.headers" -o "$TMP/thumb-$port.webp" \
+    -w '%{http_code}' "http://127.0.0.1:$port/api/images/$image_id/thumb")"
+  [ "$code" = "200" ] || die "[$name] GET thumb -> $code"
+  local thumb_ct
+  thumb_ct="$(header_value "$TMP/thumb-$port.headers" Content-Type | tr '[:upper:]' '[:lower:]')"
+  [ "$thumb_ct" = "image/webp" ] || die "[$name] thumb Content-Type: $thumb_ct (expected image/webp)"
+  python3 - "$TMP/thumb-$port.webp" <<'PY'
+import sys
+data = open(sys.argv[1], "rb").read(16)
+if not (data.startswith(b"RIFF") and data[8:12] == b"WEBP"):
+    raise SystemExit("thumb is not a WebP file")
+PY
+  say "GET thumb -> 200 image/webp (WebP bytes)"
+
+  code="$(curl -sS --max-time 30 -D "$TMP/file-$port.headers" -o "$TMP/file-$port.bin" \
+    -w '%{http_code}' "http://127.0.0.1:$port/api/images/$image_id/file")"
+  [ "$code" = "200" ] || die "[$name] GET file -> $code"
+  local file_ct file_cd
+  file_ct="$(header_value "$TMP/file-$port.headers" Content-Type | tr '[:upper:]' '[:lower:]')"
+  file_cd="$(header_value "$TMP/file-$port.headers" Content-Disposition)"
+  [ "$file_ct" = "image/png" ] || die "[$name] file Content-Type: $file_ct (expected image/png)"
+  case "$file_cd" in
+    *inline*"filename*=UTF-8''gen-2026-01-02T03-04-05.png"*) ;;
+    *) die "[$name] file Content-Disposition: $file_cd" ;;
+  esac
+  say "GET file -> 200 image/png; Content-Disposition: $file_cd"
 
   # Close the write end of the FIFO: the backend sees stdin EOF and must exit.
   exec 9>&-
