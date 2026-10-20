@@ -4,21 +4,120 @@
 
 mod backend;
 mod download;
+mod library;
 
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 
 #[tauri::command]
 fn restart_backend(app: tauri::AppHandle) -> Result<(), String> {
     backend::restart_backend(&app)
 }
 
+#[tauri::command]
+fn choose_library(app: AppHandle, mode: String) -> Result<(), String> {
+    library::choose_library(app, mode)
+}
+
+#[tauri::command]
+fn retry_library(app: AppHandle) -> Result<(), String> {
+    library::retry_library(app)
+}
+
+#[tauri::command]
+fn reveal_config(app: AppHandle) -> Result<(), String> {
+    library::reveal_config(app)
+}
+
+#[tauri::command]
+fn return_to_current(app: AppHandle) -> Result<(), String> {
+    library::return_to_current(app)
+}
+
+fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    let pkg = app.package_info();
+    let about = AboutMetadata {
+        name: Some(pkg.name.clone()),
+        version: Some(pkg.version.to_string()),
+        copyright: app.config().bundle.copyright.clone(),
+        authors: app.config().bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+    let change = MenuItem::with_id(
+        app,
+        library::CHANGE_LIBRARY_MENU_ID,
+        "更改图库位置…",
+        true,
+        Some("CmdOrCtrl+Shift+L"),
+    )?;
+
+    let app_menu = Submenu::with_items(
+        app,
+        pkg.name.clone(),
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, Some(about))?,
+            &PredefinedMenuItem::separator(app)?,
+            &change,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, None)?],
+    )?;
+    let window_menu = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    let help_menu = Submenu::with_items(app, "Help", true, &[])?;
+    Menu::with_items(
+        app,
+        &[&app_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
+    )
+}
+
 fn main() {
-    // A set IMAGEN_DATA_DIR means a test/dev instance: no single-instance lock
-    // and no window-state plugin (that plugin would write into the real
-    // ~/Library/Application Support/com.gitkeniwo.imagen directory).
-    let test_mode = std::env::var("IMAGEN_DATA_DIR")
+    // Any explicit test location means a test instance: no single-instance
+    // lock and no window-state plugin (that plugin would write into the real
+    // Application Support directory).
+    let env_data = std::env::var("IMAGEN_DATA_DIR")
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false);
+    let env_config = std::env::var("IMAGEN_CONFIG_PATH")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    let test_mode = env_data || env_config;
 
     let mut builder = tauri::Builder::default();
 
@@ -41,44 +140,71 @@ fn main() {
     }
 
     let app = builder
-        // Keep the default macOS menu: it is what provides ⌘C/⌘V/⌘A/⌘Z and
-        // the Edit menu inside WKWebView.
-        .menu(tauri::menu::Menu::default)
+        // Keep a standard macOS menu: Edit provides ⌘C/⌘V/⌘A/⌘Z inside
+        // WKWebView, and Imagen adds the library-location command.
+        .menu(build_menu)
+        .on_menu_event(library::handle_menu_event)
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
                 window.app_handle().exit(0);
             }
         })
-        .invoke_handler(tauri::generate_handler![restart_backend])
+        .invoke_handler(tauri::generate_handler![
+            restart_backend,
+            choose_library,
+            retry_library,
+            reveal_config,
+            return_to_current
+        ])
         .setup(move |app| {
             let handle = app.handle().clone();
             let state = backend::BackendState::new(&handle)?;
-            let port = state.config.port;
+            let (port, has_library, test_mode) = {
+                let config = state
+                    .config
+                    .read()
+                    .unwrap_or_else(|p| p.into_inner());
+                (config.port, config.library.is_some(), config.test_mode)
+            };
+            let problem = state.startup_problem.clone();
+            let notice = state.startup_notice.clone();
             app.manage(state);
 
             backend::log_line(
                 &handle,
-                &format!("shell starting test_mode={test_mode} port={port}"),
+                &format!(
+                    "shell starting test_mode={test_mode} port={port} library={}",
+                    if has_library { "configured" } else { "unset" }
+                ),
             );
 
-            WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("Imagen")
-            .inner_size(1400.0, 900.0)
-            .min_inner_size(960.0, 640.0)
-            .disable_drag_drop_handler()
-            .on_navigation(move |url| backend::navigation_allowed(url, port))
-            .on_download(download::handle)
-            .build()?;
-
-            if let Err(e) = backend::spawn(&handle) {
-                backend::show_error(&handle, &e);
+            let initial = if has_library {
+                "index.html"
             } else {
-                let wait_handle = handle.clone();
-                std::thread::spawn(move || backend::wait_until_healthy(wait_handle));
+                "library.html"
+            };
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App(initial.into()))
+                .title("Imagen")
+                .inner_size(1400.0, 900.0)
+                .min_inner_size(960.0, 640.0)
+                .disable_drag_drop_handler()
+                .on_navigation(move |url| backend::navigation_allowed(url, port))
+                .on_download(download::handle)
+                .build()?;
+
+            if has_library {
+                if let Err(e) = backend::spawn(&handle) {
+                    backend::show_error(&handle, &e);
+                } else {
+                    let wait_handle = handle.clone();
+                    std::thread::spawn(move || backend::wait_until_healthy(wait_handle));
+                }
+            } else if let Some(problem) = problem {
+                library::show_problem(&handle, &problem.path, &problem.reason);
+            } else if let Some(notice) = notice {
+                library::show_notice(&handle, &notice);
+            } else if let Some(mode) = library::auto_pick_action() {
+                library::navigate_auto_pick(&handle, mode);
             }
 
             Ok(())

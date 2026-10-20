@@ -1,0 +1,729 @@
+//! Desktop library selection: config file, validation, picker flow, and pages.
+//!
+//! This module never touches the library until a selection has passed the Rust
+//! checks. The backend repeats validation independently before importing
+//! `app.db`, so a Rust bug cannot cause an empty library to be created.
+
+use std::env;
+use std::fs::{self, File};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde_json::json;
+use tauri::menu::MenuEvent;
+use tauri::{AppHandle, Manager, Url};
+use tauri_plugin_dialog::DialogExt;
+
+use crate::backend::{self, BackendState};
+
+pub const CHANGE_LIBRARY_MENU_ID: &str = "change-library";
+pub const CONFIG_VERSION: u64 = 1;
+const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryMode {
+    Existing,
+    Create,
+    Auto,
+}
+
+impl LibraryMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Existing => "existing",
+            Self::Create => "create",
+            Self::Auto => "auto",
+        }
+    }
+
+    fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "existing" => Some(Self::Existing),
+            "create" => Some(Self::Create),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct LibrarySelection {
+    pub path: PathBuf,
+    pub mode: LibraryMode,
+}
+
+#[derive(Clone, Debug)]
+pub struct LibraryProblem {
+    pub path: PathBuf,
+    pub reason: String,
+}
+
+pub struct Startup {
+    pub test_mode: bool,
+    pub config_path: Option<PathBuf>,
+    pub library: Option<LibrarySelection>,
+    pub problem: Option<LibraryProblem>,
+    pub notice: Option<String>,
+    pub log_dir: PathBuf,
+}
+
+#[cfg(debug_assertions)]
+fn nonempty_env(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn absolute(path: PathBuf) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        env::current_dir()
+            .map(|cwd| cwd.join(path))
+            .map_err(|e| format!("无法解析绝对路径：{e}"))
+    }
+}
+
+fn default_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .home_dir()
+        .map(|home| home.join(".config/imagen/desktop.json"))
+        .map_err(|e| format!("无法解析配置目录：{e}"))
+}
+
+fn read_config(path: &Path) -> Result<Option<PathBuf>, String> {
+    let data = match fs::read(path) {
+        Ok(data) => data,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("无法读取配置文件 {}：{err}", path.display())),
+    };
+    let value: serde_json::Value = serde_json::from_slice(&data)
+        .map_err(|e| format!("配置文件不是有效 JSON：{e}"))?;
+    let version = value
+        .get("version")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| "配置缺少 version".to_string())?;
+    if version != CONFIG_VERSION {
+        return Err(format!(
+            "配置版本不支持：{version}（期望 {CONFIG_VERSION}）"
+        ));
+    }
+    let raw = value
+        .get("library")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "配置缺少 library".to_string())?;
+    let path = PathBuf::from(raw);
+    if !path.is_absolute() {
+        return Err("配置里的 library 必须是绝对路径".to_string());
+    }
+    Ok(Some(path))
+}
+
+/// Atomically replace the config file: write a sibling temp file, fsync, rename.
+pub fn write_config(path: &Path, library: &Path) -> Result<(), String> {
+    if !library.is_absolute() {
+        return Err("图库路径必须是绝对路径".to_string());
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "配置文件没有父目录".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("无法创建配置目录 {}：{e}", parent.display()))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = parent.join(format!(
+        ".{}.tmp.{}.{}",
+        path.file_name().and_then(|s| s.to_str()).unwrap_or("desktop.json"),
+        std::process::id(),
+        stamp
+    ));
+    let bytes = serde_json::to_vec_pretty(&json!({
+        "version": CONFIG_VERSION,
+        "library": library.to_string_lossy(),
+    }))
+    .map_err(|e| format!("无法序列化配置：{e}"))?;
+    let result = (|| -> Result<(), String> {
+        let mut file = File::create(&tmp)
+            .map_err(|e| format!("无法创建临时配置 {}：{e}", tmp.display()))?;
+        file.write_all(&bytes)
+            .map_err(|e| format!("无法写入临时配置：{e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("无法同步临时配置：{e}"))?;
+        drop(file);
+        fs::rename(&tmp, path)
+            .map_err(|e| format!("无法替换配置文件 {}：{e}", path.display()))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
+fn sqlite_header_ok(path: &Path) -> Result<(), String> {
+    let mut file =
+        File::open(path).map_err(|e| format!("无法读取 app.db {}：{e}", path.display()))?;
+    let mut header = [0u8; 16];
+    file.read_exact(&mut header)
+        .map_err(|_| "app.db 小于 16 字节".to_string())?;
+    if header != SQLITE_HEADER {
+        return Err("app.db 的文件头不是 SQLite format 3".to_string());
+    }
+    Ok(())
+}
+
+pub fn validate_existing(path: &Path) -> Result<(), String> {
+    let resolved = fs::canonicalize(path)
+        .map_err(|_| format!("图库不可用：目录不存在：{}", path.display()))?;
+    let metadata = fs::metadata(&resolved)
+        .map_err(|e| format!("图库不可用：{}：{e}", resolved.display()))?;
+    if !metadata.is_dir() {
+        return Err(format!("图库不可用：不是目录：{}", path.display()));
+    }
+    let db = resolved.join("app.db");
+    let db_meta =
+        fs::metadata(&db).map_err(|_| format!("图库不可用：缺少 app.db：{db:?}"))?;
+    if !db_meta.is_file() {
+        return Err(format!("图库不可用：app.db 不是普通文件：{db:?}"));
+    }
+    sqlite_header_ok(&db)
+}
+
+pub fn validate_create(path: &Path) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err("新建图库路径必须是绝对路径".to_string());
+    }
+    if path.is_symlink() {
+        return Err("新建图库不能使用软链接".to_string());
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(format!("新建图库路径不是目录：{}", path.display()));
+        }
+        let mut entries = fs::read_dir(path)
+            .map_err(|e| format!("无法读取目录 {}：{e}", path.display()))?;
+        if entries.any(|entry| {
+            entry
+                .ok()
+                .map(|e| e.file_name() != ".DS_Store" && e.file_name() != ".synthetic")
+                .unwrap_or(true)
+        }) {
+            return Err("新建图库要求空目录（忽略 .DS_Store / .synthetic 测试标记）".to_string());
+        }
+    } else {
+        let parent = path
+            .parent()
+            .ok_or_else(|| "新建图库路径没有父目录".to_string())?;
+        if !parent.is_dir() {
+            return Err(format!("新建图库的父目录不存在：{}", parent.display()));
+        }
+    }
+    Ok(())
+}
+
+pub fn resolve_startup(
+    app: &AppHandle,
+    env_data: Option<String>,
+    env_config: Option<String>,
+    env_log: Option<String>,
+) -> Result<Startup, String> {
+    let test_mode = env_data.is_some() || env_config.is_some();
+
+    if let Some(data_dir) = env_data {
+        let path = absolute(PathBuf::from(data_dir))?;
+        let log_dir = match env_log {
+            Some(dir) => absolute(PathBuf::from(dir))?,
+            None => path.join("logs"),
+        };
+        return Ok(Startup {
+            test_mode,
+            config_path: None,
+            library: Some(LibrarySelection {
+                path,
+                mode: LibraryMode::Auto,
+            }),
+            problem: None,
+            notice: None,
+            log_dir,
+        });
+    }
+
+    let config_path = match env_config {
+        Some(raw) => absolute(PathBuf::from(raw))?,
+        None => default_config_path(app)?,
+    };
+    let log_dir = match env_log {
+        Some(dir) => absolute(PathBuf::from(dir))?,
+        None => config_path
+            .parent()
+            .map(|parent| parent.join("logs"))
+            .ok_or_else(|| "配置文件没有父目录".to_string())?,
+    };
+
+    match read_config(&config_path) {
+        Ok(None) => Ok(Startup {
+            test_mode,
+            config_path: Some(config_path),
+            library: None,
+            problem: None,
+            notice: None,
+            log_dir,
+        }),
+        Ok(Some(library)) => match validate_existing(&library) {
+            Ok(()) => Ok(Startup {
+                test_mode,
+                config_path: Some(config_path),
+                library: Some(LibrarySelection {
+                    path: library,
+                    mode: LibraryMode::Existing,
+                }),
+                problem: None,
+                notice: None,
+                log_dir,
+            }),
+            Err(reason) => Ok(Startup {
+                test_mode,
+                config_path: Some(config_path),
+                library: None,
+                problem: Some(LibraryProblem {
+                    path: library,
+                    reason,
+                }),
+                notice: None,
+                log_dir,
+            }),
+        },
+        Err(notice) => Ok(Startup {
+            test_mode,
+            config_path: Some(config_path),
+            library: None,
+            problem: None,
+            notice: Some(notice),
+            log_dir,
+        }),
+    }
+}
+
+fn query_pair(key: &str, value: &str) -> String {
+    format!("{key}={}", backend::percent_encode(value))
+}
+
+fn library_url(query: &str) -> String {
+    if query.is_empty() {
+        "tauri://localhost/library.html".to_string()
+    } else {
+        format!("tauri://localhost/library.html?{query}")
+    }
+}
+
+fn navigate(app: &AppHandle, url: String) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    match url.parse::<Url>() {
+        Ok(url) => {
+            if let Err(err) = window.navigate(url) {
+                backend::log_line(app, &format!("navigate failed: {err}"));
+            }
+        }
+        Err(err) => backend::log_line(app, &format!("invalid local url {url}: {err}")),
+    }
+}
+
+pub fn open_chooser(app: &AppHandle) {
+    let current = {
+        let state = app.state::<BackendState>();
+        let config = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        config.library.as_ref().map(|lib| lib.path.clone())
+    };
+    let query = match current {
+        Some(path) => format!(
+            "change=1&{}",
+            query_pair("path", &path.to_string_lossy())
+        ),
+        None => String::new(),
+    };
+    navigate(app, library_url(&query));
+}
+
+pub fn show_problem(app: &AppHandle, path: &Path, reason: &str) {
+    backend::log_line(
+        app,
+        &format!("library unavailable: {} ({reason})", path.display()),
+    );
+    let query = format!(
+        "error=1&{}&{}",
+        query_pair("path", &path.to_string_lossy()),
+        query_pair("reason", reason)
+    );
+    navigate(app, library_url(&query));
+}
+
+pub fn show_notice(app: &AppHandle, notice: &str) {
+    backend::log_line(app, &format!("library config notice: {notice}"));
+    navigate(app, library_url(&query_pair("notice", notice)));
+}
+
+fn eval(app: &AppHandle, script: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(err) = window.eval(script) {
+            backend::log_line(app, &format!("library page eval failed: {err}"));
+        }
+    }
+}
+
+fn eval_notice(app: &AppHandle, message: &str, kind: &str) {
+    backend::log_line(app, &format!("library page notice: {message}"));
+    let message = serde_json::to_string(message).unwrap_or_else(|_| "\"\"".to_string());
+    let kind = serde_json::to_string(kind).unwrap_or_else(|_| "\"info\"".to_string());
+    eval(
+        app,
+        &format!("window.imagenLibraryNotice && window.imagenLibraryNotice({message}, {kind});"),
+    );
+}
+
+pub fn show_native_error(app: &AppHandle, message: &str) {
+    app.dialog()
+        .message(message)
+        .title("Imagen")
+        .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+        .show(|_| {});
+}
+
+fn restore_config(path: &Path, previous: Option<&[u8]>) -> Result<(), String> {
+    match previous {
+        Some(bytes) => {
+            let parent = path.parent().ok_or("配置文件没有父目录")?;
+            let tmp = parent.join(format!(
+                ".{}.restore.{}",
+                path.file_name().and_then(|s| s.to_str()).unwrap_or("desktop.json"),
+                std::process::id()
+            ));
+            fs::write(&tmp, bytes).map_err(|e| format!("无法恢复配置临时文件：{e}"))?;
+            fs::rename(&tmp, path).map_err(|e| format!("无法恢复配置文件：{e}"))
+        }
+        None => match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(format!("无法移除新配置：{err}")),
+        },
+    }
+}
+
+fn candidate_valid(path: &Path, mode: LibraryMode) -> Result<(), String> {
+    match mode {
+        LibraryMode::Existing => validate_existing(path),
+        LibraryMode::Create => validate_create(path),
+        LibraryMode::Auto => {
+            if path.join("app.db").exists() {
+                validate_existing(path)
+            } else {
+                validate_create(path)
+            }
+        }
+    }
+}
+
+/// Stop the current backend, validate the candidate, then write config and
+/// start the new backend. On validation failure the old library is restarted
+/// and its config is left untouched.
+pub fn apply_selection(app: &AppHandle, path: PathBuf, mode: LibraryMode) -> Result<(), String> {
+    let (old_library, config_path, was_healthy) = {
+        let state = app.state::<BackendState>();
+        let config = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        (
+            config.library.clone(),
+            config.config_path.clone(),
+            state.healthy.load(std::sync::atomic::Ordering::SeqCst),
+        )
+    };
+    let old_config_bytes = config_path
+        .as_ref()
+        .and_then(|p| fs::read(p).ok());
+
+    backend::stop_for_library_change(app);
+
+    if let Err(reason) = candidate_valid(&path, mode) {
+        backend::log_line(app, &format!("library change rejected: {reason}"));
+        if was_healthy {
+            backend::restart_current_async(app);
+            show_native_error(app, &format!("未更改图库：{reason}\n已继续使用原来的图库。"));
+        } else {
+            eval_notice(app, &reason, "error");
+        }
+        return Err(reason);
+    }
+
+    if let Some(config_file) = &config_path {
+        if let Err(err) = write_config(config_file, &path) {
+            if was_healthy {
+                backend::restart_current_async(app);
+                show_native_error(app, &format!("未更改图库：{err}"));
+            } else {
+                eval_notice(app, &err, "error");
+            }
+            return Err(err);
+        }
+    }
+
+    {
+        let state = app.state::<BackendState>();
+        let mut config = state
+            .config
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
+        config.library = Some(LibrarySelection {
+            path: path.clone(),
+            mode,
+        });
+    }
+
+    match backend::spawn(app) {
+        Ok(_) => {
+            backend::wait_until_healthy(app.clone());
+            Ok(())
+        }
+        Err(err) => {
+            if let Some(config_file) = &config_path {
+                if let Err(restore_err) = restore_config(config_file, old_config_bytes.as_deref()) {
+                    backend::log_line(
+                        app,
+                        &format!("failed to restore old config after spawn error: {restore_err}"),
+                    );
+                }
+            }
+            {
+                let state = app.state::<BackendState>();
+                let mut config = state
+                    .config
+                    .write()
+                    .unwrap_or_else(|p| p.into_inner());
+                config.library = old_library;
+            }
+            if was_healthy {
+                backend::restart_current_async(app);
+                show_native_error(app, &format!("无法切换图库：{err}\n已继续使用原来的图库。"));
+            } else {
+                eval_notice(app, &err, "error");
+            }
+            Err(err)
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+fn debug_pick_path() -> Option<PathBuf> {
+    nonempty_env("IMAGEN_DEV_PICK_PATH").map(PathBuf::from).and_then(|p| {
+        if p.is_absolute() {
+            Some(p)
+        } else {
+            env::current_dir().ok().map(|cwd| cwd.join(p))
+        }
+    })
+}
+
+#[cfg(not(debug_assertions))]
+fn debug_pick_path() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(debug_assertions)]
+pub fn auto_pick_action() -> Option<LibraryMode> {
+    nonempty_env("IMAGEN_DEV_LIBRARY_ACTION")
+        .as_deref()
+        .and_then(LibraryMode::parse)
+        .filter(|mode| matches!(mode, LibraryMode::Existing | LibraryMode::Create))
+}
+
+#[cfg(not(debug_assertions))]
+pub fn auto_pick_action() -> Option<LibraryMode> {
+    None
+}
+
+#[cfg(debug_assertions)]
+pub fn auto_change_action() -> Option<LibraryMode> {
+    nonempty_env("IMAGEN_DEV_LIBRARY_CHANGE")
+        .as_deref()
+        .and_then(LibraryMode::parse)
+        .filter(|mode| matches!(mode, LibraryMode::Existing | LibraryMode::Create))
+}
+
+pub fn navigate_auto_pick(app: &AppHandle, mode: LibraryMode) {
+    navigate(app, library_url(&format!("auto={}", mode.as_str())));
+}
+
+#[cfg(debug_assertions)]
+pub fn navigate_auto_change(app: &AppHandle, mode: LibraryMode) {
+    let path = {
+        let state = app.state::<BackendState>();
+        let config = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        config.library.as_ref().map(|lib| lib.path.clone())
+    };
+    let mut query = format!("change=1&auto={}", mode.as_str());
+    if let Some(path) = path {
+        query.push('&');
+        query.push_str(&query_pair("path", &path.to_string_lossy()));
+    }
+    navigate(app, library_url(&query));
+}
+
+pub fn maybe_auto_change(app: &AppHandle) {
+    #[cfg(debug_assertions)]
+    {
+        if let Some(mode) = auto_change_action() {
+            let state = app.state::<BackendState>();
+            if !state.auto_change_done.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                navigate_auto_change(app, mode);
+            }
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+    }
+}
+
+pub fn choose_library(app: AppHandle, mode: String) -> Result<(), String> {
+    let mode = LibraryMode::parse(&mode)
+        .filter(|mode| matches!(mode, LibraryMode::Existing | LibraryMode::Create))
+        .ok_or_else(|| format!("无效的图库模式：{mode}"))?;
+
+    if let Some(path) = debug_pick_path() {
+        let handle = app.clone();
+        thread::spawn(move || {
+            if let Err(err) = apply_selection(&handle, path, mode) {
+                backend::log_line(&handle, &format!("library selection failed: {err}"));
+            }
+        });
+        return Ok(());
+    }
+
+    let handle = app.clone();
+    app.dialog()
+        .file()
+        .set_title(match mode {
+            LibraryMode::Create => "选择空文件夹以新建 Imagen 图库",
+            _ => "选择已有的 Imagen 图库",
+        })
+        .pick_folder(move |picked| match picked.and_then(|p| p.into_path().ok()) {
+            Some(path) => {
+                let handle = handle.clone();
+                thread::spawn(move || {
+                    if let Err(err) = apply_selection(&handle, path, mode) {
+                        backend::log_line(&handle, &format!("library selection failed: {err}"));
+                    }
+                });
+            }
+            None => eval_notice(&handle, "已取消选择。", "info"),
+        });
+    Ok(())
+}
+
+pub fn retry_library(app: AppHandle) -> Result<(), String> {
+    let (config_path, library) = {
+        let state = app.state::<BackendState>();
+        let config = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        (config.config_path.clone(), config.library.clone())
+    };
+    if let Some(library) = library {
+        if backend::is_healthy(&app) {
+            backend::navigate_to_app(&app);
+            return Ok(());
+        }
+        let handle = app.clone();
+        thread::spawn(move || {
+            if let Err(err) = apply_selection(&handle, library.path, LibraryMode::Existing) {
+                backend::log_line(&handle, &format!("library retry failed: {err}"));
+            }
+        });
+        return Ok(());
+    }
+    let Some(config_file) = config_path else {
+        eval_notice(&app, "没有可重试的配置文件。", "error");
+        return Ok(());
+    };
+    let path = match read_config(&config_file) {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            eval_notice(&app, "配置文件不存在。", "error");
+            return Ok(());
+        }
+        Err(err) => {
+            eval_notice(&app, &err, "error");
+            return Ok(());
+        }
+    };
+    let handle = app.clone();
+    thread::spawn(move || {
+        if let Err(err) = apply_selection(&handle, path, LibraryMode::Existing) {
+            backend::log_line(&handle, &format!("library retry failed: {err}"));
+        }
+    });
+    Ok(())
+}
+
+pub fn reveal_config(app: AppHandle) -> Result<(), String> {
+    let config_path = {
+        let state = app.state::<BackendState>();
+        let config = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        config.config_path.clone()
+    };
+    let Some(path) = config_path else {
+        return Err("当前测试模式没有配置文件。".to_string());
+    };
+    let status = Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .status()
+        .map_err(|e| format!("无法打开 Finder：{e}"))?;
+    if !status.success() {
+        if let Some(parent) = path.parent() {
+            let parent_status = Command::new("open")
+                .arg(parent)
+                .status()
+                .map_err(|e| format!("无法打开 Finder：{e}"))?;
+            if parent_status.success() {
+                return Ok(());
+            }
+        }
+        return Err(format!("Finder 返回失败：{status}"));
+    }
+    Ok(())
+}
+
+pub fn return_to_current(app: AppHandle) -> Result<(), String> {
+    if backend::is_healthy(&app) {
+        backend::navigate_to_app(&app);
+        Ok(())
+    } else {
+        Err("当前图库的后端未运行。".to_string())
+    }
+}
+
+pub fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
+    if event.id() == CHANGE_LIBRARY_MENU_ID {
+        open_chooser(app);
+    }
+}

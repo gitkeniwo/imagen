@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imagen - 选择图库</title>
+  <style>
+    :root { color-scheme: light dark; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+      background: radial-gradient(circle at 30% 20%, #eef4ff, #dbe6f7 55%, #cfdcef);
+      color: #1f2a3d; display: flex; align-items: center; justify-content: center;
+      padding: 32px; box-sizing: border-box;
+    }
+    main { width: 100%; max-width: 680px; }
+    .mark {
+      width: 64px; height: 64px; margin-bottom: 18px; border-radius: 16px;
+      background: #205cb4; position: relative; box-shadow: 0 14px 30px rgba(32, 92, 180, .24);
+    }
+    .mark::before {
+      content: ""; position: absolute; inset: 15px 15px 23px 15px;
+      border-radius: 50%; background: #f5f8ff;
+    }
+    .mark::after {
+      content: ""; position: absolute; right: 15px; bottom: 15px;
+      width: 17px; height: 17px; border-radius: 5px; background: #205cb4;
+    }
+    h1 { font-size: 24px; margin: 0 0 8px; }
+    p { color: #4b5a73; font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
+    .path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px; background: #eef2f8; border: 1px solid #dde4ee;
+      border-radius: 8px; padding: 10px 12px; color: #33415c;
+      overflow-wrap: anywhere; user-select: text; margin-bottom: 14px;
+    }
+    .notice {
+      display: none; background: #fff7e6; color: #8a5a00; border: 1px solid #f1d28a;
+      border-radius: 9px; padding: 10px 12px; font-size: 13px; margin: 14px 0;
+      overflow-wrap: anywhere;
+    }
+    .notice.show { display: block; }
+    .notice.error { background: #fdecec; color: #b42318; border-color: #f3b8b4; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    button {
+      appearance: none; border: 0; border-radius: 9px; background: #205cb4;
+      color: #fff; font-size: 14px; font-weight: 600; padding: 11px 17px; cursor: pointer;
+    }
+    button.secondary { background: #e7edf7; color: #1f3a66; }
+    button.ghost { background: transparent; color: #36527c; border: 1px solid #c4d2e7; }
+    button:hover { filter: brightness(.96); }
+    button:disabled { opacity: .55; cursor: default; }
+    .status { min-height: 20px; font-size: 13px; color: #4b5a73; margin-top: 16px; }
+    .hint { font-size: 12px; color: #6b7a93; margin-top: 14px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: radial-gradient(circle at 30% 20%, #243247, #172133 55%, #101827); color: #e6ecf6; }
+      p, .status { color: #a9b8ce; }
+      .path { background: #172133; border-color: #26344b; color: #c3d0e2; }
+      .hint { color: #8595ad; }
+      button.secondary { background: #26344b; color: #d7e4f7; }
+      button.ghost { color: #b7cce8; border-color: #3a4c68; }
+      .notice { background: #3a2f16; color: #f3cf7a; border-color: #6b5524; }
+      .notice.error { background: #3a1d1d; color: #fda29b; border-color: #6b2d2d; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true"></div>
+    <h1 id="title">选择 Imagen 图库</h1>
+    <p id="intro">Imagen 需要一个图库目录。已有图库会原地使用，不会复制、迁移或重新初始化。</p>
+    <div class="path" id="path" hidden></div>
+    <div class="notice" id="notice"></div>
+    <p id="error-detail" hidden></p>
+    <div class="row" id="actions">
+      <button id="open" type="button">打开已有图库…</button>
+      <button id="create" class="secondary" type="button">新建图库…</button>
+      <button id="cancel" class="ghost" type="button" hidden>取消并返回</button>
+    </div>
+    <div class="row" id="error-actions" hidden>
+      <button id="retry" type="button">重试</button>
+      <button id="open-other" class="secondary" type="button">选择其他图库</button>
+      <button id="reveal" class="ghost" type="button">在 Finder 中显示配置</button>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+    <p class="hint" id="hint">新建图库请选择一个空文件夹（忽略 .DS_Store）。macOS 可能请求访问「文稿」「桌面」或外置磁盘的权限。</p>
+  </main>
+  <script>
+    (function () {
+      var q = new URLSearchParams(window.location.search);
+      var zh = (navigator.language || "zh").toLowerCase().indexOf("zh") === 0;
+      var text = zh ? {
+        choose: "选择 Imagen 图库",
+        intro: "Imagen 需要一个图库目录。已有图库会原地使用，不会复制、迁移或重新初始化。",
+        change: "更改图库位置",
+        changeIntro: "当前图库如下。选择新图库后，旧后端会先停止；校验通过才会写入配置并启动新后端。",
+        current: "当前图库",
+        open: "打开已有图库…",
+        create: "新建图库…",
+        cancel: "取消并返回",
+        retry: "重试",
+        other: "选择其他图库",
+        reveal: "在 Finder 中显示配置",
+        error: "图库不可用",
+        errorIntro: "Imagen 没有启动后端，也没有在目标位置创建、初始化或修改任何内容。",
+        hint: "新建图库请选择一个空文件夹（忽略 .DS_Store）。macOS 可能请求访问「文稿」「桌面」或外置磁盘的权限。",
+        waiting: "正在选择…",
+        starting: "正在校验并启动…",
+        retryWait: "正在重试…",
+        cancelled: "已取消选择。",
+        noIpc: "当前页面没有 IPC 权限，无法操作图库。",
+        auto: "正在执行自动化图库测试…"
+      } : {
+        choose: "Choose Imagen Library",
+        intro: "Imagen needs a library folder. Existing libraries are used in place — never copied, migrated, or reinitialized.",
+        change: "Change Library Location",
+        changeIntro: "The current library is shown below. The old backend stops first; the new one starts only after validation passes.",
+        current: "Current library",
+        open: "Open Existing Library…",
+        create: "Create New Library…",
+        cancel: "Cancel and Return",
+        retry: "Retry",
+        other: "Choose Another Library",
+        reveal: "Show Config in Finder",
+        error: "Library Unavailable",
+        errorIntro: "Imagen did not start the backend and did not create, initialize, or modify anything at the target.",
+        hint: "For a new library, choose an empty folder (.DS_Store is ignored). macOS may request access to Documents, Desktop, or an external disk.",
+        waiting: "Choosing…",
+        starting: "Validating and starting…",
+        retryWait: "Retrying…",
+        cancelled: "Selection cancelled.",
+        noIpc: "This page has no IPC permission and cannot manage the library.",
+        auto: "Running the automated library test…"
+      };
+
+      function $(id) { return document.getElementById(id); }
+      function setText(id, value) { $(id) && ($(id).textContent = value); }
+      function show(id, visible) { $(id) && ($(id).hidden = !visible); }
+      function notice(message, kind) {
+        var el = $("notice");
+        el.textContent = message || "";
+        el.className = "notice" + (message ? " show" : "") + (kind === "error" ? " error" : "");
+        if (message) {
+          setBusy(false);
+          setText("status", "");
+        }
+      }
+      window.imagenLibraryNotice = notice;
+
+      var busy = false;
+      function setBusy(value) {
+        busy = value;
+        ["open", "create", "cancel", "retry", "open-other", "reveal"].forEach(function (id) {
+          if ($(id)) $(id).disabled = value;
+        });
+      }
+      function invoke(cmd, args) {
+        var internals = window.__TAURI_INTERNALS__;
+        if (!internals || typeof internals.invoke !== "function") {
+          notice(text.noIpc, "error");
+          return Promise.reject(new Error(text.noIpc));
+        }
+        return internals.invoke(cmd, args || {});
+      }
+      function choose(mode) {
+        setBusy(true);
+        notice("", "info");
+        setText("status", text.starting);
+        invoke("choose_library", { mode: mode }).catch(function (err) {
+          notice(String(err), "error");
+        });
+      }
+
+      var errorMode = q.get("error") === "1";
+      var changeMode = q.get("change") === "1";
+      var noticeText = q.get("notice");
+      var path = q.get("path") || "";
+      var reason = q.get("reason") || "";
+
+      if (errorMode) {
+        setText("title", text.error);
+        setText("intro", text.errorIntro);
+        if (path) {
+          $("path").textContent = path;
+          show("path", true);
+        }
+        if (reason) {
+          $("error-detail").textContent = reason;
+          show("error-detail", true);
+        }
+        show("actions", false);
+        show("error-actions", true);
+        show("hint", false);
+      } else if (changeMode) {
+        setText("title", text.change);
+        setText("intro", text.changeIntro);
+        if (path) {
+          $("path").textContent = text.current + ": " + path;
+          show("path", true);
+        }
+        show("cancel", true);
+      } else {
+        setText("title", text.choose);
+        setText("intro", text.intro);
+      }
+      setText("hint", text.hint);
+      if (noticeText) notice(noticeText, "error");
+
+      $("open").addEventListener("click", function () { choose("existing"); });
+      $("create").addEventListener("click", function () { choose("create"); });
+      $("open-other").addEventListener("click", function () { choose("existing"); });
+      $("cancel").addEventListener("click", function () {
+        setText("status", text.starting);
+        invoke("return_to_current").catch(function (err) { notice(String(err), "error"); });
+      });
+      $("retry").addEventListener("click", function () {
+        setBusy(true);
+        notice("", "info");
+        setText("status", text.retryWait);
+        invoke("retry_library").catch(function (err) { notice(String(err), "error"); });
+      });
+      $("reveal").addEventListener("click", function () {
+        invoke("reveal_config").catch(function (err) { notice(String(err), "error"); });
+      });
+
+      var auto = q.get("auto");
+      if (auto === "existing" || auto === "create") {
+        setText("status", text.auto);
+        setTimeout(function () { choose(auto); }, 80);
+      }
+    })();
+  </script>
+</body>
+</html>

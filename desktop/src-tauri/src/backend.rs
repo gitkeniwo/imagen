@@ -6,18 +6,20 @@
 
 use std::env;
 use std::fmt::Write as FmtWrite;
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write as IoWrite};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Url};
+
+use crate::library::{self, LibraryProblem, LibrarySelection};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 pub const DEFAULT_PORT: u16 = 47860;
@@ -25,10 +27,12 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(20);
 const HEALTH_POLL: Duration = Duration::from_millis(100);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Clone)]
 pub struct BackendConfig {
     pub port: u16,
     pub token: String,
-    pub data_dir: PathBuf,
+    pub library: Option<LibrarySelection>,
+    pub config_path: Option<PathBuf>,
     pub log_dir: PathBuf,
     pub backend_log: PathBuf,
     pub shell_log: PathBuf,
@@ -36,7 +40,11 @@ pub struct BackendConfig {
 }
 
 pub struct BackendState {
-    pub config: BackendConfig,
+    pub config: RwLock<BackendConfig>,
+    pub startup_problem: Option<LibraryProblem>,
+    pub startup_notice: Option<String>,
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pub auto_change_done: AtomicBool,
     pub child: Mutex<Option<Child>>,
     pub stdin: Mutex<Option<ChildStdin>>,
     pub started: Mutex<Option<Instant>>,
@@ -70,40 +78,33 @@ impl BackendState {
             .ok()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty());
-        let test_mode = env_data.is_some();
-
-        let data_dir = match env_data {
-            Some(dir) => PathBuf::from(dir),
-            None => app
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("无法解析应用数据目录：{e}"))?,
-        };
-
-        let log_dir = match env::var("IMAGEN_LOG_DIR")
+        let env_config = env::var("IMAGEN_CONFIG_PATH")
             .ok()
             .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-        {
-            Some(dir) => PathBuf::from(dir),
-            None if test_mode => data_dir.join("logs"),
-            None => app
-                .path()
-                .app_log_dir()
-                .map_err(|e| format!("无法解析日志目录：{e}"))?,
-        };
+            .filter(|v| !v.is_empty());
+        let env_log = env::var("IMAGEN_LOG_DIR")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+
+        let startup = library::resolve_startup(app, env_data, env_config, env_log)?;
+        let log_dir = startup.log_dir.clone();
         std::fs::create_dir_all(&log_dir).map_err(|e| format!("无法创建日志目录 {log_dir:?}：{e}"))?;
 
         Ok(Self {
-            config: BackendConfig {
+            config: RwLock::new(BackendConfig {
                 port,
                 token: random_token(),
-                data_dir,
+                library: startup.library,
+                config_path: startup.config_path,
                 backend_log: log_dir.join("backend.log"),
                 shell_log: log_dir.join("shell.log"),
                 log_dir,
-                test_mode,
-            },
+                test_mode: startup.test_mode,
+            }),
+            startup_problem: startup.problem,
+            startup_notice: startup.notice,
+            auto_change_done: AtomicBool::new(false),
             child: Mutex::new(None),
             stdin: Mutex::new(None),
             started: Mutex::new(None),
@@ -154,10 +155,16 @@ pub fn log_line(app: &AppHandle, message: &str) {
     let stamp = epoch_ms();
     eprintln!("imagen[{stamp}]: {message}");
     if let Some(state) = app.try_state::<BackendState>() {
+        let shell_log = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .shell_log
+            .clone();
         if let Ok(mut f) = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&state.config.shell_log)
+            .open(shell_log)
         {
             let _ = writeln!(f, "[{stamp}] {message}");
         }
@@ -223,9 +230,17 @@ pub fn spawn(app: &AppHandle) -> Result<u32, String> {
         }
     }
 
-    let config = &state.config;
+    let (config, library) = {
+        let config = state
+            .config
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        (config.clone(), config.library.clone())
+    };
+    let library = library.ok_or_else(|| "尚未选择图库".to_string())?;
     let mut cmd = backend_command(app)?;
-    cmd.env("IMAGEN_DATA_DIR", &config.data_dir)
+    cmd.env("IMAGEN_DATA_DIR", &library.path)
+        .env("IMAGEN_LIBRARY_MODE", library.mode.as_str())
         .env("IMAGEN_PORT", config.port.to_string())
         .env("IMAGEN_INSTANCE_TOKEN", &config.token)
         .env("IMAGEN_PARENT_WATCH", "1")
@@ -258,9 +273,10 @@ pub fn spawn(app: &AppHandle) -> Result<u32, String> {
     log_line(
         app,
         &format!(
-            "backend spawned pid={pid} port={} data_dir={} test_mode={}",
+            "backend spawned pid={pid} port={} data_dir={} mode={} test_mode={}",
             config.port,
-            config.data_dir.display(),
+            library.path.display(),
+            library.mode.as_str(),
             config.test_mode
         ),
     );
@@ -296,7 +312,13 @@ fn http_health(port: u16) -> Option<Value> {
     serde_json::from_str(body).ok()
 }
 
-fn navigate_to_app(app: &AppHandle, port: u16) {
+pub fn navigate_to_app(app: &AppHandle) {
+    let port = app
+        .state::<BackendState>()
+        .config
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .port;
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(debug_assertions)]
         let path = {
@@ -325,7 +347,7 @@ fn navigate_to_app(app: &AppHandle, port: u16) {
     }
 }
 
-fn percent_encode(input: &str) -> String {
+pub fn percent_encode(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for b in input.bytes() {
         match b {
@@ -345,7 +367,14 @@ pub fn show_error(app: &AppHandle, message: &str) {
     log_line(app, &format!("ERROR {message}"));
     let log_path = app
         .try_state::<BackendState>()
-        .map(|s| s.config.backend_log.display().to_string())
+        .map(|s| {
+            s.config
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .backend_log
+                .display()
+                .to_string()
+        })
         .unwrap_or_default();
 
     if let Some(window) = app.get_webview_window("main") {
@@ -373,15 +402,17 @@ pub fn show_error(app: &AppHandle, message: &str) {
 
 /// Poll `/api/health` until the token matches, then navigate to the UI.
 pub fn wait_until_healthy(app: AppHandle) {
-    let (port, token, generation, started, log_path) = {
+    let (port, token, generation, started, log_path, library_path) = {
         let state = app.state::<BackendState>();
         let started = *state.started.lock().unwrap_or_else(|p| p.into_inner());
+        let config = state.config.read().unwrap_or_else(|p| p.into_inner());
         (
-            state.config.port,
-            state.config.token.clone(),
+            config.port,
+            config.token.clone(),
             state.generation.load(Ordering::SeqCst),
             started.unwrap_or_else(Instant::now),
-            state.config.backend_log.display().to_string(),
+            config.backend_log.display().to_string(),
+            config.library.as_ref().map(|lib| lib.path.clone()),
         )
     };
 
@@ -398,7 +429,7 @@ pub fn wait_until_healthy(app: AppHandle) {
 
         if let Some(status) = child_status(&app) {
             if !app.state::<BackendState>().expected_exit.load(Ordering::SeqCst) {
-                show_error(&app, &format!("后端已退出（{status}）。\n日志：{log_path}"));
+                show_backend_exit(&app, status, library_path.as_deref(), &log_path);
             }
             return;
         }
@@ -415,7 +446,8 @@ pub fn wait_until_healthy(app: AppHandle) {
                     &app,
                     &format!("health ok in {elapsed} ms; navigating to 127.0.0.1:{port}"),
                 );
-                navigate_to_app(&app, port);
+                navigate_to_app(&app);
+                library::maybe_auto_change(&app);
                 spawn_monitor(app.clone());
                 return;
             }
@@ -427,12 +459,66 @@ pub fn wait_until_healthy(app: AppHandle) {
         thread::sleep(HEALTH_POLL);
     }
 
-    show_error(
-        &app,
-        &format!(
-            "20 秒内未通过健康检查：端口 {port} 可能被其他进程占用，或后端启动失败。\n日志：{log_path}"
-        ),
-    );
+    if let Some(path) = library_path.as_deref() {
+        library::show_problem(
+            &app,
+            path,
+            &format!("20 秒内未通过健康检查；端口 {port} 可能被占用，或后端启动失败。日志：{log_path}"),
+        );
+    } else {
+        show_error(
+            &app,
+            &format!(
+                "20 秒内未通过健康检查：端口 {port} 可能被其他进程占用，或后端启动失败。\n日志：{log_path}"
+            ),
+        );
+    }
+}
+
+fn backend_failure_reason(app: &AppHandle) -> String {
+    let log_path = app
+        .try_state::<BackendState>()
+        .map(|s| {
+            s.config
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .backend_log
+                .clone()
+        });
+    let Some(log_path) = log_path else {
+        return "后端启动失败".to_string();
+    };
+    fs::read_to_string(log_path)
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .rev()
+                .find(|line| line.contains("fatal:"))
+                .map(|line| line.split("fatal:").nth(1).unwrap_or(line).trim().to_string())
+        })
+        .filter(|reason| !reason.is_empty())
+        .unwrap_or_else(|| "后端启动失败（详见日志）".to_string())
+}
+
+fn show_backend_exit(
+    app: &AppHandle,
+    status: ExitStatus,
+    library_path: Option<&std::path::Path>,
+    log_path: &str,
+) {
+    match (status.code(), library_path) {
+        (Some(3), Some(path)) => {
+            let reason = backend_failure_reason(app);
+            log_line(app, &format!("library validation failed: {reason}"));
+            library::show_problem(app, path, &reason);
+        }
+        (Some(4), Some(path)) => {
+            let reason = "图库正被另一个 Imagen 使用";
+            log_line(app, reason);
+            library::show_problem(app, path, reason);
+        }
+        _ => show_error(app, &format!("后端已退出（{status}）。\n日志：{log_path}")),
+    }
 }
 
 fn spawn_monitor(app: AppHandle) {
@@ -456,7 +542,23 @@ fn spawn_monitor(app: AppHandle) {
                     .load(Ordering::SeqCst)
                 {
                     log_line(&app, &format!("后端已退出（{status}）"));
-                    show_error(&app, "后端已退出。点击「重启后端」重试。");
+                    let library_path = app
+                        .state::<BackendState>()
+                        .config
+                        .read()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .library
+                        .as_ref()
+                        .map(|lib| lib.path.clone());
+                    let log_path = app
+                        .state::<BackendState>()
+                        .config
+                        .read()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .backend_log
+                        .display()
+                        .to_string();
+                    show_backend_exit(&app, status, library_path.as_deref(), &log_path);
                     break;
                 }
             }
@@ -470,6 +572,7 @@ fn spawn_monitor(app: AppHandle) {
 fn stop_child(app: &AppHandle, expected: bool) {
     let state = app.state::<BackendState>();
     state.expected_exit.store(expected, Ordering::SeqCst);
+    state.generation.fetch_add(1, Ordering::SeqCst);
 
     // Closing the pipe is the graceful path: the backend sees stdin EOF.
     let stdin = state
@@ -500,6 +603,33 @@ fn stop_child(app: &AppHandle, expected: bool) {
     }
     *guard = None;
     state.healthy.store(false, Ordering::SeqCst);
+}
+
+
+pub fn is_healthy(app: &AppHandle) -> bool {
+    app.state::<BackendState>().healthy.load(Ordering::SeqCst)
+}
+
+/// Gracefully stop the current child before a library change. The config is
+/// not modified here; the caller validates the candidate first.
+pub fn stop_for_library_change(app: &AppHandle) {
+    log_line(app, "stopping backend for library change");
+    stop_child(app, true);
+}
+
+/// Restart the current (still configured) library after a rejected change.
+pub fn restart_current_async(app: &AppHandle) {
+    match spawn(app) {
+        Ok(pid) => {
+            log_line(app, &format!("old backend restarted pid={pid}"));
+            let handle = app.clone();
+            thread::spawn(move || wait_until_healthy(handle));
+        }
+        Err(err) => {
+            log_line(app, &format!("old backend restart failed: {err}"));
+            show_error(app, &err);
+        }
+    }
 }
 
 /// Restart the backend from the error page's button.
