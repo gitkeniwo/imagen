@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, Generation, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
 import TagPicker from "./TagPicker";
@@ -10,6 +10,7 @@ import { Button, IconButton } from "./ui/Button";
 import Menu from "./ui/Menu";
 import { downloadImage } from "./GenerationCard";
 import { peekProps } from "./HoverPeek";
+import ZoomStage from "./ZoomStage";
 
 // Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
 // and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
@@ -52,6 +53,14 @@ export default function ImageViewer({
   const [copied, setCopied] = useState(false);
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
+  // While zoomed, ←/→ pan nothing and switch nothing; the arrows hide.
+  const [zoomed, setZoomed] = useState(false);
+  const zoomedRef = useRef(false);
+  const onZoomedChange = useCallback((z: boolean) => {
+    zoomedRef.current = z;
+    setZoomed(z);
+  }, []);
+  const [panelHidden, setPanelHidden] = useState(false);
 
   // Reset editable tags when navigating to another image.
   useEffect(() => {
@@ -130,7 +139,12 @@ export default function ImageViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") return onClose();
+      const el = e.target instanceof Element ? e.target : null;
+      if (el?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "i" || e.key === "I") setPanelHidden((h) => !h);
+      else if (zoomedRef.current) return;
       else if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
       else if (e.key === "ArrowRight") setIdx((i) => Math.min(items.length - 1, i + 1));
     };
@@ -180,9 +194,16 @@ export default function ImageViewer({
 
   return (
     <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="viewer-window" onClick={(e) => e.stopPropagation()}>
-        <div className="viewer-stage">
-          <img src={imgFileUrl(current.id)} alt={current.filename} />
+      <div
+        className={`viewer-window${panelHidden ? " panel-hidden" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ZoomStage
+          image={current}
+          panelHidden={panelHidden}
+          onTogglePanel={() => setPanelHidden((h) => !h)}
+          onZoomedChange={onZoomedChange}
+        >
           {multi && (
             <>
               <span className="viewer-count">{idx + 1} / {items.length}</span>
@@ -193,6 +214,7 @@ export default function ImageViewer({
                 icon="prev"
                 label={t("prev_image")}
                 disabled={idx === 0}
+                hidden={zoomed}
                 onClick={prev}
               />
               <IconButton
@@ -202,13 +224,14 @@ export default function ImageViewer({
                 icon="next"
                 label={t("next_image")}
                 disabled={idx === items.length - 1}
+                hidden={zoomed}
                 onClick={next}
               />
             </>
           )}
-        </div>
+        </ZoomStage>
 
-        <aside className="viewer-side" aria-label={t("image_info")}>
+        <aside className="viewer-side" aria-label={t("image_info")} hidden={panelHidden}>
           <div className="viewer-top">
             <div className="viewer-head">
               <h2 className="viewer-name">{current.filename}</h2>

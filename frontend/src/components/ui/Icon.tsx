@@ -27,6 +27,7 @@ import {
   type LucideIcon,
   Maximize2,
   Minus,
+  PanelRight,
   Pencil,
   Pin,
   Plus,
@@ -46,6 +47,8 @@ import {
   Upload,
   X,
   ArrowRight,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 // The icon dictionary: one name per meaning, one glyph per name. Pick icons by
@@ -107,6 +110,10 @@ const ICONS = {
   more: Ellipsis,
   language: Languages,
   imageMissing: ImageOff,
+  // Viewer zoom
+  zoomIn: ZoomIn,
+  zoomOut: ZoomOut,
+  togglePanel: PanelRight,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
