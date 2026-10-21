@@ -4,8 +4,7 @@ import { useI18n } from "../i18n";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
-import GenerationCard, { type CardAction, generationMenu } from "../components/GenerationCard";
-import { IconButton } from "../components/ui/Button";
+import HistoryItem from "../components/HistoryItem";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
@@ -192,41 +191,27 @@ export default function Favorites({
         </div>
       ) : (
         <div
-          className={`history-list${compact ? " compact" : ""}`}
+          className={`history-list hlist grid${compact ? " compact" : ""}`}
           style={{ "--history-columns": columns } as CSSProperties}
         >
           {gens.map((g) => {
             const outImg = g.outputImage ?? null;
-            const actions: CardAction[] = [{ icon: "reuse", label: t("reuse"), onClick: () => onReuse(g) }];
-            if (onRerun && g.source !== "manual") actions.push({ icon: "rerun", label: t("rerun_short"), onClick: () => onRerun(g) });
-            if (onUseAsRef && outImg) {
-              actions.push({ icon: "addToRefs", label: t("as_ref_short"), onClick: () => onUseAsRef(outImg) });
-            }
             return (
-              <GenerationCard
+              <HistoryItem
                 key={g.id}
-                media={
-                  outImg
-                    ? { kind: "image", image: outImg, onOpen: () => onOpenViewer(outImg, pageOutputs) }
-                    : { kind: "empty" }
-                }
-                aspectRatio={g.aspect_ratio}
-                status={g.status === "note" ? "note" : undefined}
-                statusLabel={t("status_note")}
-                imported={g.source === "manual"}
-                overlay={
-                  outImg && (
-                    <IconButton
-                      variant="overlay"
-                      className="is-starred"
-                      icon="favorite"
-                      filled
-                      label={t("unfavorite")}
-                      aria-pressed
-                      onClick={() => unfavorite(outImg)}
-                    />
-                  )
-                }
+                g={g}
+                layout="grid"
+                output={outImg}
+                missing={false}
+                onOpen={() => outImg && onOpenViewer(outImg, pageOutputs)}
+                onToggleStar={outImg ? () => unfavorite(outImg) : undefined}
+                onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
+                tags={outImg?.tags ?? []}
+                onReuse={() => onReuse(g)}
+                onRerun={onRerun ? () => onRerun(g) : undefined}
+                onUseAsRef={onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined}
+                onEdit={() => setEditingGen(g)}
+                onDuplicate={() => setDuplicatingGen(g)}
                 header={
                   outImg && (
                     <input
@@ -239,19 +224,6 @@ export default function Favorites({
                     />
                   )
                 }
-                meta={[g.model, g.aspect_ratio, g.resolution]}
-                prompt={g.prompt}
-                promptLines={compact ? 2 : 3}
-                inputs={g.inputs ?? []}
-                onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
-                tags={outImg?.tags}
-                actions={actions}
-                menuItems={generationMenu(g, outImg, {
-                  t,
-                  onEdit: () => setEditingGen(g),
-                  onDuplicate: () => setDuplicatingGen(g),
-                  onCopied: (ok) => toast(ok ? t("copied") : t("copy_failed")),
-                })}
               />
             );
           })}

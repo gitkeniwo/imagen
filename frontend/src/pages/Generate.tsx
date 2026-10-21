@@ -12,7 +12,7 @@ import { useI18n } from "../i18n";
 import ReferenceTray from "../components/ReferenceTray";
 import QueueList from "../components/QueueList";
 import LibraryPickerModal from "../components/LibraryPickerModal";
-import { ComposerParams, GenerateSplitButton } from "../components/ComposerControls";
+import { AttemptsStepper, ComposerParams, Switch } from "../components/ComposerControls";
 import { Button } from "../components/ui/Button";
 
 const ATTEMPTS_KEY = "imagen-task-attempts";
@@ -124,7 +124,7 @@ export default function Generate({
   return (
     <div>
       <div className="panel composer">
-        <div className="composer-box">
+        <div className="composer-input">
           <ReferenceTray
             compact
             tray={tray}
@@ -147,33 +147,42 @@ export default function Generate({
             }}
             placeholder={t("prompt_placeholder")}
           />
-          <div className="composer-bar">
-            <ComposerParams
-              model={model}
-              setModel={setModel}
-              aspectRatio={aspectRatio}
-              setAspectRatio={setAspectRatio}
-              resolution={resolution}
-              setResolution={setResolution}
-              format={format}
-              setFormat={setFormat}
-              tagIds={tagIds}
-              setTagIds={setTagIds}
-            />
-            <div className="spacer" />
-            {!keyConfigured && <span className="muted small">{t("need_key_inline").replace(/^ · /, "")}</span>}
-            <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
-              {t("save_draft")}
-            </Button>
-            <GenerateSplitButton
-              onGenerate={submit}
-              disabled={!canSubmit}
-              attempts={attempts}
-              setAttempts={setAttempts}
-              skip={skipIfPrecedingSucceeds}
-              setSkip={setSkipIfPrecedingSucceeds}
-            />
-          </div>
+        </div>
+        <ComposerParams
+          model={model}
+          setModel={setModel}
+          aspectRatio={aspectRatio}
+          setAspectRatio={setAspectRatio}
+          resolution={resolution}
+          setResolution={setResolution}
+          format={format}
+          setFormat={setFormat}
+          tagIds={tagIds}
+          setTagIds={setTagIds}
+        />
+        <div className="composer-foot">
+          <AttemptsStepper attempts={attempts} setAttempts={setAttempts} />
+          <Switch
+            checked={skipIfPrecedingSucceeds}
+            onChange={setSkipIfPrecedingSucceeds}
+            label={t("skip_switch")}
+            title={t("skip_if_preceding_succeeds_title")}
+          />
+          <div className="spacer" />
+          {!keyConfigured && <span className="muted small">{t("need_key_inline").replace(/^ · /, "")}</span>}
+          <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
+            {t("save_draft")}
+          </Button>
+          <button
+            type="button"
+            className="primary composer-generate"
+            onClick={submit}
+            disabled={!canSubmit}
+            title={t("submit_shortcut_hint")}
+          >
+            {attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
+            <kbd className="kbd">⌘↵</kbd>
+          </button>
         </div>
       </div>
 

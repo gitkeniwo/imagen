@@ -1,51 +1,10 @@
 import { type ReactNode, useState } from "react";
 import { useI18n } from "../../i18n";
-import { Button, IconButton } from "./Button";
+import { IconButton } from "./Button";
 import Popover from "./Popover";
 
-// The two shared toolbar popovers: "Filter" (what is listed) and "View" (how
-// it is laid out). Every panel uses these instead of inline segment rows.
-export function FilterPopover({
-  activeCount,
-  onReset,
-  children,
-}: {
-  activeCount: number;
-  onReset?: () => void;
-  children: ReactNode;
-}) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover
-      fixed
-      className="toolbar-popover-wrap"
-      panelClassName="toolbar-popover"
-      panelProps={{ role: "dialog", "aria-label": t("filter") }}
-      open={open}
-      onClose={() => setOpen(false)}
-      trigger={
-        <Button
-          className={`toolbar-trigger${activeCount > 0 ? " on" : ""}`}
-          icon="filter"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {t("filter")}
-          {activeCount > 0 && <span className="toolbar-trigger-count">{activeCount}</span>}
-        </Button>
-      }
-    >
-      {children}
-      {onReset && activeCount > 0 && (
-        <Button variant="link" className="toolbar-popover-reset" onClick={onReset}>
-          {t("clear_filters")}
-        </Button>
-      )}
-    </Popover>
-  );
-}
-
+// The shared "View" toolbar popover (how a panel is laid out). Filters stay
+// inline in each panel.
 export function ViewPopover({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);

@@ -2,6 +2,7 @@ import { ASPECT_RATIOS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "../api";
 import { useI18n } from "../i18n";
 import CustomSelect from "./CustomSelect";
 import Segmented from "./ui/Segmented";
+import { AspectShape } from "./ComposerControls";
 
 export default function OptionBar({
   model,
@@ -62,7 +63,6 @@ export default function OptionBar({
         <label>{t("aspect")}</label>
         <div className="aspect-row">
           {ASPECT_RATIOS.map((r) => {
-            const [w, h] = r.split(":").map(Number);
             return (
               <button
                 key={r}
@@ -71,7 +71,7 @@ export default function OptionBar({
                 onClick={() => setAspectRatio(r)}
                 title={r}
               >
-                <span className="aspect-shape" style={{ aspectRatio: `${w} / ${h}` }} />
+                <span className="aspect-box"><AspectShape ratio={r} /></span>
                 <span className="aspect-label">{r}</span>
               </button>
             );

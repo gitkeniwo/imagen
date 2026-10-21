@@ -4,16 +4,21 @@ import { useI18n } from "../i18n";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
-import GenerationCard, { type CardAction, type CardMedia, generationMenu } from "../components/GenerationCard";
-import { IconButton } from "../components/ui/Button";
+import HistoryItem, { type HistoryLayout } from "../components/HistoryItem";
+import { Button } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
-import { FilterPopover, PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
+import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
 const HISTORY_COLUMNS_KEY = "imagen-history-columns";
 const HISTORY_COLUMN_OPTIONS = [1, 2, 3];
 const HISTORY_COLUMN_OPTIONS_FULL = [1, 2, 3, 4, 5];
+const HISTORY_LAYOUT_KEY = "imagen-history-layout";
+
+function initialHistoryLayout(): HistoryLayout {
+  return localStorage.getItem(HISTORY_LAYOUT_KEY) === "list" ? "list" : "grid";
+}
 
 function initialHistoryColumns() {
   const saved = Number(localStorage.getItem(HISTORY_COLUMNS_KEY));
@@ -37,7 +42,7 @@ export default function History({
   refreshKey?: number;
   live?: boolean;
 }) {
-  const { t, reason } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
   const [gens, setGens] = useState<Generation[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -48,6 +53,7 @@ export default function History({
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
   const [columns, setColumns] = useState(initialHistoryColumns);
+  const [layout, setLayout] = useState(initialHistoryLayout);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -111,6 +117,10 @@ export default function History({
   useEffect(() => {
     localStorage.setItem(HISTORY_COLUMNS_KEY, String(columns));
   }, [columns]);
+
+  useEffect(() => {
+    localStorage.setItem(HISTORY_LAYOUT_KEY, layout);
+  }, [layout]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const hasPages = total > pageSize;
@@ -188,42 +198,16 @@ export default function History({
             }}
             placeholder={t("search_placeholder_history")}
           />
-          <FilterPopover
-            activeCount={(kindFilter !== null ? 1 : 0) + (onlyWithImage ? 1 : 0)}
-            onReset={() => {
-              setKindFilter(null);
-              setOnlyWithImage(false);
-              setPage(0);
-            }}
-          >
-            <PopoverSection label={t("filter_kind")}>
-              <Segmented
-                value={kindFilter ?? "all"}
-                onChange={(v) => {
-                  setKindFilter(v === "all" ? null : v);
-                  setPage(0);
-                }}
-                options={[
-                  { value: "all", label: t("filter_all") },
-                  { value: "vertex", label: t("hist_filter_vertex"), icon: "generated" },
-                  { value: "manual", label: t("hist_filter_manual"), icon: "imported" },
-                ]}
-              />
-            </PopoverSection>
-            <PopoverSection label={t("filter_content")}>
-              <button
-                type="button"
-                className={`skip-toggle${onlyWithImage ? " on" : ""}`}
-                aria-pressed={onlyWithImage}
-                onClick={() => {
-                  setOnlyWithImage((value) => !value);
-                  setPage(0);
-                }}
-              >
-                {t("hist_filter_with_image")}
-              </button>
-            </PopoverSection>
-          </FilterPopover>
+          <Segmented
+            className="view-seg"
+            value={layout}
+            onChange={setLayout}
+            options={[
+              { value: "grid", label: t("view_grid"), icon: "columns", iconOnly: true, title: t("view_grid") },
+              { value: "list", label: t("view_list"), icon: "listView", iconOnly: true, title: t("view_list") },
+            ]}
+          />
+          {layout === "grid" && (
           <ViewPopover>
             <PopoverSection label={t("columns_per_row")}>
               <Segmented
@@ -237,6 +221,32 @@ export default function History({
               />
             </PopoverSection>
           </ViewPopover>
+          )}
+        </div>
+        <div className="filter-row">
+          <Segmented
+            value={kindFilter ?? "all"}
+            onChange={(v) => {
+              setKindFilter(v === "all" ? null : v);
+              setPage(0);
+            }}
+            options={[
+              { value: "all", label: t("filter_all") },
+              { value: "vertex", label: t("hist_filter_vertex"), icon: "generated" },
+              { value: "manual", label: t("hist_filter_manual"), icon: "imported" },
+            ]}
+          />
+          <Button
+            className={`skip-toggle${onlyWithImage ? " on" : ""}`}
+            icon="library"
+            aria-pressed={onlyWithImage}
+            onClick={() => {
+              setOnlyWithImage((value) => !value);
+              setPage(0);
+            }}
+          >
+            {t("hist_filter_with_image")}
+          </Button>
         </div>
         {tagBar}
       </div>
@@ -276,77 +286,28 @@ export default function History({
         </div>
       ) : (
         <div
-          className={`history-list${compact ? " compact" : ""}`}
-          style={{ "--history-columns": columns } as CSSProperties}
+          className={`history-list hlist ${layout}${compact ? " compact" : ""}`}
+          style={layout === "grid" ? ({ "--history-columns": columns } as CSSProperties) : undefined}
         >
           {gens.map((g) => {
             const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
             const missing = !!g.outputImage?.deleted_at || (g.status === "success" && !g.outputImage);
-            const media: CardMedia = outImg
-              ? { kind: "image", image: outImg, onOpen: () => onOpenViewer(outImg, pageOutputs) }
-              : missing
-              ? { kind: "missing" }
-              : g.status === "running"
-              ? { kind: "pending", active: true }
-              : { kind: "empty" };
-            const failed = !outImg && !missing && g.status !== "running";
-            const actions: CardAction[] = [{ icon: "reuse", label: t("reuse"), onClick: () => onReuse(g) }];
-            if (onRerun && g.status !== "running" && g.source !== "manual") {
-              actions.push({ icon: "rerun", label: t("rerun_short"), onClick: () => onRerun(g) });
-            }
-            if (onUseAsRef && outImg) {
-              actions.push({ icon: "addToRefs", label: t("as_ref_short"), onClick: () => onUseAsRef(outImg) });
-            }
             return (
-              <GenerationCard
+              <HistoryItem
                 key={g.id}
-                media={media}
-                aspectRatio={g.aspect_ratio}
-                status={g.status === "success" ? undefined : g.status}
-                statusLabel={t(`status_${g.status}`)}
-                imported={g.source === "manual"}
-                markerColor={g.marker_color}
-                overlay={
-                  outImg && (
-                    <IconButton
-                      variant="overlay"
-                      className={outImg.starred ? "is-starred" : ""}
-                      icon="favorite"
-                      filled={!!outImg.starred}
-                      label={outImg.starred ? t("unfavorite") : t("favorite")}
-                      aria-pressed={!!outImg.starred}
-                      onClick={() => toggleStar(outImg)}
-                    />
-                  )
-                }
-                meta={[g.model, g.aspect_ratio, g.resolution]}
-                error={
-                  failed
-                    ? {
-                        kind: g.status === "blocked" || g.status === "aborted" || g.status === "note" ? g.status : "error",
-                        message:
-                          g.status === "note"
-                            ? t("note_no_output")
-                            : reason(g.raw_finish) || g.error_message || t("no_output"),
-                      }
-                    : null
-                }
-                prompt={g.prompt}
-                promptLines={compact ? 2 : 3}
-                inputs={g.inputs ?? []}
+                g={g}
+                layout={layout}
+                output={outImg}
+                missing={missing}
+                onOpen={() => outImg && onOpenViewer(outImg, pageOutputs)}
+                onToggleStar={outImg ? () => toggleStar(outImg) : undefined}
                 onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
                 tags={genTags(g)}
-                actions={actions}
-                menuItems={
-                  g.status === "running"
-                    ? []
-                    : generationMenu(g, outImg, {
-                        t,
-                        onEdit: () => setEditingGen(g),
-                        onDuplicate: () => setDuplicatingGen(g),
-                        onCopied: (ok) => toast(ok ? t("copied") : t("copy_failed")),
-                      })
-                }
+                onReuse={() => onReuse(g)}
+                onRerun={onRerun ? () => onRerun(g) : undefined}
+                onUseAsRef={onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined}
+                onEdit={() => setEditingGen(g)}
+                onDuplicate={() => setDuplicatingGen(g)}
               />
             );
           })}
