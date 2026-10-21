@@ -5,136 +5,255 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imagen - 选择图库</title>
   <style>
-    :root { color-scheme: light dark; }
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f8fa; --card: #ffffff; --border: #e2e8f0; --divider: #f1f5f9;
+      --text: #0f172a; --muted: #64748b; --faint: #94a3b8;
+      --accent: #4f46e5; --accent-soft: #eef2ff; --tile: #f1f5f9; --tile-fg: #475569;
+      --hover: #f8fafc; --mono: #475569;
+      --err-bg: #fef2f2; --err-line: #fecaca; --err-fg: #991b1b; --err-sub: #7f1d1d;
+      --info-bg: #eef2ff; --info-fg: #3730a3;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1120; --card: #111a2e; --border: #24304a; --divider: #1c2638;
+        --text: #e6ecf6; --muted: #94a3b8; --faint: #64748b;
+        --accent: #a5b4fc; --accent-soft: rgba(129, 140, 248, 0.14); --tile: #1c2638; --tile-fg: #cbd5e1;
+        --hover: #172135; --mono: #a9b8ce;
+        --err-bg: #3a1d1d; --err-line: #6b2d2d; --err-fg: #fda29b; --err-sub: #fecaca;
+        --info-bg: rgba(129, 140, 248, 0.14); --info-fg: #c7d2fe;
+      }
+    }
+    * { box-sizing: border-box; }
     html, body { min-height: 100%; margin: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-      background: radial-gradient(circle at 30% 20%, #eef4ff, #dbe6f7 55%, #cfdcef);
-      color: #1f2a3d; display: flex; align-items: center; justify-content: center;
-      padding: 32px; box-sizing: border-box;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+      background: var(--bg); color: var(--text);
+      display: flex; align-items: center; justify-content: center; padding: 32px;
+      min-height: 100vh;
     }
-    main { width: 100%; max-width: 680px; }
-    .mark { display: block; width: 64px; height: 64px; margin-bottom: 18px; filter: drop-shadow(0 14px 24px rgba(15, 23, 42, .24)); }
-    h1 { font-size: 24px; margin: 0 0 8px; }
-    p { color: #4b5a73; font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
-    .path {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px; background: #eef2f8; border: 1px solid #dde4ee;
-      border-radius: 8px; padding: 10px 12px; color: #33415c;
-      overflow-wrap: anywhere; user-select: text; margin-bottom: 14px;
-    }
-    .notice {
-      display: none; background: #fff7e6; color: #8a5a00; border: 1px solid #f1d28a;
-      border-radius: 9px; padding: 10px 12px; font-size: 13px; margin: 14px 0;
-      overflow-wrap: anywhere;
-    }
-    .notice.show { display: block; }
-    .notice.error { background: #fdecec; color: #b42318; border-color: #f3b8b4; }
-    /* Author display rules (.row is flex) would otherwise override the hidden attribute. */
+    /* Author display rules would otherwise override the hidden attribute. */
     [hidden] { display: none !important; }
-    .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-    button {
-      appearance: none; border: 0; border-radius: 9px; background: #205cb4;
-      color: #fff; font-size: 14px; font-weight: 600; padding: 11px 17px; cursor: pointer;
-      white-space: nowrap;
+    main {
+      width: 100%; max-width: 520px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 20px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, .06), 0 12px 32px rgba(15, 23, 42, .06);
     }
-    button.secondary { background: #e7edf7; color: #1f3a66; }
-    button.ghost { background: transparent; color: #36527c; border: 1px solid #c4d2e7; }
-    button:hover { filter: brightness(.96); }
+    .head { display: flex; align-items: center; gap: 14px; }
+    .mark { width: 44px; height: 44px; border-radius: 11px; flex-shrink: 0; }
+    .head-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    h1 { margin: 0; font-size: 19px; font-weight: 650; }
+    .sub { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--mono);
+      overflow-wrap: anywhere; user-select: text;
+    }
+    .current { padding: 10px 12px; border-radius: 10px; background: var(--hover); border: 1px solid var(--border); }
+    .current .label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+    .alert {
+      display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 10px;
+      background: var(--err-bg); border: 1px solid var(--err-line); color: var(--err-fg); font-size: 13px;
+    }
+    .alert strong { font-weight: 600; }
+    .alert .mono { color: var(--err-sub); }
+    .alert .reason { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .alert-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+    .notice {
+      padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere;
+      background: var(--info-bg); color: var(--info-fg);
+    }
+    .notice.error { background: var(--err-bg); color: var(--err-fg); border: 1px solid var(--err-line); }
+    button { font: inherit; cursor: pointer; }
     button:disabled { opacity: .55; cursor: default; }
-    .status { min-height: 20px; font-size: 13px; color: #4b5a73; margin-top: 16px; }
-    .hint { font-size: 12px; color: #6b7a93; margin-top: 14px; }
-    @media (prefers-color-scheme: dark) {
-      body { background: radial-gradient(circle at 30% 20%, #243247, #172133 55%, #101827); color: #e6ecf6; }
-      p, .status { color: #a9b8ce; }
-      .path { background: #172133; border-color: #26344b; color: #c3d0e2; }
-      .hint { color: #8595ad; }
-      button.secondary { background: #26344b; color: #d7e4f7; }
-      button.ghost { color: #b7cce8; border-color: #3a4c68; }
-      .notice { background: #3a2f16; color: #f3cf7a; border-color: #6b5524; }
-      .notice.error { background: #3a1d1d; color: #fda29b; border-color: #6b2d2d; }
+    .btn {
+      height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+      border: 1px solid transparent; white-space: nowrap;
     }
+    .btn-danger { background: var(--err-fg); color: var(--card); }
+    .btn-outline { background: var(--card); border-color: var(--err-line); color: var(--err-fg); font-weight: 500; }
+    .btn-plain { background: transparent; border-color: var(--border); color: var(--text); font-weight: 500; }
+    .options { display: flex; flex-direction: column; gap: 10px; }
+    .option {
+      padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card);
+      color: var(--text); text-align: left; display: flex; gap: 14px; align-items: center;
+    }
+    .option:hover:not(:disabled) { background: var(--hover); border-color: var(--faint); }
+    .option-icon {
+      width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px; display: flex;
+      align-items: center; justify-content: center; background: var(--tile); color: var(--tile-fg);
+    }
+    .option-icon.accent { background: var(--accent-soft); color: var(--accent); }
+    .option-text { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .option-text b { font-size: 14px; font-weight: 600; }
+    .option-text span { font-size: 12px; color: var(--muted); }
+    .chev { color: var(--faint); flex-shrink: 0; }
+    .recent { display: flex; flex-direction: column; gap: 2px; }
+    .recent h2 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+    .recent-row {
+      width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text);
+      text-align: left; display: flex; align-items: center; gap: 10px;
+    }
+    .recent-row:hover:not(:disabled) { background: var(--hover); }
+    .recent-row svg { color: var(--faint); flex-shrink: 0; }
+    .recent-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .recent-text .name { font-size: 13px; }
+    .recent-text .mono { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .when { font-size: 12px; color: var(--faint); white-space: nowrap; }
+    .status { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); min-height: 20px; }
+    .status:empty { display: none; }
+    .spinner {
+      width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+      border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer {
+      margin: 0; padding-top: 14px; border-top: 1px solid var(--divider);
+      font-size: 12px; color: var(--muted); line-height: 1.5; display: flex; gap: 12px; align-items: flex-start;
+    }
+    .footer span { flex: 1; }
   </style>
 </head>
 <body>
   <main>
-    <img class="mark" src="app-icon.png" alt="" />
-    <h1 id="title">选择 Imagen 图库</h1>
-    <p id="intro">Imagen 需要一个图库目录。已有图库会原地使用，不会复制、迁移或重新初始化。</p>
-    <div class="path" id="path" hidden></div>
-    <div class="notice" id="notice"></div>
-    <p id="error-detail" hidden></p>
-    <div class="row" id="actions">
-      <button id="open" type="button">打开已有图库…</button>
-      <button id="create" class="secondary" type="button">新建图库…</button>
-      <button id="cancel" class="ghost" type="button" hidden>取消并返回</button>
+    <div class="head">
+      <img class="mark" src="app-icon.png" alt="" />
+      <div class="head-text">
+        <h1 id="title">欢迎使用 Imagen</h1>
+        <p class="sub" id="intro"></p>
+      </div>
     </div>
-    <div class="row" id="error-actions" hidden>
-      <button id="retry" type="button">重试</button>
-      <button id="open-other" class="secondary" type="button">选择其他图库</button>
-      <button id="reveal" class="ghost" type="button">在 Finder 中显示配置</button>
+
+    <div class="current" id="current" hidden>
+      <span class="label" id="current-label"></span>
+      <span class="mono" id="current-path"></span>
     </div>
+
+    <div class="alert" id="alert" role="alert" hidden>
+      <strong id="alert-title"></strong>
+      <span class="mono" id="path"></span>
+      <span class="reason" id="error-detail"></span>
+      <div class="alert-actions">
+        <button id="retry" class="btn btn-danger" type="button"></button>
+        <button id="reveal" class="btn btn-outline" type="button"></button>
+      </div>
+    </div>
+
+    <div class="notice" id="notice" hidden></div>
+
+    <div class="options" id="actions">
+      <button id="open" class="option" type="button">
+        <span class="option-icon accent"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.2 10H20a2 2 0 0 1 1.9 2.5l-1.5 6A2 2 0 0 1 18.5 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.7.9l.8 1.2a2 2 0 0 0 1.7.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+        <span class="option-text"><b id="open-label"></b><span id="open-desc"></span></span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <button id="create" class="option" type="button">
+        <span class="option-icon"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 10v6 M9 13h6 M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg></span>
+        <span class="option-text"><b id="create-label"></b><span id="create-desc"></span></span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+
+    <div class="recent" id="recent" hidden>
+      <h2 id="recent-title"></h2>
+      <div id="recent-list"></div>
+    </div>
+
     <div class="status" id="status" aria-live="polite"></div>
-    <p class="hint" id="hint">新建图库请选择一个空文件夹（忽略 .DS_Store）。macOS 可能请求访问「文稿」「桌面」或外置磁盘的权限。</p>
+
+    <p class="footer" id="footer">
+      <span id="hint"></span>
+      <button id="cancel" class="btn btn-plain" type="button" hidden></button>
+    </p>
   </main>
   <script>
     (function () {
       var q = new URLSearchParams(window.location.search);
       var zh = (navigator.language || "zh").toLowerCase().indexOf("zh") === 0;
       var text = zh ? {
-        choose: "选择 Imagen 图库",
-        intro: "Imagen 需要一个图库目录。已有图库会原地使用，不会复制、迁移或重新初始化。",
+        welcome: "欢迎使用 Imagen",
+        welcomeSub: "先选一个图库目录，图片和历史都存在里面。",
         change: "更改图库位置",
-        changeIntro: "当前图库如下。选择新图库后，旧后端会先停止；校验通过才会写入配置并启动新后端。",
+        changeSub: "选定新图库后才会停止当前图库；校验通过才写入配置并启动。",
         current: "当前图库",
+        error: "图库打不开",
+        errorSub: "可以重试，或换一个图库。",
+        alertTitle: "无法打开上次的图库",
+        switching: "正在切换图库",
+        switchingSub: "校验通过后应用会重新载入；失败会回到原来的图库。",
         open: "打开已有图库…",
+        openDesc: "原地使用，不会复制、迁移或重新初始化",
         create: "新建图库…",
+        createDesc: "选择一个空文件夹（忽略 .DS_Store）",
+        recent: "最近使用",
+        missing: "找不到",
+        today: "今天",
+        yesterday: "昨天",
+        daysAgo: " 天前",
         cancel: "取消并返回",
         retry: "重试",
-        other: "选择其他图库",
         reveal: "在 Finder 中显示配置",
-        error: "图库不可用",
-        errorIntro: "Imagen 没有启动后端，也没有在目标位置创建、初始化或修改任何内容。",
-        hint: "新建图库请选择一个空文件夹（忽略 .DS_Store）。macOS 可能请求访问「文稿」「桌面」或外置磁盘的权限。",
-        waiting: "正在选择…",
+        hint: "macOS 可能请求访问「文稿」「桌面」或外置磁盘的权限。之后可以在 设置 › 图库 里随时切换。",
+        waiting: "在弹出的窗口里选择文件夹…",
         starting: "正在校验并启动…",
         retryWait: "正在重试…",
-        cancelled: "已取消选择。",
         noIpc: "当前页面没有 IPC 权限，无法操作图库。",
         auto: "正在执行自动化图库测试…"
       } : {
-        choose: "Choose Imagen Library",
-        intro: "Imagen needs a library folder. Existing libraries are used in place — never copied, migrated, or reinitialized.",
+        welcome: "Welcome to Imagen",
+        welcomeSub: "Pick a library folder first — images and history live inside it.",
         change: "Change Library Location",
-        changeIntro: "The current library is shown below. The old backend stops first; the new one starts only after validation passes.",
+        changeSub: "The current library stops only after you pick a new one; it starts once validation passes.",
         current: "Current library",
+        error: "Library Unavailable",
+        errorSub: "Retry, or choose another library.",
+        alertTitle: "Couldn't open the last library",
+        switching: "Switching library",
+        switchingSub: "The app reloads once validation passes; on failure you return to the previous library.",
         open: "Open Existing Library…",
+        openDesc: "Used in place — never copied, migrated, or reinitialized",
         create: "Create New Library…",
+        createDesc: "Choose an empty folder (.DS_Store is ignored)",
+        recent: "Recent",
+        missing: "Not found",
+        today: "Today",
+        yesterday: "Yesterday",
+        daysAgo: " days ago",
         cancel: "Cancel and Return",
         retry: "Retry",
-        other: "Choose Another Library",
         reveal: "Show Config in Finder",
-        error: "Library Unavailable",
-        errorIntro: "Imagen did not start the backend and did not create, initialize, or modify anything at the target.",
-        hint: "For a new library, choose an empty folder (.DS_Store is ignored). macOS may request access to Documents, Desktop, or an external disk.",
-        waiting: "Choosing…",
+        hint: "macOS may request access to Documents, Desktop, or an external disk. You can switch any time in Settings › Library.",
+        waiting: "Choose a folder in the dialog…",
         starting: "Validating and starting…",
         retryWait: "Retrying…",
-        cancelled: "Selection cancelled.",
         noIpc: "This page has no IPC permission and cannot manage the library.",
         auto: "Running the automated library test…"
       };
 
       function $(id) { return document.getElementById(id); }
-      function setText(id, value) { $(id) && ($(id).textContent = value); }
-      function show(id, visible) { $(id) && ($(id).hidden = !visible); }
+      function setText(id, value) { if ($(id)) $(id).textContent = value; }
+      function show(id, visible) { if ($(id)) $(id).hidden = !visible; }
+      function status(message, spinning) {
+        var el = $("status");
+        el.textContent = "";
+        if (!message) return;
+        if (spinning) {
+          var s = document.createElement("span");
+          s.className = "spinner";
+          el.appendChild(s);
+        }
+        el.appendChild(document.createTextNode(message));
+      }
       function notice(message, kind) {
         var el = $("notice");
         el.textContent = message || "";
-        el.className = "notice" + (message ? " show" : "") + (kind === "error" ? " error" : "");
+        el.className = "notice" + (kind === "error" ? " error" : "");
+        el.hidden = !message;
         if (message) {
           setBusy(false);
-          setText("status", "");
+          status("");
+          // A failed switch from this page: let the user pick again.
+          show("actions", true);
+          show("recent", recentCount > 0);
         }
       }
       window.imagenLibraryNotice = notice;
@@ -142,9 +261,7 @@
       var busy = false;
       function setBusy(value) {
         busy = value;
-        ["open", "create", "cancel", "retry", "open-other", "reveal"].forEach(function (id) {
-          if ($(id)) $(id).disabled = value;
-        });
+        document.querySelectorAll("button").forEach(function (b) { b.disabled = value || b.dataset.missing === "1"; });
       }
       function invoke(cmd, args) {
         var internals = window.__TAURI_INTERNALS__;
@@ -155,69 +272,138 @@
         return internals.invoke(cmd, args || {});
       }
       function choose(mode) {
+        if (busy) return;
         setBusy(true);
         notice("", "info");
-        setText("status", text.starting);
+        status(text.waiting, true);
         invoke("choose_library", { mode: mode }).catch(function (err) {
           notice(String(err), "error");
         });
       }
+      function when(secs) {
+        if (!secs) return "";
+        var d = new Date(secs * 1000);
+        var days = Math.floor((Date.now() - d.getTime()) / 86400000);
+        if (days <= 0) return text.today;
+        if (days === 1) return text.yesterday;
+        if (days < 7) return days + text.daysAgo;
+        return (d.getMonth() + 1) + "-" + String(d.getDate()).padStart(2, "0");
+      }
+
+      var folderSvg = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>';
+      var recentCount = 0;
+      function loadRecent(skipPath) {
+        var internals = window.__TAURI_INTERNALS__;
+        if (!internals || typeof internals.invoke !== "function") return;
+        internals.invoke("list_recent_libraries", {}).then(function (items) {
+          var list = $("recent-list");
+          list.textContent = "";
+          recentCount = 0;
+          (items || []).forEach(function (item, index) {
+            if (skipPath && item.path === skipPath) return;
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "recent-row";
+            row.title = item.path;
+            if (!item.exists) row.dataset.missing = "1";
+            row.disabled = !item.exists || busy;
+            row.innerHTML = folderSvg;
+            var t = document.createElement("span");
+            t.className = "recent-text";
+            var n = document.createElement("span");
+            n.className = "name";
+            n.textContent = item.name || item.path;
+            var p = document.createElement("span");
+            p.className = "mono";
+            p.textContent = item.path;
+            t.appendChild(n);
+            t.appendChild(p);
+            var w = document.createElement("span");
+            w.className = "when";
+            w.textContent = item.exists ? when(item.opened_at) : text.missing;
+            row.appendChild(t);
+            row.appendChild(w);
+            row.addEventListener("click", function () {
+              if (busy) return;
+              setBusy(true);
+              notice("", "info");
+              status(text.starting, true);
+              invoke("open_recent_library", { index: index }).catch(function (err) {
+                notice(String(err), "error");
+              });
+            });
+            list.appendChild(row);
+            recentCount++;
+          });
+          show("recent", recentCount > 0 && !$("actions").hidden);
+        }).catch(function () {});
+      }
 
       var errorMode = q.get("error") === "1";
       var changeMode = q.get("change") === "1";
+      var switchMode = q.get("switching") === "1";
       var noticeText = q.get("notice");
       var path = q.get("path") || "";
       var reason = q.get("reason") || "";
 
-      if (errorMode) {
-        setText("title", text.error);
-        setText("intro", text.errorIntro);
-        if (path) {
-          $("path").textContent = path;
-          show("path", true);
-        }
-        if (reason) {
-          $("error-detail").textContent = reason;
-          show("error-detail", true);
-        }
-        show("actions", false);
-        show("error-actions", true);
-        show("hint", false);
-      } else if (changeMode) {
-        setText("title", text.change);
-        setText("intro", text.changeIntro);
-        if (path) {
-          $("path").textContent = text.current + ": " + path;
-          show("path", true);
-        }
-        show("cancel", true);
-      } else {
-        setText("title", text.choose);
-        setText("intro", text.intro);
-      }
-      // Every static label follows the same language as the title.
       document.documentElement.lang = zh ? "zh" : "en";
-      document.title = "Imagen - " + (errorMode ? text.error : changeMode ? text.change : text.choose);
-      setText("open", text.open);
-      setText("create", text.create);
-      setText("cancel", text.cancel);
+      setText("open-label", text.open);
+      setText("open-desc", text.openDesc);
+      setText("create-label", text.create);
+      setText("create-desc", text.createDesc);
+      setText("recent-title", text.recent);
       setText("retry", text.retry);
-      setText("open-other", text.other);
       setText("reveal", text.reveal);
+      setText("cancel", text.cancel);
       setText("hint", text.hint);
+      setText("current-label", text.current);
+
+      var title;
+      if (switchMode) {
+        title = text.switching;
+        setText("intro", text.switchingSub);
+        setText("current-label", "→");
+        setText("current-path", path);
+        show("current", !!path);
+        show("actions", false);
+        show("footer", false);
+        status(text.starting, true);
+      } else if (errorMode) {
+        title = text.error;
+        setText("intro", text.errorSub);
+        setText("alert-title", text.alertTitle);
+        setText("path", path);
+        show("path", !!path);
+        setText("error-detail", reason);
+        show("error-detail", !!reason);
+        show("alert", true);
+        loadRecent(path);
+      } else if (changeMode) {
+        title = text.change;
+        setText("intro", text.changeSub);
+        setText("current-path", path);
+        show("current", !!path);
+        show("cancel", true);
+        loadRecent(path);
+      } else {
+        title = text.welcome;
+        setText("intro", text.welcomeSub);
+        loadRecent("");
+      }
+      setText("title", title);
+      document.title = "Imagen - " + title;
       if (noticeText) notice(noticeText, "error");
 
       $("open").addEventListener("click", function () { choose("existing"); });
       $("create").addEventListener("click", function () { choose("create"); });
-      $("open-other").addEventListener("click", function () { choose("existing"); });
       $("cancel").addEventListener("click", function () {
-        setText("status", text.starting);
+        status(text.starting, true);
         invoke("return_to_current").catch(function (err) { notice(String(err), "error"); });
       });
       $("retry").addEventListener("click", function () {
         setBusy(true);
         notice("", "info");
-        setText("status", text.retryWait);
+        status(text.retryWait, true);
         invoke("retry_library").catch(function (err) { notice(String(err), "error"); });
       });
       $("reveal").addEventListener("click", function () {
@@ -226,7 +412,7 @@
 
       var auto = q.get("auto");
       if (auto === "existing" || auto === "create") {
-        setText("status", text.auto);
+        status(text.auto, true);
         setTimeout(function () { choose(auto); }, 80);
       }
     })();
