@@ -21,6 +21,7 @@ export default function FullscreenManager({
   addToTray,
   onOpenViewer,
   onReuse,
+  onRerun,
   refreshKey,
   onChanged,
   draftRefreshKey,
@@ -35,6 +36,7 @@ export default function FullscreenManager({
   addToTray: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   onReuse: (g: Generation) => void;
+  onRerun?: (g: Generation) => void;
   refreshKey: number;
   onChanged?: () => void;
   draftRefreshKey: number;
@@ -104,6 +106,8 @@ export default function FullscreenManager({
         ) : panel === "history" ? (
           <History
             onReuse={handleReuse}
+            onRerun={onRerun}
+            onUseAsRef={addToTray}
             onOpenViewer={onOpenViewer}
             refreshKey={refreshKey}
             live={historyLive}
@@ -111,6 +115,8 @@ export default function FullscreenManager({
         ) : panel === "favorites" ? (
           <Favorites
             onReuse={handleReuse}
+            onRerun={onRerun}
+            onUseAsRef={addToTray}
             onOpenViewer={onOpenViewer}
             refreshKey={refreshKey}
             onChanged={onChanged}

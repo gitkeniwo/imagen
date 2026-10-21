@@ -69,10 +69,15 @@ export default function Popover({
     const place = () => {
       const anchor = ref.current?.getBoundingClientRect();
       const width = panelRef.current?.offsetWidth ?? 0;
+      const height = panelRef.current?.offsetHeight ?? 0;
       if (!anchor) return;
       const ideal = align === "start" ? anchor.left : anchor.right - width;
       const left = Math.max(EDGE, Math.min(ideal, window.innerWidth - width - EDGE));
-      setPos({ position: "fixed", top: anchor.bottom + GAP, left, right: "auto" });
+      // Open upward when the panel would run off the bottom and fits above.
+      const below = anchor.bottom + GAP;
+      const above = anchor.top - GAP - height;
+      const top = below + height > window.innerHeight - EDGE && above >= EDGE ? above : below;
+      setPos({ position: "fixed", top, left, right: "auto", bottom: "auto" });
     };
     place();
     window.addEventListener("resize", place);

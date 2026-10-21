@@ -1,20 +1,16 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, Generation, ImageRow, imgThumbUrl } from "../api";
+import { api, Generation, ImageRow } from "../api";
 import { useI18n } from "../i18n";
-import { copyText } from "../clipboard";
-import { pressable } from "../a11y";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
-import Icon from "../components/ui/Icon";
+import GenerationCard, { type CardAction, generationMenu } from "../components/GenerationCard";
 import { IconButton } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
-const PROMPT_PREVIEW_CHARS = 120;
-const PROMPT_PREVIEW_LINES = 2;
 const FAV_COLUMNS_KEY = "imagen-fav-columns";
 const FAV_COLUMN_OPTIONS = [1, 2, 3];
 const FAV_COLUMN_OPTIONS_FULL = [2, 3, 4];
@@ -29,12 +25,16 @@ function initialFavColumns() {
 // prompts are easy to tell apart, with copy / reuse / unfavorite.
 export default function Favorites({
   onReuse,
+  onRerun,
+  onUseAsRef,
   onOpenViewer,
   compact = false,
   refreshKey = 0,
   onChanged,
 }: {
   onReuse: (g: Generation) => void;
+  onRerun?: (g: Generation) => void;
+  onUseAsRef?: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   compact?: boolean;
   refreshKey?: number;
@@ -44,9 +44,7 @@ export default function Favorites({
   const toast = useToast();
   const [gens, setGens] = useState<Generation[]>([]);
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [notes, setNotes] = useState<Record<number, string>>({});
-  const [copiedId, setCopiedId] = useState<number | null>(null);
   const [columns, setColumns] = useState(initialFavColumns);
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
@@ -89,13 +87,6 @@ export default function Favorites({
     localStorage.setItem(FAV_COLUMNS_KEY, String(columns));
   }, [columns]);
 
-  const toggleExpand = (id: number) =>
-    setExpanded((s) => {
-      const next = new Set(s);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-
   const saveNote = async (img: ImageRow) => {
     const draft = (notes[img.id] ?? "").trim();
     if (draft === (img.note ?? "")) return;
@@ -116,16 +107,6 @@ export default function Favorites({
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
-  };
-
-  const copyPrompt = async (g: Generation) => {
-    const ok = await copyText(g.prompt);
-    if (!ok) {
-      toast(t("copy_failed"));
-      return;
-    }
-    setCopiedId(g.id);
-    setTimeout(() => setCopiedId((c) => (c === g.id ? null : c)), 1500);
   };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -215,152 +196,63 @@ export default function Favorites({
           style={{ "--history-columns": columns } as CSSProperties}
         >
           {gens.map((g) => {
-            const cornerKind =
-              g.status === "note" ? "note"
-              : g.source === "manual" ? "manual"
-              : null;
+            const outImg = g.outputImage ?? null;
+            const actions: CardAction[] = [{ icon: "reuse", label: t("reuse"), onClick: () => onReuse(g) }];
+            if (onRerun && g.source !== "manual") actions.push({ icon: "rerun", label: t("rerun_short"), onClick: () => onRerun(g) });
+            if (onUseAsRef && outImg) {
+              actions.push({ icon: "addToRefs", label: t("as_ref_short"), onClick: () => onUseAsRef(outImg) });
+            }
             return (
-            <div className="panel history-panel fav-panel" key={g.id}>
-              {cornerKind && (
-                <span
-                  className={`card-corner ${cornerKind}`}
-                  title={cornerKind === "manual" ? t("hist_filter_manual") : t("hist_filter_notes")}
-                />
-              )}
-              {g.outputImage && (
-                <input
-                  className="fav-note"
-                  value={notes[g.outputImage.id] ?? ""}
-                  placeholder={t("note_placeholder")}
-                  onChange={(e) =>
-                    setNotes((n) => ({
-                      ...n,
-                      [g.outputImage!.id]: e.target.value,
-                    }))
-                  }
-                  onBlur={() => saveNote(g.outputImage!)}
-                />
-              )}
-              <div className="history-meta">
-                <span className="muted small">{g.model}</span>
-                {g.aspect_ratio && (
-                  <span className="muted small">· {g.aspect_ratio}</span>
-                )}
-                {g.resolution && (
-                  <span className="muted small">· {g.resolution}</span>
-                )}
-                <IconButton
-                  className="icon-btn"
-                  icon="edit"
-                  label={t("edit_annotation")}
-                  onClick={() => setEditingGen(g)}
-                />
-                <IconButton
-                  className="icon-btn"
-                  icon="duplicate"
-                  label={t("duplicate")}
-                  onClick={() => setDuplicatingGen(g)}
-                />
-                <div className="spacer" />
-                <button className="link-btn" onClick={() => copyPrompt(g)}>
-                  {copiedId === g.id ? t("copied") : t("copy_prompt")}
-                </button>
-                <button onClick={() => onReuse(g)}>{t("reuse")}</button>
-                {g.outputImage && (
-                  <IconButton
-                    className="icon-btn is-starred"
-                    icon="favorite"
-                    filled
-                    label={t("unfavorite")}
-                    aria-pressed
-                    onClick={() => unfavorite(g.outputImage!)}
-                  />
-                )}
-              </div>
-
-              {g.prompt && (
-                <div className="history-prompt-wrap">
-                  {expanded.has(g.id) &&
-                    (g.prompt.length > PROMPT_PREVIEW_CHARS ||
-                      g.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES) && (
-                      <button
-                        className="link-btn history-prompt-toggle history-prompt-toggle-top"
-                        onClick={() => toggleExpand(g.id)}
-                      >
-                        {t("show_less")}
-                      </button>
-                    )}
-                  <p
-                    className={`history-prompt${
-                      expanded.has(g.id) ? " expanded" : ""
-                    }`}
-                  >
-                    {g.prompt}
-                  </p>
-                  {(g.prompt.length > PROMPT_PREVIEW_CHARS ||
-                    g.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES) && (
-                    <button
-                      className="link-btn history-prompt-toggle"
-                      onClick={() => toggleExpand(g.id)}
-                    >
-                      {expanded.has(g.id) ? t("show_less") : t("show_more")}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* input images + prompt together form the reusable "input" */}
-              <div className="gen-row">
-                <div className="gen-inputs">
-                  {(g.inputs ?? []).map((im) =>
-                    im.deleted_at ? (
-                      <span
-                        key={im.id}
-                        className="deleted-tile"
-                        title={t("deleted_label")}
-                      >
-                        <Icon name="imageMissing" />
-                      </span>
-                    ) : (
-                      <img
-                        key={im.id}
-                        src={imgThumbUrl(im.id)}
-                        alt={im.filename}
-                        title={im.filename}
-                        onClick={() => onOpenViewer(im, g.inputs ?? [])}
-                        {...pressable(() => onOpenViewer(im, g.inputs ?? []))}
-                      />
-                    ),
-                  )}
-                  {(g.inputs ?? []).length === 0 && (
-                    <span className="muted small">{t("no_refs")}</span>
-                  )}
-                </div>
-                <span className="arrow" aria-hidden="true"><Icon name="arrowRight" /></span>
-                <div className="gen-out">
-                  {g.outputImage && (
-                    <div>
-                      <img
-                        src={imgThumbUrl(g.outputImage.id)}
-                        alt="output"
-                        title={t("open_viewer")}
-                        onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
-                        {...pressable(() => onOpenViewer(g.outputImage!, pageOutputs))}
-                      />
-                      {g.outputImage.tags && g.outputImage.tags.length > 0 && (
-                        <div className="card-tags">
-                          {g.outputImage.tags.map((tg) => (
-                            <span key={tg.id} className="card-tag">
-                              {tg.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+              <GenerationCard
+                key={g.id}
+                media={
+                  outImg
+                    ? { kind: "image", image: outImg, onOpen: () => onOpenViewer(outImg, pageOutputs) }
+                    : { kind: "empty" }
+                }
+                aspectRatio={g.aspect_ratio}
+                status={g.status === "note" ? "note" : undefined}
+                statusLabel={t("status_note")}
+                imported={g.source === "manual"}
+                overlay={
+                  outImg && (
+                    <IconButton
+                      variant="overlay"
+                      className="is-starred"
+                      icon="favorite"
+                      filled
+                      label={t("unfavorite")}
+                      aria-pressed
+                      onClick={() => unfavorite(outImg)}
+                    />
+                  )
+                }
+                header={
+                  outImg && (
+                    <input
+                      className="fav-note"
+                      value={notes[outImg.id] ?? ""}
+                      placeholder={t("note_placeholder")}
+                      aria-label={t("note_placeholder")}
+                      onChange={(e) => setNotes((n) => ({ ...n, [outImg.id]: e.target.value }))}
+                      onBlur={() => saveNote(outImg)}
+                    />
+                  )
+                }
+                meta={[g.model, g.aspect_ratio, g.resolution]}
+                prompt={g.prompt}
+                promptLines={compact ? 2 : 3}
+                inputs={g.inputs ?? []}
+                onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
+                tags={outImg?.tags}
+                actions={actions}
+                menuItems={generationMenu(g, outImg, {
+                  t,
+                  onEdit: () => setEditingGen(g),
+                  onDuplicate: () => setDuplicatingGen(g),
+                  onCopied: (ok) => toast(ok ? t("copied") : t("copy_failed")),
+                })}
+              />
             );
           })}
         </div>

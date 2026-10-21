@@ -19,11 +19,14 @@ export default function Menu({
   renderTrigger,
   align = "end",
   className,
+  footer,
 }: {
   items: MenuItem[];
   renderTrigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
   align?: "start" | "end";
   className?: string;
+  // Extra non-item content under the items (e.g. colour swatches).
+  footer?: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -44,6 +47,8 @@ export default function Menu({
 
   return (
     <Popover
+      fixed
+      align={align}
       className={className}
       panelClassName={`menu menu-${align}`}
       panelProps={{ role: "menu", onKeyDown }}
@@ -69,6 +74,7 @@ export default function Menu({
             {item.hint !== undefined && <span className="menu-item-hint">{item.hint}</span>}
           </button>
         ))}
+        {footer && <div className="menu-footer">{footer(() => setOpen(false))}</div>}
       </div>
     </Popover>
   );
