@@ -325,51 +325,61 @@ export default function Library({
         {/* Batch tagging bar (only in select mode with a selection) */}
         {selectMode && (
           <div className="batch-bar">
-            <span className="small">{t("selected_n", { n: selected.size })}</span>
-            <Button
-              icon="selectAll"
-              disabled={images.length === 0 || allSelected}
-              onClick={selectAllOnPage}
-            >
-              {t("select_all")}
-            </Button>
-            {selected.size > 0 && (
-              <Button icon="deselect" onClick={() => setSelected(new Set())}>
-                {t("deselect_all")}
+            <div className="batch-bar-row">
+              <span className="batch-count">{t("selected_n", { n: selected.size })}</span>
+              <Button
+                variant="link"
+                disabled={images.length === 0 || allSelected}
+                onClick={selectAllOnPage}
+              >
+                {t("select_all")}
               </Button>
-            )}
-            <Button
-              icon="tag"
-              className={batchMode === "add" ? "on" : ""}
-              aria-pressed={batchMode === "add"}
-              disabled={selected.size === 0}
-              onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
-            >
-              {t("batch_add_tag")}
-            </Button>
-            <Button
-              icon="untag"
-              className={batchMode === "remove" ? "on" : ""}
-              aria-pressed={batchMode === "remove"}
-              disabled={selected.size === 0}
-              onClick={() => setBatchMode(batchMode === "remove" ? null : "remove")}
-            >
-              {t("batch_remove_tag")}
-            </Button>
-            <Button icon="download" disabled={selected.size === 0} onClick={downloadSelected}>
-              {t("batch_download")}
-            </Button>
-            <Button
-              className="batch-done"
-              icon="check"
-              onClick={() => {
-                setSelectMode(false);
-                setSelected(new Set());
-                setBatchMode(null);
-              }}
-            >
-              {t("done")}
-            </Button>
+              {selected.size > 0 && (
+                <Button variant="link" onClick={() => setSelected(new Set())}>
+                  {t("deselect_all")}
+                </Button>
+              )}
+              <div className="spacer" />
+              <Button
+                variant="primary"
+                size="sm"
+                icon="check"
+                onClick={() => {
+                  setSelectMode(false);
+                  setSelected(new Set());
+                  setBatchMode(null);
+                }}
+              >
+                {t("done")}
+              </Button>
+            </div>
+            <div className="batch-bar-row">
+              <div className="btn-group" role="group" aria-label={t("tags_label")}>
+                <Button
+                  size="sm"
+                  icon="tag"
+                  className={batchMode === "add" ? "on" : ""}
+                  aria-pressed={batchMode === "add"}
+                  disabled={selected.size === 0}
+                  onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
+                >
+                  {t("batch_add_tag")}
+                </Button>
+                <Button
+                  size="sm"
+                  icon="untag"
+                  className={batchMode === "remove" ? "on" : ""}
+                  aria-pressed={batchMode === "remove"}
+                  disabled={selected.size === 0}
+                  onClick={() => setBatchMode(batchMode === "remove" ? null : "remove")}
+                >
+                  {t("batch_remove_tag")}
+                </Button>
+              </div>
+              <Button size="sm" icon="download" disabled={selected.size === 0} onClick={downloadSelected}>
+                {t("batch_download")}
+              </Button>
+            </div>
           </div>
         )}
         {selectMode && batchMode && selected.size > 0 && (
@@ -447,78 +457,75 @@ export default function Library({
             > as CSSProperties
           }
         >
-          {images.map((img) => (
-            <div
-              className={`card${selected.has(img.id) ? " selected" : ""}`}
-              key={img.id}
-            >
-              <div className="card-img-wrap">
+          {images.map((img) => {
+            const tagNames = (img.tags ?? []).map((tg) => tg.name);
+            return (
+              <div
+                className={`card lib-tile${selected.has(img.id) ? " selected" : ""}${selectMode ? " selecting" : ""}${
+                  added === img.id ? " just-added" : ""
+                }`}
+                key={img.id}
+              >
                 <img
                   src={imgThumbUrl(img.id)}
                   alt={img.filename}
-                  title={selectMode ? t("select_mode") : t("open_viewer")}
+                  title={[img.filename, ...tagNames].join(" · ")}
                   onClick={() => onCardClick(img)}
                   {...pressable(() => onCardClick(img))}
-                  style={
-                    added === img.id ? { outline: "3px solid var(--accent)" } : undefined
-                  }
                 />
+                <span
+                  className={`lib-source ${img.source}`}
+                  title={img.source === "upload" ? t("tag_upload") : t("tag_generated")}
+                >
+                  <Icon name={img.source === "upload" ? "uploaded" : "generated"} size="sm" />
+                </span>
+                {!!img.starred && !selectMode && (
+                  <span className="lib-starred" title={t("favorite")}>
+                    <Icon name="favorite" size="sm" filled />
+                  </span>
+                )}
                 {selectMode && (
                   <span className="select-check">
                     {selected.has(img.id) && <Icon name="check" size="sm" />}
                   </span>
                 )}
-                <IconButton
-                  className="add-input-btn"
-                  variant="overlay"
-                  icon="addToRefs"
-                  label={t("add_ref")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    addToTray(img);
-                    setAdded(img.id);
-                    setTimeout(() => setAdded(null), 700);
-                  }}
-                />
+                {tagNames.length > 0 && (
+                  <div className="lib-tags">
+                    {tagNames.slice(0, 2).map((name) => (
+                      <span key={name} className="card-tag">{name}</span>
+                    ))}
+                    {tagNames.length > 2 && <span className="card-tag">+{tagNames.length - 2}</span>}
+                  </div>
+                )}
+                {!selectMode && (
+                  <div className="lib-actions">
+                    <IconButton
+                      variant="overlay"
+                      icon="addToRefs"
+                      label={t("add_ref")}
+                      onClick={() => {
+                        addToTray(img);
+                        setAdded(img.id);
+                        setTimeout(() => setAdded(null), 700);
+                      }}
+                    />
+                    <div className="spacer" />
+                    <IconButton
+                      variant="overlay"
+                      className={img.starred ? "is-starred" : ""}
+                      icon="favorite"
+                      filled={!!img.starred}
+                      label={img.starred ? t("unfavorite") : t("favorite")}
+                      aria-pressed={!!img.starred}
+                      onClick={() => toggleStar(img)}
+                    />
+                    <IconButton variant="overlay" icon="download" label={t("download")} onClick={() => download(img)} />
+                    <IconButton variant="overlay" icon="delete" label={t("delete")} onClick={() => remove(img)} />
+                  </div>
+                )}
               </div>
-              {img.tags && img.tags.length > 0 && (
-                <div className="card-tags">
-                  {img.tags.map((tg) => (
-                    <span key={tg.id} className="card-tag">
-                      {tg.name}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="meta">
-                <span className={`tag tag-${img.source}`}>
-                  {img.source === "upload" ? t("tag_upload") : t("tag_generated")}
-                </span>
-                <span className="card-actions">
-                  <IconButton
-                    className={`star${img.starred ? " is-starred" : ""}`}
-                    icon="favorite"
-                    filled={!!img.starred}
-                    label={img.starred ? t("unfavorite") : t("favorite")}
-                    aria-pressed={!!img.starred}
-                    onClick={() => toggleStar(img)}
-                  />
-                  <IconButton
-                    className="star download-btn"
-                    icon="download"
-                    label={t("download")}
-                    onClick={() => download(img)}
-                  />
-                  <IconButton
-                    className="star delete-btn"
-                    icon="delete"
-                    label={t("delete")}
-                    onClick={() => remove(img)}
-                  />
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       {pager}
