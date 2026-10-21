@@ -680,7 +680,7 @@ body.resizing-sidebar {
 
 .queue { margin-top: var(--space-6); }
 .queue-head { display: flex; align-items: center; gap: var(--space-2_5); margin-bottom: var(--space-3_5); }
-.queue-grid { display: grid; grid-template-columns: repeat(var(--queue-columns, 1), minmax(0, 1fr)); gap: var(--space-3); align-items: start; }
+.queue-grid { display: grid; grid-template-columns: repeat(var(--queue-columns, 1), minmax(0, 1fr)); gap: var(--space-3); align-items: stretch; }
 .queue-grid.auto { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 /* Ghost icon buttons (reuse / reuse-generate / remove): unified hit area,
    hover bg, focus ring. Mirrors the global button hover (var(--panel-2)). */
@@ -1327,3 +1327,8 @@ body.manager-open { overflow: hidden; }
   .hcard.list .hcard-btn-label { display: none; }
   .hcard.list .hcard-actions .btn-sm { padding-inline: var(--space-1_5); }
 }
+
+/* Queue card: live status and undo/cancel centred over the pending shimmer. */
+.hcard-status.q-live { align-items: center; justify-content: center; text-align: center; gap: var(--space-1_5); }
+.hcard-status.q-live .q-undo, .hcard-status.q-live .q-cancel { margin-top: var(--space-1); }
+.hcard-media.failed.aborted { background: var(--badge-pending-bg); }

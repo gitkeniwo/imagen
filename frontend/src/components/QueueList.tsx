@@ -8,8 +8,13 @@ import Popover from "./ui/Popover";
 import Icon from "./ui/Icon";
 import { PopoverSection, ViewPopover } from "./ui/ToolbarPopover";
 import { useToast } from "./Toast";
-import GenerationCard, { type CardAction, type CardMedia, MarkerSwatches, downloadImage } from "./GenerationCard";
-import type { MenuItem } from "./ui/Menu";
+import { MarkerSwatches, downloadImage, markerHex } from "./GenerationCard";
+import { FullTextButton, PromptClamp } from "./HistoryItem";
+import Menu from "./ui/Menu";
+import { IconButton } from "./ui/Button";
+import { type IconName } from "./ui/Icon";
+import { imgThumbUrl } from "../api";
+import { pressable } from "../a11y";
 
 // v2: the old key held the pre-card horizontal layout's 1-column default.
 const QUEUE_COLUMNS_KEY = "imagen-queue-columns-v2";
@@ -232,91 +237,135 @@ const QueueItem = memo(function QueueItem({
   }
 
   const output = task.status === "success" ? task.outputImage ?? null : null;
-  const media: CardMedia = output
-    ? { kind: "image", image: output, onOpen: () => onOpenViewer(output, []) }
-    : active
-    ? { kind: "pending", active: task.status !== "pending" }
-    : { kind: "empty" };
-
-  const error =
+  const failure =
     task.status === "blocked" || task.status === "error"
-      ? {
-          kind: task.status,
-          message:
-            reason(task.rawFinish) ||
-            task.message ||
-            (task.status === "blocked" ? t("blocked_fallback") : t("error_fallback")),
-        }
+      ? reason(task.rawFinish) ||
+        task.message ||
+        (task.status === "blocked" ? t("blocked_fallback") : t("error_fallback"))
       : task.status === "aborted"
-      ? { kind: "aborted", message: task.message || t("aborted_fallback") }
+      ? task.message || t("aborted_fallback")
       : null;
+  const meta = [task.model.replace("-image", "").replace("-preview", ""), task.aspectRatio, task.resolution]
+    .filter(Boolean)
+    .join(" · ");
+  const statusLabel = t(`status_${task.status}`);
 
-  const actions: CardAction[] = [
-    { icon: "reuse", label: t("reuse"), onClick: () => onReuse(task) },
-    { icon: "rerun", label: t("rerun_short"), onClick: () => onReuseGenerate(task) },
-  ];
-  if (output) actions.push({ icon: "addToRefs", label: t("as_ref_short"), onClick: () => onUseAsRef(output) });
-
-  const menuItems: MenuItem[] = [
-    { icon: "saveDraft", label: t("save_copy_to_drafts"), onSelect: () => onSaveDraft(task, false) },
-  ];
-  if (task.status === "pending") {
-    menuItems.push({ icon: "moveToDrafts", label: t("move_to_drafts"), onSelect: () => onSaveDraft(task, true) });
-  }
-  if (output) {
-    menuItems.push({
-      icon: "download",
-      label: t("download"),
-      onSelect: () => downloadImage(output),
-    });
-  }
-  if (task.prompt) {
-    menuItems.push({
+  // Same fixed-slot layout as History cards so a queue row lines up; the
+  // time-critical undo / cancel control sits in the media slot.
+  const tools: { icon: IconName; label: string; onClick: () => void; disabled?: boolean }[] = [
+    { icon: "addToRefs", label: t("as_ref_short"), onClick: () => output && onUseAsRef(output), disabled: !output },
+    {
       icon: "copy",
       label: t("copy_prompt"),
-      onSelect: async () => toast((await copyText(task.prompt)) ? t("copied") : t("copy_failed")),
-    });
-  }
-  if (!active) {
-    menuItems.push({ icon: "delete", label: t("remove_task"), danger: true, onSelect: () => onRemove(task.id) });
-  }
+      onClick: async () => toast((await copyText(task.prompt)) ? t("copied") : t("copy_failed")),
+      disabled: !task.prompt,
+    },
+    { icon: "download", label: t("download"), onClick: () => output && downloadImage(output), disabled: !output },
+    { icon: "saveDraft", label: t("save_copy_to_drafts"), onClick: () => onSaveDraft(task, false) },
+  ];
 
   return (
-    <GenerationCard
-      media={media}
-      aspectRatio={task.aspectRatio}
-      status={task.status === "success" ? undefined : task.status}
-      statusLabel={t(`status_${task.status}`)}
-      markerColor={task.markerColor}
-      meta={[task.model.replace("-image", "").replace("-preview", ""), task.aspectRatio, task.resolution]}
-      substatus={substatus}
-      error={error}
-      prompt={task.prompt}
-      inputs={task.inputs}
-      onOpenInput={(im) => onOpenViewer(im, task.inputs)}
-      actions={actions}
-      extra={
-        undoLeft > 0 ? (
-          <button className="q-undo" title={t("undo_send_hint")} onClick={() => onRemove(task.id)}>
-            {t("undo_send", { n: undoLeft })}
-          </button>
-        ) : task.status === "running" ? (
-          <button className="q-cancel" title={t("cancel_running_hint")} onClick={() => onAbort(task.id)}>
-            {t("cancel_running")}
-          </button>
-        ) : null
-      }
-      menuItems={menuItems}
-      menuFooter={(close) => (
-        <MarkerSwatches
-          value={task.markerColor}
-          onPick={(color) => {
-            if (color) onDefaultMarkerColor(color);
-            onSetMarker(task.id, color);
-            close();
-          }}
-        />
-      )}
-    />
+    <article className="hcard grid">
+      <div className={`hcard-media${failure ? ` failed ${task.status}` : ""}`}>
+        {output ? (
+          <img
+            src={imgThumbUrl(output.id)}
+            alt={output.filename}
+            title={t("open_viewer")}
+            onClick={() => onOpenViewer(output, [])}
+            {...pressable(() => onOpenViewer(output, []))}
+          />
+        ) : active ? (
+          <>
+            <div className={`q-shimmer${task.status !== "pending" ? " active" : ""}`} />
+            <div className="hcard-status q-live">
+              <span className="hcard-status-label">{statusLabel}</span>
+              {substatus && <span>{substatus}</span>}
+              {undoLeft > 0 ? (
+                <button className="q-undo" title={t("undo_send_hint")} onClick={() => onRemove(task.id)}>
+                  {t("undo_send", { n: undoLeft })}
+                </button>
+              ) : task.status === "running" ? (
+                <button className="q-cancel" title={t("cancel_running_hint")} onClick={() => onAbort(task.id)}>
+                  {t("cancel_running")}
+                </button>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <div className="hcard-status">
+            <Icon name="warning" />
+            <span className="hcard-status-label">{statusLabel}</span>
+            {failure && (
+              <>
+                <span className="hcard-status-reason">{failure}</span>
+                <FullTextButton label={t("details")} title={statusLabel} text={failure} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="hcard-body">
+        <div className="hcard-meta">
+          {task.markerColor && (
+            <span className="hcard-marker" style={{ background: markerHex(task.markerColor) }} title={t("marker_label")} />
+          )}
+          <span className="hcard-meta-text">{meta}</span>
+        </div>
+        <PromptClamp text={task.prompt} lines={2} />
+        <div className="hcard-chips">
+          {task.inputs.map((im) => (
+            <img
+              key={im.id}
+              src={imgThumbUrl(im.id)}
+              alt={im.filename}
+              title={im.filename}
+              onClick={() => onOpenViewer(im, task.inputs)}
+              {...pressable(() => onOpenViewer(im, task.inputs))}
+            />
+          ))}
+        </div>
+        <div className="hcard-actions">
+          <Button size="sm" icon="reuse" onClick={() => onReuse(task)} title={t("reuse")}>
+            <span className="hcard-btn-label">{t("reuse")}</span>
+          </Button>
+          <Button size="sm" icon="rerun" onClick={() => onReuseGenerate(task)} title={t("rerun_short")}>
+            <span className="hcard-btn-label">{t("rerun_short")}</span>
+          </Button>
+          <div className="hcard-tools">
+            {tools.map((tool) => (
+              <IconButton
+                key={tool.icon}
+                icon={tool.icon}
+                label={tool.label}
+                disabled={tool.disabled}
+                onClick={tool.onClick}
+              />
+            ))}
+            <Menu
+              items={[]}
+              footer={(close) => (
+                <MarkerSwatches
+                  value={task.markerColor}
+                  onPick={(color) => {
+                    if (color) onDefaultMarkerColor(color);
+                    onSetMarker(task.id, color);
+                    close();
+                  }}
+                />
+              )}
+              renderTrigger={({ open, toggle }) => (
+                <IconButton icon="marker" label={t("choose_marker_color")} aria-expanded={open} onClick={toggle} />
+              )}
+            />
+            {task.status === "pending" ? (
+              <IconButton icon="moveToDrafts" label={t("move_to_drafts")} onClick={() => onSaveDraft(task, true)} />
+            ) : (
+              <IconButton icon="delete" label={t("remove_task")} disabled={active} onClick={() => onRemove(task.id)} />
+            )}
+          </div>
+        </div>
+      </div>
+    </article>
   );
 });
