@@ -1379,6 +1379,9 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 .settings-option > span { display: flex; flex-direction: column; gap: 4px; }
 .settings-option b { color: var(--text); font-size: var(--fs-md); font-weight: 600; }
 .settings-option .small { line-height: 1.5; }
+.settings-link.btn { align-self: flex-start; padding: 0; height: auto; }
+.settings-path { display: flex; gap: var(--space-2); }
+.settings-path input { flex: 1; min-width: 0; }
 .settings-status {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md);
   background: var(--ui-accent-soft); color: var(--ui-accent); font-size: var(--fs-md); line-height: 1.5;

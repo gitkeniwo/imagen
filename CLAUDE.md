@@ -101,9 +101,17 @@ cd backend && IMAGEN_DATA_DIR=/tmp/imagen-verify uv run uvicorn app.main:app --p
   (`choose_library`, `list_recent_libraries`, `open_recent_library`, …).
   The app page (Settings › Library) has no IPC and fires fixed URLs only:
   `imagen-action://open-library`, `create-library`, `reveal-library`,
-  `change-library`, and `open-recent/<n>` (an index into the shell's own list —
-  a path is never taken from a URL). The native folder dialog opens over the
-  running app; the backend stops only after a folder is picked.
+  `change-library`, and `open-recent/<n>` (an index into the shell's own list).
+  The native folder dialog opens over the running app; the backend stops only
+  after a folder is picked.
+- Typed library paths (for users who don't know ⌘⇧G): the startup page calls
+  `open_library_path`; Settings fires `imagen-action://open-path?p=<path>`, the
+  only action that carries a path — the shell validates it
+  (`typed_library_path`: `~`, quotes, `\ `, `…/app.db` accepted) and asks for
+  confirmation in a native dialog before switching.
+- App menu › 打开最近的图库 lists the same recents (`open-recent-menu/<n>`); it is
+  rebuilt by `library::refresh_recent_menu` at startup and whenever a recent
+  is recorded.
 - **Never read the user's real `~/.config/imagen/`** (or its logs/config) during
   testing. All tests use a temp `IMAGEN_CONFIG_PATH` or `IMAGEN_DATA_DIR`.
 - Build with `desktop/build.sh` (app) or `desktop/build.sh --dmg` (app + DMG).
