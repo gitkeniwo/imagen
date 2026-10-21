@@ -1,64 +1,22 @@
-import { type ReactNode, useEffect, useState } from "react";
-import { api, ASPECT_RATIOS, MAX_TASK_ATTEMPTS, MODELS, OUTPUT_FORMATS, RESOLUTIONS, Tag } from "../api";
+import { ASPECT_RATIOS, MAX_TASK_ATTEMPTS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "../api";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
-import { IconButton } from "./ui/Button";
-import Popover from "./ui/Popover";
 import Segmented from "./ui/Segmented";
 import TagPicker from "./TagPicker";
 
-// A compact "pill" trigger that opens a popover with the full control. The
-// composer shows one row of these instead of stacked labeled sections.
-function ParamPill({
-  label,
-  value,
-  children,
-  disabled,
-  title,
-  panelClassName = "toolbar-popover",
-}: {
-  label: string;
-  value: ReactNode;
-  children: (close: () => void) => ReactNode;
-  disabled?: boolean;
-  title?: string;
-  panelClassName?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover
-      fixed
-      align="start"
-      className="param-pill-wrap"
-      panelClassName={panelClassName}
-      panelProps={{ role: "dialog", "aria-label": label }}
-      open={open}
-      onClose={() => setOpen(false)}
-      trigger={
-        <button
-          type="button"
-          className={`param-pill${open ? " open" : ""}`}
-          aria-expanded={open}
-          aria-label={label}
-          title={title ?? label}
-          disabled={disabled}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {value}
-          <Icon name="chevronDown" size="sm" className="param-pill-chevron" />
-        </button>
-      }
-    >
-      {children(() => setOpen(false))}
-    </Popover>
-  );
-}
+// "Nano Banana Pro (3 Pro)" → "Nano Banana Pro"; the full name stays as tooltip.
+const shortModelLabel = (label: string) => label.replace(/\s*\(.*\)$/, "");
 
-function AspectShape({ ratio }: { ratio: string }) {
+// Outline of the ratio, its long side fitted to `size` px.
+export function AspectShape({ ratio, size = 22 }: { ratio: string; size?: number }) {
   const [w, h] = ratio.split(":").map(Number);
-  return <span className="aspect-shape" style={{ aspectRatio: `${w} / ${h}` }} />;
+  const width = w >= h ? size : Math.round((size * w) / h);
+  const height = h >= w ? size : Math.round((size * h) / w);
+  return <span className="aspect-shape" style={{ width, height }} />;
 }
 
+// Every generation parameter laid out flat — one click each, no popovers:
+// a label column on the left, one row per group.
 export function ComposerParams({
   model,
   setModel,
@@ -83,233 +41,129 @@ export function ComposerParams({
   setTagIds: (ids: number[]) => void;
 }) {
   const { t } = useI18n();
-  const current = MODELS.find((m) => m.id === model);
-  const isPro = current?.pro ?? false;
-  const [tags, setTags] = useState<Tag[]>([]);
-
-  // Names for the archive pill summary; refreshed whenever the selection changes
-  // so a tag created inside the picker shows up immediately.
-  useEffect(() => {
-    api.listTags().then((r) => setTags(r.tags)).catch(() => {});
-  }, [tagIds]);
-  const selectedNames = tags.filter((tag) => tagIds.includes(tag.id)).map((tag) => tag.name);
+  const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
 
   return (
     <div className="composer-params">
-      <ParamPill label={t("model")} value={<span className="param-pill-text">{current?.label ?? model}</span>}>
-        {(close) => (
-          <div className="pill-options" role="listbox">
-            {MODELS.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                role="option"
-                aria-selected={m.id === model}
-                className="custom-select-item"
-                onClick={() => {
-                  setModel(m.id);
-                  close();
-                }}
-              >
-                <span className="check">{m.id === model && <Icon name="check" size="sm" />}</span>
-                {m.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </ParamPill>
-
-      <ParamPill
-        label={t("aspect")}
-        value={
-          <>
-            <AspectShape ratio={aspectRatio} />
-            {aspectRatio}
-          </>
-        }
-      >
-        {(close) => (
-          <div className="aspect-grid">
-            {ASPECT_RATIOS.map((r) => (
-              <button
-                key={r}
-                type="button"
-                className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
-                aria-pressed={aspectRatio === r}
-                onClick={() => {
-                  setAspectRatio(r);
-                  close();
-                }}
-              >
-                <AspectShape ratio={r} />
-                <span className="aspect-label">{r}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </ParamPill>
-
-      <ParamPill
-        label={t("resolution")}
-        title={isPro ? t("resolution") : `${t("resolution")}${t("pro_only")}`}
-        disabled={!isPro}
-        value={isPro ? resolution : "—"}
-      >
-        {(close) => (
+      <span className="param-label">{t("model")}</span>
+      <div className="param-line">
+        <Segmented
+          value={model}
+          onChange={setModel}
+          options={MODELS.map((m) => ({ value: m.id, label: shortModelLabel(m.label), title: m.label }))}
+        />
+        <div className="param-inline">
+          <span className="param-sublabel">{t("resolution")}</span>
           <Segmented
             value={resolution}
-            onChange={(r) => {
-              setResolution(r);
-              close();
-            }}
+            onChange={setResolution}
+            disabled={!isPro}
+            title={isPro ? undefined : `${t("resolution")}${t("pro_only")}`}
             options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
           />
-        )}
-      </ParamPill>
-
-      <ParamPill
-        label={t("format")}
-        value={OUTPUT_FORMATS.find((f) => f.id === format)?.label ?? format}
-      >
-        {(close) => (
+          {!isPro && <span className="param-note">{t("pro_only_short")}</span>}
+        </div>
+        <div className="param-inline">
+          <span className="param-sublabel">{t("format_short")}</span>
           <Segmented
             value={format}
-            onChange={(f) => {
-              setFormat(f);
-              close();
-            }}
+            onChange={setFormat}
             options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
           />
-        )}
-      </ParamPill>
+        </div>
+      </div>
 
-      <ParamPill
-        label={t("archive_to")}
-        panelClassName="toolbar-popover tag-popover"
-        value={
-          <>
-            <Icon name="tag" size="sm" />
-            <span className="param-pill-text">
-              {selectedNames.length === 0
-                ? t("archive_short")
-                : selectedNames.length === 1
-                ? selectedNames[0]
-                : t("archive_n", { n: selectedNames.length })}
-            </span>
-          </>
-        }
-      >
-        {() => (
-          <>
-            <span className="toolbar-popover-label">{t("archive_to")}</span>
-            <TagPicker selected={tagIds} onChange={setTagIds} />
-          </>
-        )}
-      </ParamPill>
+      <span className="param-label">{t("aspect_short")}</span>
+      <div className="aspect-row" role="group" aria-label={t("aspect")}>
+        {ASPECT_RATIOS.map((r) => (
+          <button
+            key={r}
+            type="button"
+            className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
+            aria-pressed={aspectRatio === r}
+            onClick={() => setAspectRatio(r)}
+          >
+            <span className="aspect-box"><AspectShape ratio={r} /></span>
+            <span className="aspect-label">{r}</span>
+          </button>
+        ))}
+      </div>
+
+      <span className="param-label" title={t("archive_to")}>{t("archive_short")}</span>
+      <TagPicker selected={tagIds} onChange={setTagIds} />
     </div>
   );
 }
 
-// Primary "Generate" plus a retry-group dropdown: try up to N times, and
-// whether this task itself skips once a preceding task in its group succeeds.
-export function GenerateSplitButton({
-  onGenerate,
-  disabled,
+// "Up to N tries": one submit enqueues N copies as a retry group.
+export function AttemptsStepper({
   attempts,
   setAttempts,
-  skip,
-  setSkip,
 }: {
-  onGenerate: () => void;
-  disabled: boolean;
   attempts: number;
   setAttempts: (fn: (n: number) => number) => void;
-  skip: boolean;
-  setSkip: (fn: (v: boolean) => boolean) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   return (
-    <div className="split-btn">
-      <button
-        type="button"
-        className="primary split-btn-main"
-        onClick={onGenerate}
-        disabled={disabled}
-        title={t("submit_shortcut_hint")}
-      >
-        {t("generate")}
-        <kbd className="kbd">⌘↵</kbd>
-      </button>
-      <Popover
-        fixed
-        className="split-btn-more-wrap"
-        panelClassName="toolbar-popover"
-        panelProps={{ role: "dialog", "aria-label": t("retry_settings") }}
-        open={open}
-        onClose={() => setOpen(false)}
-        trigger={
-          <button
-            type="button"
-            className="split-btn-more"
-            aria-label={t("retry_settings")}
-            title={t("retry_settings")}
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-          >
-            {(attempts > 1 || skip) && (
-              <span className="split-btn-badge">
-                {attempts > 1 ? `×${attempts}` : t("skip_short")}
-              </span>
-            )}
-            <Icon name="chevronDown" size="sm" />
-          </button>
-        }
-      >
-        <div className="toolbar-popover-section">
-          <span className="toolbar-popover-label">{t("attempts")}</span>
-          <div className="attempts-field">
-            <IconButton
-              variant="outline"
-              icon="remove"
-              label={t("attempts_decrease")}
-              onClick={() => setAttempts((n) => Math.max(1, n - 1))}
-              disabled={attempts <= 1}
-            />
-            <input
-              type="number"
-              min={1}
-              max={MAX_TASK_ATTEMPTS}
-              value={attempts}
-              aria-label={t("attempts")}
-              onChange={(e) => {
-                const v = Math.floor(Number(e.target.value));
-                if (!Number.isFinite(v)) return;
-                setAttempts(() => Math.max(1, Math.min(MAX_TASK_ATTEMPTS, v || 1)));
-              }}
-            />
-            <IconButton
-              variant="outline"
-              icon="add"
-              label={t("attempts_increase")}
-              onClick={() => setAttempts((n) => Math.min(MAX_TASK_ATTEMPTS, n + 1))}
-              disabled={attempts >= MAX_TASK_ATTEMPTS}
-            />
-          </div>
-          <span className="muted small popover-hint">{t("attempts_hint")}</span>
-        </div>
-        <div className="toolbar-popover-section">
-          <button
-            type="button"
-            className={`skip-toggle${skip ? " on" : ""}`}
-            aria-pressed={skip}
-            onClick={() => setSkip((v) => !v)}
-          >
-            {t("skip_if_preceding_succeeds")}
-          </button>
-          <span className="muted small popover-hint">{t("skip_if_preceding_succeeds_title")}</span>
-        </div>
-      </Popover>
+    <div className="attempts-field" role="group" aria-label={t("attempts")} title={t("attempts_hint")}>
+      <span>{t("attempts_prefix")}</span>
+      <div className="stepper">
+        <button
+          type="button"
+          aria-label={t("attempts_decrease")}
+          onClick={() => setAttempts((n) => Math.max(1, n - 1))}
+          disabled={attempts <= 1}
+        >
+          <Icon name="remove" size="sm" />
+        </button>
+        <input
+          type="number"
+          min={1}
+          max={MAX_TASK_ATTEMPTS}
+          value={attempts}
+          aria-label={t("attempts")}
+          onChange={(e) => {
+            const v = Math.floor(Number(e.target.value));
+            if (!Number.isFinite(v)) return;
+            setAttempts(() => Math.max(1, Math.min(MAX_TASK_ATTEMPTS, v || 1)));
+          }}
+        />
+        <button
+          type="button"
+          aria-label={t("attempts_increase")}
+          onClick={() => setAttempts((n) => Math.min(MAX_TASK_ATTEMPTS, n + 1))}
+          disabled={attempts >= MAX_TASK_ATTEMPTS}
+        >
+          <Icon name="add" size="sm" />
+        </button>
+      </div>
+      <span>{t("attempts_suffix")}</span>
     </div>
+  );
+}
+
+export function Switch({
+  checked,
+  onChange,
+  label,
+  title,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`switch${checked ? " on" : ""}`}
+      title={title}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="switch-track"><span className="switch-knob" /></span>
+      {label}
+    </button>
   );
 }

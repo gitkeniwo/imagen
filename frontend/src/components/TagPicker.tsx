@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { api, Tag } from "../api";
 import { useI18n } from "../i18n";
+import Icon from "./ui/Icon";
 
 // Reusable tag selector: toggle chips + create-new. `selected` is a list of tag
 // ids; `onChange` receives the new list. Used by the composer (archive targets)
@@ -50,40 +51,46 @@ export default function TagPicker({
   return (
     <div className="tag-picker">
       <div className="tag-chip-row">
-        {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
-        {tags.map((tag) => (
-          <button
-            key={tag.id}
-            type="button"
-            className={`tag-chip${selected.includes(tag.id) ? " on" : ""}`}
-            style={
-              tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined
-            }
-            onClick={() => toggle(tag.id)}
-          >
-            {tag.name}
-            <span className="tag-count">{tag.count}</span>
-          </button>
-        ))}
-      </div>
-      {allowCreate && (
-        <div className="tag-create">
-          <input
-            value={draft}
-            placeholder={t("new_tag_placeholder")}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                create();
+        {tags.length === 0 && !allowCreate && <span className="muted small">{t("no_tags")}</span>}
+        {tags.map((tag) => {
+          const on = selected.includes(tag.id);
+          return (
+            <button
+              key={tag.id}
+              type="button"
+              className={`tag-chip${on ? " on" : ""}`}
+              aria-pressed={on}
+              style={
+                tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined
               }
-            }}
-          />
-          <button type="button" onClick={create} disabled={busy || !draft.trim()}>
-            {t("create")}
-          </button>
-        </div>
-      )}
+              onClick={() => toggle(tag.id)}
+            >
+              {on && <Icon name="check" size="sm" />}
+              {tag.name}
+              <span className="tag-count">{tag.count}</span>
+            </button>
+          );
+        })}
+        {allowCreate && (
+          // Inline "+ new tag" chip: type a name and press Enter.
+          <label className={`tag-chip tag-chip-new${busy ? " busy" : ""}`}>
+            <Icon name="add" size="sm" />
+            <input
+              value={draft}
+              placeholder={t("new_tag_placeholder")}
+              aria-label={t("new_tag_placeholder")}
+              disabled={busy}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  create();
+                }
+              }}
+            />
+          </label>
+        )}
+      </div>
     </div>
   );
 }

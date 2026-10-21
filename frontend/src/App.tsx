@@ -564,48 +564,15 @@ export default function App() {
 
   return (
     <>
-      <div className="topbar">
-        <div className="topbar-inner">
-          <div className="brand">
-            <img className="brand-icon" src={appIcon} alt="" /> Imagen
-          </div>
-          <div className="spacer" />
-          <Menu
-            items={[
-              { label: t("new_draft"), icon: "drafts", onSelect: () => setShowNewDraft(true) },
-              { label: t("import_result"), icon: "imported", onSelect: () => setShowAddHistory(true) },
-            ]}
-            renderTrigger={({ open, toggle }) => (
-              <Button
-                className="topbar-btn"
-                icon="add"
-                aria-haspopup="menu"
-                aria-expanded={open}
-                onClick={toggle}
-              >
-                {t("new_menu")}
-                <Icon name="chevronDown" size="sm" />
-              </Button>
-            )}
-          />
-          <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
-            <Icon name="usage" /> {t("usage")}
-          </button>
-          <button className="topbar-btn" onClick={() => setShowSettings(true)}>
-            {configured ? (
-              <><Icon name="settings" /> {t("settings")}</>
-            ) : (
-              <><Icon name="warning" /> {t("set_api_key")}</>
-            )}
-          </button>
-        </div>
-      </div>
-
-      <div className="app workspace"
+      <div
+        className="app-shell"
         ref={workspaceRef}
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
         <aside className="side-panel">
+          <div className="side-brand">
+            <img className="brand-icon" src={appIcon} alt="" /> Imagen
+          </div>
           <div className="side-tabs-row">
             <PanelTabs
               value={sidebarPanel}
@@ -680,49 +647,81 @@ export default function App() {
               />
             )}
           </div>
+          <div
+            className="resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t("resize_sidebar")}
+            title={t("resize_sidebar")}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              setResizingSidebar(true);
+            }}
+            onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
+          />
         </aside>
 
-        <div
-          className="resize-handle"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={t("resize_sidebar")}
-          title={t("resize_sidebar")}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            setResizingSidebar(true);
-          }}
-          onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
-        />
-
-        <main className="main-panel">
-          {configured === false && (
-            <div className="panel notice error">{t("no_key_warning")}</div>
-          )}
-          <Generate
-            tray={tray}
-            prefill={prefill}
-            consumePrefill={consumePrefill}
-            addManyToTray={addManyToTray}
-            removeFromTray={removeFromTray}
-            moveInTray={moveInTray}
-            keyConfigured={!!configured}
-            queue={queue}
-            enqueue={enqueue}
-            onSaveDraft={saveTaskAsDraft}
-            removeTask={removeTask}
-            abortTask={abortTask}
-            clearDone={clearDone}
-            onReuseTask={reuseTask}
-            onReuseGenerateTask={reuseGenerateTask}
-            onSaveQueueTaskAsDraft={saveQueueTaskAsDraft}
-            onSetTaskMarker={setTaskMarker}
-            onOpenViewer={openViewer}
-            concurrency={concurrency}
-            setConcurrency={setConcurrency}
-            maxConcurrency={MAX_CONCURRENCY}
-          />
-        </main>
+        <div className="main-col">
+          <header className="topbar">
+            <div className="spacer" />
+            <Menu
+              items={[
+                { label: t("new_draft"), icon: "drafts", onSelect: () => setShowNewDraft(true) },
+                { label: t("import_result"), icon: "imported", onSelect: () => setShowAddHistory(true) },
+              ]}
+              renderTrigger={({ open, toggle }) => (
+                <Button
+                  className="topbar-btn"
+                  icon="add"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  onClick={toggle}
+                >
+                  {t("new_menu")}
+                  <Icon name="chevronDown" size="sm" />
+                </Button>
+              )}
+            />
+            <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
+              <Icon name="usage" /> {t("usage")}
+            </button>
+            <button className="topbar-btn" onClick={() => setShowSettings(true)}>
+              {configured ? (
+                <><Icon name="settings" /> {t("settings")}</>
+              ) : (
+                <><Icon name="warning" /> {t("set_api_key")}</>
+              )}
+            </button>
+          </header>
+          <main className="main-panel">
+            {configured === false && (
+              <div className="panel notice error">{t("no_key_warning")}</div>
+            )}
+            <Generate
+              tray={tray}
+              prefill={prefill}
+              consumePrefill={consumePrefill}
+              addManyToTray={addManyToTray}
+              removeFromTray={removeFromTray}
+              moveInTray={moveInTray}
+              keyConfigured={!!configured}
+              queue={queue}
+              enqueue={enqueue}
+              onSaveDraft={saveTaskAsDraft}
+              removeTask={removeTask}
+              abortTask={abortTask}
+              clearDone={clearDone}
+              onReuseTask={reuseTask}
+              onReuseGenerateTask={reuseGenerateTask}
+              onSaveQueueTaskAsDraft={saveQueueTaskAsDraft}
+              onSetTaskMarker={setTaskMarker}
+              onOpenViewer={openViewer}
+              concurrency={concurrency}
+              setConcurrency={setConcurrency}
+              maxConcurrency={MAX_CONCURRENCY}
+            />
+          </main>
+        </div>
       </div>
 
       {showSettings && (

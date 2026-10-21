@@ -1,6 +1,5 @@
 import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { Generation, ImageRow, MARKER_COLORS, MarkerColor, TagRef, downloadName, imgFileUrl, imgThumbUrl } from "../api";
-import { copyText } from "../clipboard";
+import { ImageRow, MARKER_COLORS, MarkerColor, TagRef, downloadName, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import Icon, { type IconName } from "./ui/Icon";
@@ -277,35 +276,6 @@ export function MarkerSwatches({
       )}
     </div>
   );
-}
-
-// "⋯" items shared by History and Favorites records.
-export function generationMenu(
-  g: Generation,
-  output: ImageRow | null,
-  {
-    t,
-    onEdit,
-    onDuplicate,
-    onCopied,
-  }: {
-    t: (key: string) => string;
-    onEdit: () => void;
-    onDuplicate: () => void;
-    onCopied: (ok: boolean) => void;
-  },
-): MenuItem[] {
-  const items: MenuItem[] = [
-    { icon: "edit", label: t("edit_annotation"), onSelect: onEdit },
-    { icon: "duplicate", label: t("duplicate_record"), onSelect: onDuplicate },
-  ];
-  if (g.prompt) {
-    items.push({ icon: "copy", label: t("copy_prompt"), onSelect: async () => onCopied(await copyText(g.prompt)) });
-  }
-  if (output) {
-    items.push({ icon: "download", label: t("download"), onSelect: () => downloadImage(output) });
-  }
-  return items;
 }
 
 export function downloadImage(img: ImageRow) {

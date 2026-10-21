@@ -8,7 +8,7 @@ import { useConfirm } from "../components/ConfirmDialog";
 import Icon from "../components/ui/Icon";
 import { Button, IconButton } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
-import { FilterPopover, PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
+import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -223,42 +223,6 @@ export default function Library({
             }}
             placeholder={t("search_placeholder_library")}
           />
-          <FilterPopover
-            activeCount={(source ? 1 : 0) + (starredOnly ? 1 : 0)}
-            onReset={() => {
-              setSource("");
-              setStarredOnly(false);
-              setPage(0);
-            }}
-          >
-            <PopoverSection label={t("filter_source")}>
-              <Segmented
-                value={source}
-                onChange={(val) => {
-                  setSource(val);
-                  setPage(0);
-                }}
-                options={[
-                  { value: "", label: t("filter_all") },
-                  { value: "upload", label: t("filter_upload"), icon: "uploaded" },
-                  { value: "generated", label: t("filter_generated"), icon: "generated" },
-                ]}
-              />
-            </PopoverSection>
-            <PopoverSection label={t("filter_content")}>
-              <Button
-                className={`skip-toggle${starredOnly ? " on" : ""}`}
-                icon="favorite"
-                aria-pressed={starredOnly}
-                onClick={() => {
-                  setStarredOnly((v) => !v);
-                  setPage(0);
-                }}
-              >
-                {t("filter_starred_only")}
-              </Button>
-            </PopoverSection>
-          </FilterPopover>
           <ViewPopover>
             {compact ? (
               <PopoverSection label={t("columns_per_row")}>
@@ -293,6 +257,33 @@ export default function Library({
               {t("select_mode")}
             </Button>
           )}
+        </div>
+
+        {/* Filters stay on screen: one click each, no popover. */}
+        <div className="filter-row">
+          <Segmented
+            value={source}
+            onChange={(val) => {
+              setSource(val);
+              setPage(0);
+            }}
+            options={[
+              { value: "", label: t("filter_all") },
+              { value: "upload", label: t("filter_upload"), icon: "uploaded" },
+              { value: "generated", label: t("filter_generated"), icon: "generated" },
+            ]}
+          />
+          <Button
+            className={`skip-toggle${starredOnly ? " on" : ""}`}
+            icon="favorite"
+            aria-pressed={starredOnly}
+            onClick={() => {
+              setStarredOnly((v) => !v);
+              setPage(0);
+            }}
+          >
+            {t("filter_starred_only")}
+          </Button>
         </div>
 
         {/* Tag filter bar (collection-style) */}
