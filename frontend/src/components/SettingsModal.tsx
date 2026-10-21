@@ -47,6 +47,10 @@ export default function SettingsModal({
   // Set while the shell's native folder dialog is up; the page has no way to
   // hear about a cancel, so it clears when the window gets focus back.
   const [picking, setPicking] = useState(false);
+  // Typed path, for people who don't know ⌘⇧G in the folder dialog. The shell
+  // validates it and asks for confirmation in a native dialog.
+  const [typing, setTyping] = useState(false);
+  const [typedPath, setTypedPath] = useState("");
 
   useEffect(() => {
     api.getVertex().then((v) => {
@@ -179,6 +183,41 @@ export default function SettingsModal({
                         </span>
                       </button>
                     </div>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="settings-link"
+                      aria-expanded={typing}
+                      onClick={() => setTyping((v) => !v)}
+                    >
+                      {t("library_path_toggle")}
+                    </Button>
+                    {typing && (
+                      <form
+                        className="settings-path"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!typedPath.trim()) return;
+                          pick(`open-path?p=${encodeURIComponent(typedPath)}`);
+                        }}
+                      >
+                        <input
+                          className="settings-mono"
+                          aria-label={t("library_open_existing")}
+                          placeholder={t("library_path_placeholder")}
+                          value={typedPath}
+                          spellCheck={false}
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          autoComplete="off"
+                          autoFocus
+                          onChange={(e) => setTypedPath(e.target.value)}
+                        />
+                        <Button type="submit" variant="primary" disabled={picking || !typedPath.trim()}>
+                          {t("library_path_open")}
+                        </Button>
+                      </form>
+                    )}
                     {picking && (
                       <div className="settings-status" role="status">
                         <span className="spinner" />

@@ -43,6 +43,11 @@ fn open_recent_library(app: AppHandle, index: usize) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_library_path(app: AppHandle, path: String) -> Result<(), String> {
+    library::open_library_path(app, path)
+}
+
+#[tauri::command]
 fn return_to_current(app: AppHandle) -> Result<(), String> {
     library::return_to_current(app)
 }
@@ -64,6 +69,9 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         Some("CmdOrCtrl+Shift+L"),
     )?;
 
+    // Filled from ui.json once the backend state exists (library::refresh_recent_menu).
+    let recent = Submenu::with_id(app, library::RECENT_MENU_ID, "打开最近的图库", false)?;
+
     let app_menu = Submenu::with_items(
         app,
         pkg.name.clone(),
@@ -72,6 +80,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::about(app, None, Some(about))?,
             &PredefinedMenuItem::separator(app)?,
             &change,
+            &recent,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -200,7 +209,8 @@ fn main() {
             reveal_config,
             return_to_current,
             list_recent_libraries,
-            open_recent_library
+            open_recent_library,
+            open_library_path
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -216,6 +226,7 @@ fn main() {
             let notice = state.startup_notice.clone();
             app.manage(state);
             app.manage(zoom::ZoomState::init(&handle));
+            library::refresh_recent_menu(&handle);
 
             backend::log_line(
                 &handle,

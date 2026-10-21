@@ -73,6 +73,20 @@
     .btn-outline { background: var(--card); border-color: var(--err-line); color: var(--err-fg); font-weight: 500; }
     .btn-plain { background: transparent; border-color: var(--border); color: var(--text); font-weight: 500; }
     .options { display: flex; flex-direction: column; gap: 10px; }
+    .btn-accent { background: var(--accent); color: var(--card); }
+    .link {
+      align-self: flex-start; padding: 2px 0; border: 0; background: none; color: var(--accent);
+      font-size: 12px; font-weight: 500;
+    }
+    .link:hover:not(:disabled) { text-decoration: underline; }
+    .path-form { display: flex; gap: 8px; }
+    .path-form[hidden] { display: none; }
+    .path-input {
+      flex: 1; min-width: 0; height: 30px; padding: 0 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    }
+    .path-input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
     .option {
       padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card);
       color: var(--text); text-align: left; display: flex; gap: 14px; align-items: center;
@@ -151,6 +165,11 @@
         <span class="option-text"><b id="create-label"></b><span id="create-desc"></span></span>
         <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
       </button>
+      <button id="path-toggle" class="link" type="button" aria-expanded="false" aria-controls="path-form"></button>
+      <form id="path-form" class="path-form" hidden>
+        <input id="path-input" class="path-input" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">
+        <button id="path-open" class="btn btn-accent" type="submit"></button>
+      </form>
     </div>
 
     <div class="recent" id="recent" hidden>
@@ -184,6 +203,9 @@
         openDesc: "原地使用，不会复制、迁移或重新初始化",
         create: "新建图库…",
         createDesc: "选择一个空文件夹（忽略 .DS_Store）",
+        pathToggle: "知道路径？直接输入…",
+        pathPlaceholder: "例如 ~/Pictures/Imagen 或 /Volumes/外置盘/图库",
+        pathOpen: "打开",
         recent: "最近使用",
         missing: "找不到",
         today: "今天",
@@ -213,6 +235,9 @@
         openDesc: "Used in place — never copied, migrated, or reinitialized",
         create: "Create New Library…",
         createDesc: "Choose an empty folder (.DS_Store is ignored)",
+        pathToggle: "Know the path? Type it…",
+        pathPlaceholder: "e.g. ~/Pictures/Imagen or /Volumes/Drive/Library",
+        pathOpen: "Open",
         recent: "Recent",
         missing: "Not found",
         today: "Today",
@@ -352,6 +377,10 @@
       setText("create-label", text.create);
       setText("create-desc", text.createDesc);
       setText("recent-title", text.recent);
+      setText("path-toggle", text.pathToggle);
+      setText("path-open", text.pathOpen);
+      $("path-input").placeholder = text.pathPlaceholder;
+      $("path-input").setAttribute("aria-label", text.open);
       setText("retry", text.retry);
       setText("reveal", text.reveal);
       setText("cancel", text.cancel);
@@ -396,6 +425,25 @@
 
       $("open").addEventListener("click", function () { choose("existing"); });
       $("create").addEventListener("click", function () { choose("create"); });
+      $("path-toggle").addEventListener("click", function () {
+        var form = $("path-form");
+        form.hidden = !form.hidden;
+        $("path-toggle").setAttribute("aria-expanded", String(!form.hidden));
+        if (!form.hidden) $("path-input").focus();
+      });
+      $("path-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var value = $("path-input").value;
+        if (busy || !value.trim()) return;
+        setBusy(true);
+        notice("", "info");
+        status(text.starting, true);
+        // The shell validates first; on success it navigates to the switching page.
+        invoke("open_library_path", { path: value }).catch(function (err) {
+          notice(String(err), "error");
+          $("path-input").focus();
+        });
+      });
       $("cancel").addEventListener("click", function () {
         status(text.starting, true);
         invoke("return_to_current").catch(function (err) { notice(String(err), "error"); });

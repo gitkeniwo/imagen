@@ -13,7 +13,7 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use tauri::menu::MenuEvent;
+use tauri::menu::{CheckMenuItem, MenuEvent};
 use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_dialog::DialogExt;
 
@@ -21,6 +21,9 @@ use crate::backend::{self, BackendState};
 use crate::ui_store;
 
 pub const CHANGE_LIBRARY_MENU_ID: &str = "change-library";
+/// App menu › 打开最近的图库; items are `open-recent-menu/<n>`, an index into
+/// the shell's own recent list (same as `imagen-action://open-recent/<n>`).
+pub const RECENT_MENU_ID: &str = "open-recent-menu";
 pub const ACTION_SCHEME: &str = "imagen-action";
 pub const CHANGE_LIBRARY_ACTION: &str = "change-library";
 pub const REVEAL_LIBRARY_ACTION: &str = "reveal-library";
@@ -31,6 +34,10 @@ pub const CREATE_LIBRARY_ACTION: &str = "create-library";
 /// `imagen-action://open-recent/<n>` — an index into the shell's own recent
 /// list, never a path.
 pub const OPEN_RECENT_ACTION: &str = "open-recent";
+/// `imagen-action://open-path?p=<path>` — Settings' typed path. The one action
+/// that carries a path: the shell validates it and asks the user to confirm in
+/// a native dialog before anything changes.
+pub const OPEN_PATH_ACTION: &str = "open-path";
 const RECENT_KEY: &str = "recent_libraries";
 const MAX_RECENT: usize = 8;
 pub const CONFIG_VERSION: u64 = 1;
@@ -843,6 +850,81 @@ pub fn record_recent(app: &AppHandle, library: &Path) {
     }) {
         backend::log_line(app, &format!("recent libraries write failed: {err}"));
     }
+    refresh_recent_menu(app);
+}
+
+fn current_library(app: &AppHandle) -> Option<PathBuf> {
+    let state = app.state::<BackendState>();
+    let config = state.config.read().unwrap_or_else(|p| p.into_inner());
+    config.library.as_ref().map(|lib| lib.path.clone())
+}
+
+/// Rebuild App menu › 打开最近的图库 from ui.json. The current library is
+/// shown checked and disabled; a missing folder is disabled.
+pub fn refresh_recent_menu(app: &AppHandle) {
+    let Some(menu) = app.menu() else {
+        return;
+    };
+    // `get` only looks one level down; the submenu sits inside the app menu.
+    let found = menu.items().ok().and_then(|items| {
+        items.iter().find_map(|top| {
+            top.as_submenu()
+                .and_then(|sub| sub.get(RECENT_MENU_ID))
+                .and_then(|kind| kind.as_submenu().cloned())
+        })
+    });
+    let Some(submenu) = found else {
+        backend::log_line(app, "recent menu missing");
+        return;
+    };
+    let result = (|| -> tauri::Result<()> {
+        let submenu = &submenu;
+        for item in submenu.items()? {
+            submenu.remove(&item)?;
+        }
+        let current = current_library(app).and_then(|p| fs::canonicalize(p).ok());
+        let recents = recent_libraries(app);
+        for (index, (path, _)) in recents.iter().enumerate() {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.to_string_lossy().into_owned());
+            let label = format!("{name}  —  {}", path.display());
+            let is_current = current.is_some() && fs::canonicalize(path).ok() == current;
+            let exists = path.join("app.db").is_file();
+            let item = CheckMenuItem::with_id(
+                app,
+                format!("{RECENT_MENU_ID}/{index}"),
+                label,
+                exists && !is_current,
+                is_current,
+                None::<&str>,
+            )?;
+            submenu.append(&item)?;
+        }
+        submenu.set_enabled(!recents.is_empty())?;
+        backend::log_line(app, &format!("recent menu: {} item(s)", recents.len()));
+        Ok(())
+    })();
+    if let Err(err) = result {
+        backend::log_line(app, &format!("recent menu refresh failed: {err}"));
+    }
+}
+
+/// Recent index from Settings, the menu, or the action URL: one switch at a time.
+fn open_recent_guarded(app: &AppHandle, index: usize) {
+    let state = app.state::<BackendState>();
+    if state
+        .library_change_pending
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        backend::log_line(app, "library change ignored: already in progress");
+        return;
+    }
+    if let Err(err) = open_recent(app.clone(), index) {
+        finish_library_change(app);
+        show_native_error(app, &err);
+    }
 }
 
 /// For the startup page: name, path, last opened (unix seconds), and whether
@@ -859,6 +941,104 @@ pub fn list_recent(app: AppHandle) -> Vec<serde_json::Value> {
             })
         })
         .collect()
+}
+
+/// A library path typed by the user (for people who don't know ⌘⇧G).
+/// Accepts `~`, surrounding quotes, shell-escaped spaces, and a path to
+/// `app.db` itself; the result must be an existing library.
+pub fn typed_library_path(raw: &str) -> Result<PathBuf, String> {
+    let mut text = raw.trim();
+    for quote in ['"', '\'', '“'] {
+        let close = if quote == '“' { '”' } else { quote };
+        if text.len() >= 2 && text.starts_with(quote) && text.ends_with(close) {
+            text = text[quote.len_utf8()..text.len() - close.len_utf8()].trim();
+            break;
+        }
+    }
+    if text.is_empty() {
+        return Err("请输入图库文件夹的路径。".to_string());
+    }
+    let unescaped = text.replace("\\ ", " ");
+    let expanded = if unescaped == "~" || unescaped.starts_with("~/") {
+        let home = env::var("HOME").map_err(|_| "无法确定主目录，请输入完整路径。".to_string())?;
+        PathBuf::from(home).join(unescaped.trim_start_matches('~').trim_start_matches('/'))
+    } else {
+        PathBuf::from(&unescaped)
+    };
+    if !expanded.is_absolute() {
+        return Err("请输入以 / 或 ~ 开头的完整路径。".to_string());
+    }
+    let dir = if expanded.file_name().is_some_and(|n| n == "app.db") && expanded.is_file() {
+        expanded.parent().map(Path::to_path_buf).unwrap_or(expanded)
+    } else {
+        expanded
+    };
+    validate_existing(&dir)?;
+    fs::canonicalize(&dir).map_err(|e| format!("图库不可用：{}：{e}", dir.display()))
+}
+
+/// Startup page: open a typed path. Errors go back to the page inline.
+pub fn open_library_path(app: AppHandle, path: String) -> Result<(), String> {
+    let dir = typed_library_path(&path)?;
+    switch_to(app, dir, LibraryMode::Existing);
+    Ok(())
+}
+
+/// Settings: the path came from a URL, so it is validated and then confirmed
+/// in a native dialog; the page alone can never switch the library.
+fn open_path_from_settings(app: &AppHandle, raw: &str) {
+    let dir = match typed_library_path(raw) {
+        Ok(dir) => dir,
+        Err(err) => {
+            show_native_error(app, &err);
+            return;
+        }
+    };
+    let state = app.state::<BackendState>();
+    if state
+        .library_change_pending
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        backend::log_line(app, "library change ignored: already in progress");
+        return;
+    }
+    let handle = app.clone();
+    app.dialog()
+        .message(format!("切换到这个图库？\n\n{}", dir.display()))
+        .title("打开图库")
+        .kind(tauri_plugin_dialog::MessageDialogKind::Info)
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom(
+            "打开".to_string(),
+            "取消".to_string(),
+        ))
+        .show(move |ok| {
+            if ok {
+                switch_to(handle, dir, LibraryMode::Existing);
+            } else {
+                backend::log_line(&handle, "typed library path cancelled");
+                finish_library_change(&handle);
+            }
+        });
+}
+
+/// The `p` value of `imagen-action://open-path?p=…`, nothing else allowed.
+fn open_path_param(url: &Url) -> Option<String> {
+    if url.scheme() != ACTION_SCHEME
+        || url.host_str() != Some(OPEN_PATH_ACTION)
+        || !url.path().is_empty()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+    {
+        return None;
+    }
+    let mut pairs = url.query_pairs();
+    let (key, value) = pairs.next()?;
+    if key != "p" || pairs.next().is_some() {
+        return None;
+    }
+    Some(value.into_owned())
 }
 
 /// Switch to a recent library by index (startup page and Settings).
@@ -970,20 +1150,14 @@ pub fn handle_action_url(app: &AppHandle, url: &Url) {
             return;
         }
     }
+    if let Some(raw) = open_path_param(url) {
+        backend::log_line(app, "imagen action: open-path");
+        open_path_from_settings(app, &raw);
+        return;
+    }
     if let Some(index) = recent_index(url) {
         backend::log_line(app, &format!("imagen action: open-recent {index}"));
-        let state = app.state::<BackendState>();
-        if state
-            .library_change_pending
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
-            backend::log_line(app, "library change ignored: already in progress");
-            return;
-        }
-        if let Err(err) = open_recent(app.clone(), index) {
-            finish_library_change(app);
-            show_native_error(app, &err);
-        }
+        open_recent_guarded(app, index);
         return;
     }
     backend::log_line(app, &format!("imagen action ignored: {url}"));
@@ -1025,5 +1199,68 @@ pub fn reveal_library(app: &AppHandle) -> Result<(), String> {
 pub fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
     if event.id() == CHANGE_LIBRARY_MENU_ID {
         request_change_library(app);
+        return;
+    }
+    if let Some(index) = event
+        .id()
+        .as_ref()
+        .strip_prefix(RECENT_MENU_ID)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .and_then(|n| n.parse::<usize>().ok())
+    {
+        backend::log_line(app, &format!("menu: open-recent {index}"));
+        // A CheckMenuItem toggles itself on click; the rebuild after the
+        // switch (or right now on refusal) puts the marks back.
+        open_recent_guarded(app, index);
+        refresh_recent_menu(app);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn library(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        let mut f = File::create(dir.join("app.db")).unwrap();
+        f.write_all(SQLITE_HEADER).unwrap();
+    }
+
+    #[test]
+    fn typed_path_variants() {
+        let root = env::temp_dir().join(format!("imagen-typed-{}", std::process::id()));
+        let lib = root.join("My Library");
+        library(&lib);
+        let want = fs::canonicalize(&lib).unwrap();
+        let plain = lib.to_string_lossy().to_string();
+        for raw in [
+            plain.clone(),
+            format!("  {plain}  "),
+            format!("\"{plain}\""),
+            format!("'{plain}'"),
+            plain.replace(' ', "\\ "),
+            format!("{plain}/app.db"),
+        ] {
+            assert_eq!(typed_library_path(&raw).unwrap(), want, "{raw}");
+        }
+        assert!(typed_library_path("").is_err());
+        assert!(typed_library_path("relative/dir").is_err());
+        assert!(typed_library_path(&root.to_string_lossy()).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_path_url_shape() {
+        let ok = Url::parse("imagen-action://open-path?p=%2FUsers%2Fa%20b").unwrap();
+        assert_eq!(open_path_param(&ok).as_deref(), Some("/Users/a b"));
+        for bad in [
+            "imagen-action://open-path?p=/a&x=1",
+            "imagen-action://open-path?q=/a",
+            "imagen-action://open-path/x?p=/a",
+            "imagen-action://open-library?p=/a",
+            "https://open-path?p=/a",
+        ] {
+            assert!(open_path_param(&Url::parse(bad).unwrap()).is_none(), "{bad}");
+        }
     }
 }
