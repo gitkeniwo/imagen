@@ -6,7 +6,8 @@ import History from "../pages/History";
 import Favorites from "../pages/Favorites";
 import Bin from "../pages/Bin";
 import Drafts from "../pages/Drafts";
-import Icon, { type IconName } from "./ui/Icon";
+import PanelTabs from "./ui/PanelTabs";
+import type { PanelCounts } from "../usePanelCounts";
 import { IconButton } from "./ui/Button";
 
 export type ManagerPanel = "library" | "history" | "favorites" | "drafts" | "bin";
@@ -26,6 +27,8 @@ export default function FullscreenManager({
   canQueue,
   onQueueDraft,
   historyLive,
+  counts,
+  onCountsChanged,
 }: {
   initialPanel: ManagerPanel;
   onClose: () => void;
@@ -38,6 +41,8 @@ export default function FullscreenManager({
   canQueue: boolean;
   onQueueDraft: (task: TaskSpec) => void;
   historyLive: boolean;
+  counts: PanelCounts;
+  onCountsChanged: () => void;
 }) {
   const { t } = useI18n();
   const [panel, setPanel] = useState<ManagerPanel>(initialPanel);
@@ -67,28 +72,18 @@ export default function FullscreenManager({
   return (
     <div className="manager-overlay" role="dialog" aria-modal="true">
       <div className="manager-header">
-        <div className="side-tabs manager-tabs">
-          {(
-            [
-              ["library", "library"],
-              ["history", "history"],
-              ["favorites", "favorite"],
-              ["drafts", "drafts"],
-              ["bin", "bin"],
-            ] as [ManagerPanel, IconName][]
-          ).map(([p, icon]) => (
-            <button
-              key={p}
-              className={`tab${panel === p ? " active" : ""}`}
-              title={t(`tab_${p}`)}
-              aria-label={t(`tab_${p}`)}
-              aria-pressed={panel === p}
-              onClick={() => setPanel(p)}
-            >
-              <Icon name={icon} />
-            </button>
-          ))}
-        </div>
+        <PanelTabs
+          className="manager-tabs"
+          value={panel}
+          onChange={setPanel}
+          tabs={[
+            { id: "library", label: t("tab_library"), icon: "library", count: counts.library },
+            { id: "history", label: t("tab_history"), icon: "history", count: counts.history },
+            { id: "favorites", label: t("tab_favorites"), icon: "favorite", count: counts.favorites },
+            { id: "drafts", label: t("tab_drafts"), icon: "drafts", count: counts.drafts },
+            { id: "bin", label: t("tab_bin"), icon: "bin", count: counts.bin },
+          ]}
+        />
         <IconButton
           className="manager-close"
           variant="outline"
@@ -122,6 +117,7 @@ export default function FullscreenManager({
           />
         ) : panel === "drafts" ? (
           <Drafts
+            onChanged={onCountsChanged}
             refreshKey={draftRefreshKey}
             canQueue={canQueue}
             onQueue={onQueueDraft}

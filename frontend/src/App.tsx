@@ -27,9 +27,13 @@ import UsageDashboard from "./components/UsageDashboard";
 import ImageViewer from "./components/ImageViewer";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 import Drafts from "./pages/Drafts";
+import DraftEditorModal from "./components/DraftEditorModal";
+import Menu from "./components/ui/Menu";
+import PanelTabs from "./components/ui/PanelTabs";
+import { usePanelCounts } from "./usePanelCounts";
 import { useToast } from "./components/Toast";
-import Icon, { type IconName } from "./components/ui/Icon";
-import { IconButton } from "./components/ui/Button";
+import Icon from "./components/ui/Icon";
+import { Button, IconButton } from "./components/ui/Button";
 import appIcon from "./assets/app-icon.png";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
@@ -88,7 +92,7 @@ function initialUndoSeconds() {
 }
 
 export default function App() {
-  const { t, lang, setLang } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>("library");
   const [managerOpen, setManagerOpen] = useState(false);
@@ -102,6 +106,10 @@ export default function App() {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAddHistory, setShowAddHistory] = useState(false);
+  const [showNewDraft, setShowNewDraft] = useState(false);
+  // Bumped by panels whose item totals change without a data refresh (drafts).
+  const [countsVersion, setCountsVersion] = useState(0);
+  const bumpCounts = useCallback(() => setCountsVersion((v) => v + 1), []);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [queue, setQueue] = useState<QueueTask[]>([]);
   const [concurrency, setConcurrency] = useState(initialConcurrency);
@@ -535,6 +543,10 @@ export default function App() {
     queue.filter((task) => task.status !== "pending" && task.status !== "running")
       .length + dataVersion;
 
+  const counts = usePanelCounts(
+    `${completedRefreshKey}:${draftVersion}:${countsVersion}:${sidebarPanel}`,
+  );
+
   return (
     <>
       <div className="topbar">
@@ -543,16 +555,24 @@ export default function App() {
             <img className="brand-icon" src={appIcon} alt="" /> Imagen
           </div>
           <div className="spacer" />
-          <button
-            className="lang-toggle"
-            title={t("lang_toggle")}
-            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-          >
-            {lang === "zh" ? "EN" : "ZH"}
-          </button>
-          <button className="topbar-btn" onClick={() => setShowAddHistory(true)} title={t("add_history_title")}>
-            <Icon name="add" /> {t("add_history")}
-          </button>
+          <Menu
+            items={[
+              { label: t("new_draft"), icon: "drafts", onSelect: () => setShowNewDraft(true) },
+              { label: t("import_result"), icon: "imported", onSelect: () => setShowAddHistory(true) },
+            ]}
+            renderTrigger={({ open, toggle }) => (
+              <Button
+                className="topbar-btn"
+                icon="add"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={toggle}
+              >
+                {t("new_menu")}
+                <Icon name="chevronDown" size="sm" />
+              </Button>
+            )}
+          />
           <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
             <Icon name="usage" /> {t("usage")}
           </button>
@@ -572,42 +592,37 @@ export default function App() {
       >
         <aside className="side-panel">
           <div className="side-tabs-row">
-            <div className="side-tabs">
-              {(
-                [
-                  ["library", "library"],
-                  ["history", "history"],
-                  ["favorites", "favorite"],
-                  ["drafts", "drafts"],
-                ] as [SidebarPanel, IconName][]
-              ).map(([panel, icon]) => (
-                <button
-                  key={panel}
-                  className={`tab${sidebarPanel === panel ? " active" : ""}`}
-                  title={t(`tab_${panel}`)}
-                  aria-label={t(`tab_${panel}`)}
-                  aria-pressed={sidebarPanel === panel}
-                  onClick={() => setSidebarPanel(panel)}
-                >
-                  <Icon name={icon} />
-                </button>
-              ))}
-            </div>
-            <IconButton
-              className="side-expand"
-              variant="outline"
-              size="md"
-              icon="bin"
-              label={t("bin_title")}
-              onClick={() => openManager("bin")}
+            <PanelTabs
+              value={sidebarPanel}
+              onChange={setSidebarPanel}
+              tabs={[
+                { id: "library", label: t("tab_library"), icon: "library", count: counts.library },
+                { id: "history", label: t("tab_history"), icon: "history", count: counts.history },
+                { id: "favorites", label: t("tab_favorites"), icon: "favorite", count: counts.favorites },
+                { id: "drafts", label: t("tab_drafts"), icon: "drafts", count: counts.drafts },
+              ]}
             />
-            <IconButton
-              className="side-expand"
-              variant="outline"
-              size="md"
-              icon="fullscreen"
-              label={t("fullscreen_manage")}
-              onClick={() => openManager(sidebarPanel)}
+            <Menu
+              items={[
+                { label: t("bin_title"), icon: "bin", hint: counts.bin, onSelect: () => openManager("bin") },
+                {
+                  label: t("fullscreen_manage"),
+                  icon: "fullscreen",
+                  onSelect: () => openManager(sidebarPanel),
+                },
+              ]}
+              renderTrigger={({ open, toggle }) => (
+                <IconButton
+                  className="side-expand"
+                  variant="outline"
+                  size="md"
+                  icon="more"
+                  label={t("more_actions")}
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  onClick={toggle}
+                />
+              )}
             />
           </div>
           <div className="side-scroll">
@@ -638,6 +653,7 @@ export default function App() {
             ) : (
               <Drafts
                 compact
+                onChanged={bumpCounts}
                 refreshKey={draftVersion}
                 canQueue={!!configured}
                 onQueue={enqueue}
@@ -707,8 +723,20 @@ export default function App() {
         />
       )}
 
+      {showNewDraft && (
+        <DraftEditorModal
+          onClose={() => setShowNewDraft(false)}
+          onSaved={() => {
+            setDraftVersion((v) => v + 1);
+            setSidebarPanel("drafts");
+          }}
+        />
+      )}
+
       {managerOpen && (
         <FullscreenManager
+          counts={counts}
+          onCountsChanged={bumpCounts}
           initialPanel={managerPanel}
           onClose={() => setManagerOpen(false)}
           addToTray={addToTray}

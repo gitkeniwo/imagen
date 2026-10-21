@@ -5,7 +5,8 @@ import DraftEditorModal from "../components/DraftEditorModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import Icon from "../components/ui/Icon";
-import { Button, IconButton } from "../components/ui/Button";
+import { IconButton } from "../components/ui/Button";
+import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import Segmented from "../components/ui/Segmented";
 
 const COMPACT_PAGE_SIZE = 12;
@@ -28,12 +29,15 @@ export default function Drafts({
   canQueue,
   onQueue,
   onOpenViewer,
+  onChanged,
 }: {
   compact?: boolean;
   refreshKey?: number;
   canQueue: boolean;
   onQueue: (task: TaskSpec) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  // Called after a draft is created or removed, so counts elsewhere refresh.
+  onChanged?: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -127,6 +131,7 @@ export default function Drafts({
       await api.deleteDraft(draft.id);
       setDrafts((prev) => prev.filter((item) => item.id !== draft.id));
       setTotal((value) => Math.max(0, value - 1));
+      onChanged?.();
       toast(t("draft_queued_deleted"));
     } catch (e) {
       toast(t("draft_queued_delete_failed", { msg: (e as Error).message }));
@@ -142,6 +147,7 @@ export default function Drafts({
       await api.deleteDraft(draft.id);
       setDrafts((prev) => prev.filter((item) => item.id !== draft.id));
       setTotal((value) => Math.max(0, value - 1));
+      onChanged?.();
       setDeleting(null);
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
@@ -165,17 +171,24 @@ export default function Drafts({
           onChange={(value) => { setQuery(value); setPage(0); }}
           placeholder={t("search_placeholder_drafts")}
         />
-        <Button variant="primary" className="draft-new-button" icon="add" onClick={() => setCreating(true)}>
-          {t("new_draft")}
-        </Button>
-        <Segmented
-          dense
-          className="draft-columns"
-          title={t("columns_per_row")}
-          value={columns}
-          onChange={setColumns}
-          options={DRAFT_COLUMN_OPTIONS.map((value) => ({ value, label: String(value) }))}
+        <IconButton
+          className="draft-new-button"
+          variant="outline"
+          size="md"
+          icon="add"
+          label={t("new_draft")}
+          onClick={() => setCreating(true)}
         />
+        <ViewPopover>
+          <PopoverSection label={t("columns_per_row")}>
+            <Segmented
+              dense
+              value={columns}
+              onChange={setColumns}
+              options={DRAFT_COLUMN_OPTIONS.map((value) => ({ value, label: String(value) }))}
+            />
+          </PopoverSection>
+        </ViewPopover>
       </div>
       {pager}
 
@@ -304,7 +317,10 @@ export default function Drafts({
       {creating && (
         <DraftEditorModal
           onClose={() => setCreating(false)}
-          onSaved={() => load()}
+          onSaved={() => {
+            load();
+            onChanged?.();
+          }}
         />
       )}
       {editing && (

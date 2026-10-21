@@ -8,7 +8,7 @@ import { useConfirm } from "../components/ConfirmDialog";
 import Icon from "../components/ui/Icon";
 import { Button, IconButton } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
-import Popover from "../components/ui/Popover";
+import { FilterPopover, PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -51,7 +51,6 @@ export default function Library({
   const [tagFilter, setTagFilter] = useState<number | null>(null);
   const [starredOnly, setStarredOnly] = useState(false);
   const [query, setQuery] = useState("");
-  const [densityOpen, setDensityOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -216,31 +215,6 @@ export default function Library({
     <div className={`panel library-panel${compact ? " compact" : ""}`}>
       <div className="library-sticky">
         <div className="library-toolbar">
-          <Segmented
-            className="library-source-seg"
-            value={source}
-            onChange={(val) => {
-              setSource(val);
-              setPage(0);
-            }}
-            options={[
-              { value: "", label: t("filter_all") },
-              { value: "upload", label: t("filter_upload"), icon: "uploaded", iconOnly: true, title: t("filter_upload") },
-              { value: "generated", label: t("filter_generated"), icon: "generated", iconOnly: true, title: t("filter_generated") },
-            ]}
-          />
-          <button
-            className={`tag-chip star-filter${starredOnly ? " on" : ""}`}
-            title={t("star")}
-            aria-label={t("star")}
-            aria-pressed={starredOnly}
-            onClick={() => {
-              setStarredOnly((v) => !v);
-              setPage(0);
-            }}
-          >
-            <Icon name="favorite" size="sm" filled={starredOnly} />
-          </button>
           <SearchBox
             value={query}
             onChange={(q) => {
@@ -249,41 +223,63 @@ export default function Library({
             }}
             placeholder={t("search_placeholder_library")}
           />
-          {compact ? (
-            <Popover
-              className="density-wrap"
-              panelClassName="density-popover"
-              open={densityOpen}
-              onClose={() => setDensityOpen(false)}
-              trigger={
-                <IconButton
-                  className={`density-trigger${densityOpen ? " on" : ""}`}
-                  variant="outline"
-                  icon="columns"
-                  label={t("density")}
-                  aria-expanded={densityOpen}
-                  onClick={() => setDensityOpen((v) => !v)}
-                />
-              }
-            >
-              <span className="muted small">{t("columns_per_row")}</span>
+          <FilterPopover
+            activeCount={(source ? 1 : 0) + (starredOnly ? 1 : 0)}
+            onReset={() => {
+              setSource("");
+              setStarredOnly(false);
+              setPage(0);
+            }}
+          >
+            <PopoverSection label={t("filter_source")}>
               <Segmented
-                dense
-                value={columns}
-                onChange={setColumns}
-                options={GRID_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
+                value={source}
+                onChange={(val) => {
+                  setSource(val);
+                  setPage(0);
+                }}
+                options={[
+                  { value: "", label: t("filter_all") },
+                  { value: "upload", label: t("filter_upload"), icon: "uploaded" },
+                  { value: "generated", label: t("filter_generated"), icon: "generated" },
+                ]}
               />
-            </Popover>
-          ) : (
-            <Segmented
-              dense
-              className="thumb-size-seg"
-              title={t("thumb_size")}
-              value={thumbSize}
-              onChange={setThumbSize}
-              options={THUMB_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))}
-            />
-          )}
+            </PopoverSection>
+            <PopoverSection label={t("filter_content")}>
+              <Button
+                className={`skip-toggle${starredOnly ? " on" : ""}`}
+                icon="favorite"
+                aria-pressed={starredOnly}
+                onClick={() => {
+                  setStarredOnly((v) => !v);
+                  setPage(0);
+                }}
+              >
+                {t("filter_starred_only")}
+              </Button>
+            </PopoverSection>
+          </FilterPopover>
+          <ViewPopover>
+            {compact ? (
+              <PopoverSection label={t("columns_per_row")}>
+                <Segmented
+                  dense
+                  value={columns}
+                  onChange={setColumns}
+                  options={GRID_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
+                />
+              </PopoverSection>
+            ) : (
+              <PopoverSection label={t("thumb_size_label")}>
+                <Segmented
+                  dense
+                  value={thumbSize}
+                  onChange={setThumbSize}
+                  options={THUMB_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))}
+                />
+              </PopoverSection>
+            )}
+          </ViewPopover>
           {!selectMode && (
             <Button
               className="select-toggle"

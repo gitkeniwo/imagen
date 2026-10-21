@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { Button } from "./ui/Button";
+import Segmented from "./ui/Segmented";
 
 export default function SettingsModal({
   onClose,
@@ -14,7 +15,7 @@ export default function SettingsModal({
   undoSeconds: number;
   setUndoSeconds: (n: number) => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang, setLang } = useI18n();
   const [project, setProject] = useState("");
   const [location, setLocation] = useState("global");
   const [library, setLibrary] = useState<{ path: string; desktop: boolean } | null>(null);
@@ -56,9 +57,18 @@ export default function SettingsModal({
     <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 className="mt-0">{t("settings_title")}</h3>
-        <p className="muted small">{t("settings_desc")}</p>
+        <label>{t("settings_language")}</label>
+        <Segmented
+          className="settings-language"
+          value={lang}
+          onChange={setLang}
+          options={[
+            { value: "zh", label: "中文" },
+            { value: "en", label: "English" },
+          ]}
+        />
 
-        <label>{t("settings_library")}</label>
+        <label className="mt-4">{t("settings_library")}</label>
         <div className="library-path-row">
           <div className="library-path">
             {library ? library.path : "—"}
@@ -90,7 +100,8 @@ export default function SettingsModal({
           </p>
         )}
 
-        <label>{t("settings_project")}</label>
+        <label className="mt-4">{t("settings_project")}</label>
+        <p className="muted small m-0 mb-1">{t("settings_desc")}</p>
         <input
           value={project}
           placeholder="my-gcp-project-id"

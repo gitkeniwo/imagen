@@ -10,6 +10,7 @@ import {
   CopyPlus,
   CornerUpLeft,
   Download,
+  Ellipsis,
   Eraser,
   FolderInput,
   History,
@@ -17,7 +18,9 @@ import {
   ImagePlus,
   Images,
   Import,
+  Languages,
   LayoutGrid,
+  ListFilter,
   type LucideIcon,
   Maximize2,
   Minus,
@@ -94,6 +97,9 @@ const ICONS = {
   chevronDown: ChevronDown,
   arrowRight: ArrowRight,
   columns: LayoutGrid,
+  filter: ListFilter,
+  more: Ellipsis,
+  language: Languages,
   imageMissing: ImageOff,
 } satisfies Record<string, LucideIcon>;
 
