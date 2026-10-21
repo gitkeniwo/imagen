@@ -11,6 +11,9 @@ import { downloadImage, markerHex } from "./GenerationCard";
 
 export type HistoryLayout = "grid" | "list";
 
+// Inputs shown as thumbnails on the chip row; the rest collapse into "+N".
+const MAX_CHIP_INPUTS = 3;
+
 // A small text trigger that opens a floating panel with the complete text, so
 // fixed-height cards never grow (and never break row alignment) to show it.
 export function FullTextButton({
@@ -228,7 +231,7 @@ export default function HistoryItem({
         </div>
         <PromptClamp text={g.prompt} lines={2} />
         <div className="hcard-chips">
-          {inputs.map((im) =>
+          {inputs.slice(0, MAX_CHIP_INPUTS).map((im) =>
             im.deleted_at ? (
               <span key={im.id} className="deleted-tile" title={t("deleted_label")}>
                 <Icon name="imageMissing" size="sm" />
@@ -244,11 +247,21 @@ export default function HistoryItem({
               />
             ),
           )}
-          {tags.map((tg) => (
-            <span key={tg.id} className="card-tag">
-              {tg.name}
+          {inputs.length > MAX_CHIP_INPUTS && (
+            <span className="hcard-more" title={t("inputs_n", { n: inputs.length })}>
+              +{inputs.length - MAX_CHIP_INPUTS}
             </span>
-          ))}
+          )}
+          {tags.length > 0 && (
+            <span className="card-tag hcard-tag" title={tags.map((tg) => tg.name).join(", ")}>
+              {tags[0].name}
+            </span>
+          )}
+          {tags.length > 1 && (
+            <span className="hcard-more" title={tags.map((tg) => tg.name).join(", ")}>
+              +{tags.length - 1}
+            </span>
+          )}
         </div>
         <div className="hcard-actions">
           <Button size="sm" icon="reuse" onClick={onReuse} title={t("reuse")}>
