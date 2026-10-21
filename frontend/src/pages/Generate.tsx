@@ -10,10 +10,10 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import ReferenceTray from "../components/ReferenceTray";
-import OptionBar from "../components/OptionBar";
 import QueueList from "../components/QueueList";
-import TagPicker from "../components/TagPicker";
-import { Button, IconButton } from "../components/ui/Button";
+import LibraryPickerModal from "../components/LibraryPickerModal";
+import { ComposerParams, GenerateSplitButton } from "../components/ComposerControls";
+import { Button } from "../components/ui/Button";
 
 const ATTEMPTS_KEY = "imagen-task-attempts";
 
@@ -70,6 +70,7 @@ export default function Generate({
   const [format, setFormat] = useState("image/jpeg");
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [skipIfPrecedingSucceeds, setSkipIfPrecedingSucceeds] = useState(false);
+  const [pickingRefs, setPickingRefs] = useState(false);
   // "Try up to N times": one submit enqueues N copies of the task as a retry
   // group (copies 2..N are auto-skip, so the first success cancels the rest).
   const [attempts, setAttempts] = useState(() => {
@@ -122,16 +123,19 @@ export default function Generate({
 
   return (
     <div>
-      <div className="panel">
-        <ReferenceTray
-          tray={tray}
-          onAdd={addManyToTray}
-          onRemove={removeFromTray}
-          onMove={moveInTray}
-        />
-        <div className="mt-4">
-          <label>{t("prompt")}</label>
+      <div className="panel composer">
+        <div className="composer-box">
+          <ReferenceTray
+            compact
+            tray={tray}
+            onAdd={addManyToTray}
+            onRemove={removeFromTray}
+            onMove={moveInTray}
+            onPickLibrary={() => setPickingRefs(true)}
+          />
           <textarea
+            className="composer-prompt"
+            aria-label={t("prompt")}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
@@ -143,80 +147,43 @@ export default function Generate({
             }}
             placeholder={t("prompt_placeholder")}
           />
-        </div>
-        <div className="mt-4">
-          <OptionBar
-            model={model}
-            setModel={setModel}
-            aspectRatio={aspectRatio}
-            setAspectRatio={setAspectRatio}
-            resolution={resolution}
-            setResolution={setResolution}
-            format={format}
-            setFormat={setFormat}
-          />
-        </div>
-        <div className="mt-4">
-          <label>{t("archive_to")}</label>
-          <TagPicker selected={tagIds} onChange={setTagIds} />
-        </div>
-        <div className="composer-actions">
-          <button
-            className="primary"
-            onClick={submit}
-            disabled={!canSubmit}
-            title={t("submit_shortcut_hint")}
-          >
-            {t("generate")}
-          </button>
-          <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
-            {t("save_draft")}
-          </Button>
-          <span className="muted small">
-            {t("ref_count", { n: tray.length })}
-            {!keyConfigured && t("need_key_inline")}
-          </span>
-          <button
-            className={`skip-toggle${skipIfPrecedingSucceeds ? " on" : ""}`}
-            aria-pressed={skipIfPrecedingSucceeds}
-            onClick={() => setSkipIfPrecedingSucceeds((v) => !v)}
-            title={t("skip_if_preceding_succeeds_title")}
-          >
-            {t("skip_if_preceding_succeeds")}
-          </button>
-          <div className="attempts-field" title={t("attempts_hint")}>
-            <span className="muted small">{t("attempts")}</span>
-            <IconButton
-              variant="outline"
-              icon="remove"
-              label={t("attempts_decrease")}
-              onClick={() => setAttempts((n) => Math.max(1, n - 1))}
-              disabled={attempts <= 1}
+          <div className="composer-bar">
+            <ComposerParams
+              model={model}
+              setModel={setModel}
+              aspectRatio={aspectRatio}
+              setAspectRatio={setAspectRatio}
+              resolution={resolution}
+              setResolution={setResolution}
+              format={format}
+              setFormat={setFormat}
+              tagIds={tagIds}
+              setTagIds={setTagIds}
             />
-            <input
-              type="number"
-              min={1}
-              max={MAX_TASK_ATTEMPTS}
-              value={attempts}
-              onChange={(e) => {
-                const v = Math.floor(Number(e.target.value));
-                if (!Number.isFinite(v)) return;
-                setAttempts(Math.max(1, Math.min(MAX_TASK_ATTEMPTS, v || 1)));
-              }}
-            />
-            <IconButton
-              variant="outline"
-              icon="add"
-              label={t("attempts_increase")}
-              onClick={() =>
-                setAttempts((n) => Math.min(MAX_TASK_ATTEMPTS, n + 1))
-              }
-              disabled={attempts >= MAX_TASK_ATTEMPTS}
+            <div className="spacer" />
+            {!keyConfigured && <span className="muted small">{t("need_key_inline").replace(/^ · /, "")}</span>}
+            <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
+              {t("save_draft")}
+            </Button>
+            <GenerateSplitButton
+              onGenerate={submit}
+              disabled={!canSubmit}
+              attempts={attempts}
+              setAttempts={setAttempts}
+              skip={skipIfPrecedingSucceeds}
+              setSkip={setSkipIfPrecedingSucceeds}
             />
           </div>
-          <div className="spacer" />
         </div>
       </div>
+
+      {pickingRefs && (
+        <LibraryPickerModal
+          mode="multi"
+          onPick={(img) => addManyToTray([img])}
+          onClose={() => setPickingRefs(false)}
+        />
+      )}
 
       <QueueList
         queue={queue}

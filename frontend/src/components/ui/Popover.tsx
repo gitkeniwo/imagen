@@ -14,8 +14,8 @@ const EDGE = 8;
 // Anchored floating panel: closes on outside pointer-down and on Escape.
 // The trigger stays in normal flow; the panel is positioned by `panelClassName`
 // (e.g. `.custom-select-popover`, `.density-popover`). With `fixed`, the panel
-// is placed in viewport coordinates under the trigger (right-aligned, clamped
-// to the window) so a scrolling, overflow-clipped parent cannot cut it off.
+// is placed in viewport coordinates under the trigger (aligned per `align`,
+// clamped to the window) so a scrolling, overflow-clipped parent cannot cut it off.
 export default function Popover({
   open,
   onClose,
@@ -25,6 +25,7 @@ export default function Popover({
   panelClassName,
   panelProps,
   fixed = false,
+  align = "end",
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,6 +35,8 @@ export default function Popover({
   panelClassName?: string;
   panelProps?: HTMLAttributes<HTMLDivElement>;
   fixed?: boolean;
+  // Fixed panels only: which trigger edge the panel lines up with.
+  align?: "start" | "end";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -67,7 +70,8 @@ export default function Popover({
       const anchor = ref.current?.getBoundingClientRect();
       const width = panelRef.current?.offsetWidth ?? 0;
       if (!anchor) return;
-      const left = Math.max(EDGE, Math.min(anchor.right - width, window.innerWidth - width - EDGE));
+      const ideal = align === "start" ? anchor.left : anchor.right - width;
+      const left = Math.max(EDGE, Math.min(ideal, window.innerWidth - width - EDGE));
       setPos({ position: "fixed", top: anchor.bottom + GAP, left, right: "auto" });
     };
     place();
@@ -77,7 +81,7 @@ export default function Popover({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, fixed]);
+  }, [open, fixed, align]);
 
   return (
     <div className={["popover", className].filter(Boolean).join(" ")} ref={ref}>
