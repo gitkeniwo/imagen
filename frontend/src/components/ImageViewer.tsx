@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Generation, ImageRow, downloadName, imgFileUrl, imgThumbUrl } from "../api";
+import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
 import { pressable } from "../a11y";
@@ -7,7 +7,9 @@ import TagPicker from "./TagPicker";
 import { useToast } from "./Toast";
 import AddHistoryModal from "./AddHistoryModal";
 import Icon from "./ui/Icon";
-import { IconButton } from "./ui/Button";
+import { Button, IconButton } from "./ui/Button";
+import Menu from "./ui/Menu";
+import { downloadImage } from "./GenerationCard";
 
 // Full-screen lightbox: big image + metadata + inline tag editing + actions.
 // For generated images it also surfaces the prompt behind the image (copy /
@@ -198,37 +200,82 @@ export default function ImageViewer({
           <img src={imgFileUrl(current.id)} alt={current.filename} />
         </div>
         <div className="viewer-side">
-          <div className="viewer-name-row">
+          <div className="viewer-head">
             <div className="viewer-name">{current.filename}</div>
-            <IconButton
-              className={`viewer-star${starred ? " is-starred" : ""}`}
-              size="md"
-              icon="favorite"
-              filled={starred}
-              label={starred ? t("unfavorite") : t("favorite")}
-              aria-pressed={starred}
-              onClick={toggleStar}
-            />
+            <div className="viewer-head-actions">
+              <IconButton
+                className={`viewer-star${starred ? " is-starred" : ""}`}
+                variant="outline"
+                size="md"
+                icon="favorite"
+                filled={starred}
+                label={starred ? t("unfavorite") : t("favorite")}
+                aria-pressed={starred}
+                onClick={toggleStar}
+              />
+              <IconButton
+                variant="outline"
+                size="md"
+                icon="download"
+                label={t("download")}
+                onClick={() => downloadImage(current)}
+              />
+              <Menu
+                items={[
+                  ...(gen
+                    ? [
+                        { icon: "edit" as const, label: t("edit_annotation"), onSelect: () => setEditingGen(gen) },
+                        { icon: "duplicate" as const, label: t("duplicate_record"), onSelect: () => setDuplicatingGen(gen) },
+                      ]
+                    : []),
+                  {
+                    icon: source === "upload" ? ("generated" as const) : ("uploaded" as const),
+                    label: source === "upload" ? t("mark_as_generated") : t("mark_as_upload"),
+                    onSelect: toggleSource,
+                  },
+                ]}
+                renderTrigger={({ open, toggle }) => (
+                  <IconButton
+                    variant="outline"
+                    size="md"
+                    icon="more"
+                    label={t("more_actions")}
+                    aria-expanded={open}
+                    onClick={toggle}
+                  />
+                )}
+              />
+            </div>
           </div>
-          <div className="muted small">
-            {current.width}×{current.height} ·{" "}
-            <button
-              className="link-btn"
-              title={t("toggle_source_hint")}
-              onClick={toggleSource}
-            >
+          <div className="viewer-meta muted small">
+            <span>{current.width}×{current.height}</span>
+            <span className={`badge source-badge ${source}`}>
+              <Icon name={source === "upload" ? "uploaded" : "generated"} size="sm" />
               {source === "upload" ? t("tag_upload") : t("tag_generated")}
-            </button>
-            {multi && ` · ${idx + 1}/${items.length}`}
+            </span>
+            {multi && <span>{idx + 1}/{items.length}</span>}
+          </div>
+
+          <div className="viewer-actions">
+            <Button variant="primary" icon="addToRefs" onClick={() => onAddToTray(current)}>
+              {t("add_to_input")}
+            </Button>
+            {onReuse && gen && (
+              <Button icon="reuse" onClick={() => onReuse(gen)}>
+                {t("reuse")}
+              </Button>
+            )}
           </div>
 
           {source === "generated" && gen?.prompt && (
             <div className="viewer-prompt">
               <div className="viewer-prompt-head">
                 <label>{t("prompt_label")}</label>
-                <button className="link-btn" onClick={copyPrompt}>
-                  {copied ? t("copied") : t("copy_prompt")}
-                </button>
+                <IconButton
+                  icon={copied ? "check" : "copy"}
+                  label={copied ? t("copied") : t("copy_prompt")}
+                  onClick={copyPrompt}
+                />
               </div>
               <p className="viewer-prompt-text">{gen.prompt}</p>
               {gen.inputs && gen.inputs.length > 0 && (
@@ -255,28 +302,6 @@ export default function ImageViewer({
                   )}
                 </div>
               )}
-              {onReuse && (
-                <button
-                  className="viewer-reuse"
-                  onClick={() => onReuse(gen)}
-                >
-                  {t("reuse")}
-                </button>
-              )}
-              <div className="viewer-prompt-actions">
-                <IconButton
-                  className="icon-btn"
-                  icon="edit"
-                  label={t("edit_annotation")}
-                  onClick={() => setEditingGen(gen)}
-                />
-                <IconButton
-                  className="icon-btn"
-                  icon="duplicate"
-                  label={t("duplicate")}
-                  onClick={() => setDuplicatingGen(gen)}
-                />
-              </div>
             </div>
           )}
 
@@ -297,12 +322,6 @@ export default function ImageViewer({
           <label className="mt-4">{t("tags_label")}</label>
           <TagPicker selected={tagIds} onChange={applyTags} />
 
-          <div className="row mt-4">
-            <button onClick={() => onAddToTray(current)}>{t("add_to_input")}</button>
-            <a href={imgFileUrl(current.id)} download={downloadName(current)}>
-              <button className="w-full">{t("download")}</button>
-            </a>
-          </div>
         </div>
       </div>
 
