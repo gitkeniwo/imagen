@@ -13,7 +13,7 @@ export type HistoryLayout = "grid" | "list";
 
 // A small text trigger that opens a floating panel with the complete text, so
 // fixed-height cards never grow (and never break row alignment) to show it.
-function FullTextButton({
+export function FullTextButton({
   label,
   title,
   text,
@@ -68,7 +68,7 @@ function FullTextButton({
 
 // Prompt clamped to a fixed number of lines; "Full text" appears only when it
 // actually overflows (measured, so sidebar width changes count).
-function PromptClamp({ text, lines }: { text: string; lines: number }) {
+export function PromptClamp({ text, lines }: { text: string; lines: number }) {
   const { t } = useI18n();
   const ref = useRef<HTMLParagraphElement>(null);
   const [overflows, setOverflows] = useState(false);
