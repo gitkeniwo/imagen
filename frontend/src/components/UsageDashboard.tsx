@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, CostBasisRow, MODELS, StatPeriod, Stats } from "../api";
 import { useI18n } from "../i18n";
+import Icon from "./ui/Icon";
+import { IconButton } from "./ui/Button";
+import Segmented from "./ui/Segmented";
 
 // Full-screen usage dashboard (mirrors FullscreenManager's overlay shell).
 // A single period selector (day/week/month/year/all) scopes the WHOLE panel —
@@ -145,14 +148,16 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   return (
     <div className="manager-overlay" role="dialog" aria-modal="true">
       <div className="manager-header">
-        <h3 style={{ margin: 0 }}>📊 {t("usage_title")}</h3>
-        <div className="seg density-seg" title={t("usage_period")}>
-          {PERIODS.map((b) => (
-            <button key={b} className={period === b ? "on" : ""} onClick={() => setPeriod(b)}>
-              {t(`bucket_${b}`)}
-            </button>
-          ))}
-        </div>
+        <h3 className="m-0 manager-title">
+          <Icon name="usage" /> {t("usage_title")}
+        </h3>
+        <Segmented
+          dense
+          title={t("usage_period")}
+          value={period}
+          onChange={setPeriod}
+          options={PERIODS.map((b) => ({ value: b, label: t(`bucket_${b}`) }))}
+        />
         {stats?.first_at && (
           <span className="muted small">
             {t("usage_range", {
@@ -161,9 +166,14 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
             })}
           </span>
         )}
-        <button className="manager-close" title={t("close")} onClick={onClose}>
-          ×
-        </button>
+        <IconButton
+          className="manager-close"
+          variant="outline"
+          size="md"
+          icon="close"
+          label={t("close")}
+          onClick={onClose}
+        />
       </div>
 
       <div className="manager-body">
@@ -283,10 +293,10 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
             {/* Cost estimate (scoped to the selected period) */}
             <div className="panel">
               <h4 className="dash-h">{t("cost_estimate")}</h4>
-              <p className="muted small" style={{ marginTop: 0 }}>{t("cost_estimate_note")}</p>
+              <p className="muted small mt-0">{t("cost_estimate_note")}</p>
               <p className="muted small">{t("cost_example_note")}</p>
               <div className="cost-currency-row">
-                <label style={{ margin: 0 }}>{t("cost_currency")}</label>
+                <label className="m-0">{t("cost_currency")}</label>
                 <input
                   className="cost-currency-input"
                   value={currency}
@@ -328,8 +338,8 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={3} style={{ textAlign: "right", fontWeight: 600 }}>{t("cost_total")}</td>
-                    <td style={{ fontWeight: 700 }}>{currency}{costTotal.toFixed(2)}</td>
+                    <td colSpan={3} className="cost-total-label">{t("cost_total")}</td>
+                    <td className="cost-total-value">{currency}{costTotal.toFixed(2)}</td>
                   </tr>
                 </tfoot>
               </table>

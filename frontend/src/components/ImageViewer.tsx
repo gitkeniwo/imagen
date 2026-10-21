@@ -6,6 +6,8 @@ import { pressable } from "../a11y";
 import TagPicker from "./TagPicker";
 import { useToast } from "./Toast";
 import AddHistoryModal from "./AddHistoryModal";
+import Icon from "./ui/Icon";
+import { IconButton } from "./ui/Button";
 
 // Full-screen lightbox: big image + metadata + inline tag editing + actions.
 // For generated images it also surfaces the prompt behind the image (copy /
@@ -168,20 +170,27 @@ export default function ImageViewer({
 
   return (
     <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={onClose}>
-      <button className="viewer-close" title={t("close")} onClick={onClose}>
-        ×
-      </button>
+      <IconButton
+        className="viewer-close"
+        variant="overlay"
+        size="lg"
+        icon="close"
+        label={t("close")}
+        onClick={onClose}
+      />
       {multi && (
-        <button
+        <IconButton
           className="viewer-nav prev"
+          variant="overlay"
+          size="lg"
+          icon="prev"
+          label={t("prev_image")}
           disabled={idx === 0}
           onClick={(e) => {
             e.stopPropagation();
             setIdx((i) => Math.max(0, i - 1));
           }}
-        >
-          ‹
-        </button>
+        />
       )}
 
       <div className="viewer-body" onClick={(e) => e.stopPropagation()}>
@@ -191,13 +200,15 @@ export default function ImageViewer({
         <div className="viewer-side">
           <div className="viewer-name-row">
             <div className="viewer-name">{current.filename}</div>
-            <button
-              className={`star viewer-star${starred ? " is-starred" : ""}`}
-              title={starred ? t("unfavorite") : t("favorite")}
+            <IconButton
+              className={`viewer-star${starred ? " is-starred" : ""}`}
+              size="md"
+              icon="favorite"
+              filled={starred}
+              label={starred ? t("unfavorite") : t("favorite")}
+              aria-pressed={starred}
               onClick={toggleStar}
-            >
-              {starred ? "★" : "☆"}
-            </button>
+            />
           </div>
           <div className="muted small">
             {current.width}×{current.height} ·{" "}
@@ -229,7 +240,7 @@ export default function ImageViewer({
                         className="deleted-tile"
                         title={t("deleted_label")}
                       >
-                        <i className="fa-solid fa-trash-can" />
+                        <Icon name="imageMissing" />
                       </span>
                     ) : (
                       <img
@@ -253,27 +264,25 @@ export default function ImageViewer({
                 </button>
               )}
               <div className="viewer-prompt-actions">
-                <button
+                <IconButton
                   className="icon-btn"
-                  title={t("edit_annotation")}
+                  icon="edit"
+                  label={t("edit_annotation")}
                   onClick={() => setEditingGen(gen)}
-                >
-                  <i className="fa-solid fa-pen" />
-                </button>
-                <button
+                />
+                <IconButton
                   className="icon-btn"
-                  title={t("duplicate")}
+                  icon="duplicate"
+                  label={t("duplicate")}
                   onClick={() => setDuplicatingGen(gen)}
-                >
-                  <i className="fa-solid fa-clone" />
-                </button>
+                />
               </div>
             </div>
           )}
 
           {source === "generated" && (
             <>
-              <label style={{ marginTop: 16 }}>{t("note_label")}</label>
+              <label className="mt-4">{t("note_label")}</label>
               <textarea
                 className="viewer-note"
                 rows={2}
@@ -285,29 +294,31 @@ export default function ImageViewer({
             </>
           )}
 
-          <label style={{ marginTop: 16 }}>{t("tags_label")}</label>
+          <label className="mt-4">{t("tags_label")}</label>
           <TagPicker selected={tagIds} onChange={applyTags} />
 
-          <div className="row" style={{ marginTop: 16 }}>
+          <div className="row mt-4">
             <button onClick={() => onAddToTray(current)}>{t("add_to_input")}</button>
             <a href={imgFileUrl(current.id)} download={downloadName(current)}>
-              <button style={{ width: "100%" }}>{t("download")}</button>
+              <button className="w-full">{t("download")}</button>
             </a>
           </div>
         </div>
       </div>
 
       {multi && (
-        <button
+        <IconButton
           className="viewer-nav next"
+          variant="overlay"
+          size="lg"
+          icon="next"
+          label={t("next_image")}
           disabled={idx === items.length - 1}
           onClick={(e) => {
             e.stopPropagation();
             setIdx((i) => Math.min(items.length - 1, i + 1));
           }}
-        >
-          ›
-        </button>
+        />
       )}
 
       {editingGen && (

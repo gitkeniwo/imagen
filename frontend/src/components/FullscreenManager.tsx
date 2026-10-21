@@ -6,6 +6,8 @@ import History from "../pages/History";
 import Favorites from "../pages/Favorites";
 import Bin from "../pages/Bin";
 import Drafts from "../pages/Drafts";
+import Icon, { type IconName } from "./ui/Icon";
+import { IconButton } from "./ui/Button";
 
 export type ManagerPanel = "library" | "history" | "favorites" | "drafts" | "bin";
 
@@ -68,26 +70,33 @@ export default function FullscreenManager({
         <div className="side-tabs manager-tabs">
           {(
             [
-              ["library", "fa-images"],
-              ["history", "fa-clock-rotate-left"],
-              ["favorites", "fa-star"],
-              ["drafts", "fa-box-archive"],
-              ["bin", "fa-trash-can"],
-            ] as [ManagerPanel, string][]
+              ["library", "library"],
+              ["history", "history"],
+              ["favorites", "favorite"],
+              ["drafts", "drafts"],
+              ["bin", "bin"],
+            ] as [ManagerPanel, IconName][]
           ).map(([p, icon]) => (
             <button
               key={p}
               className={`tab${panel === p ? " active" : ""}`}
               title={t(`tab_${p}`)}
+              aria-label={t(`tab_${p}`)}
+              aria-pressed={panel === p}
               onClick={() => setPanel(p)}
             >
-              <i className={`fa-solid ${icon}`} />
+              <Icon name={icon} />
             </button>
           ))}
         </div>
-        <button className="manager-close" title={t("close")} onClick={onClose}>
-          ×
-        </button>
+        <IconButton
+          className="manager-close"
+          variant="outline"
+          size="md"
+          icon="close"
+          label={t("close")}
+          onClick={onClose}
+        />
       </div>
       <div className="manager-body">
         {panel === "library" ? (

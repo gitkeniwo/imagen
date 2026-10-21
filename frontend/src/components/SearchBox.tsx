@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
+import Icon from "./ui/Icon";
+import { IconButton } from "./ui/Button";
 
 const DEBOUNCE_MS = 250;
 
@@ -42,9 +44,7 @@ export default function SearchBox({
 
   return (
     <div className="searchbox">
-      <span className="searchbox-icon" aria-hidden>
-        🔍
-      </span>
+      <Icon name="search" size="sm" className="searchbox-icon" />
       <input
         value={text}
         placeholder={placeholder}
@@ -57,14 +57,12 @@ export default function SearchBox({
         }}
       />
       {text && (
-        <button
-          type="button"
+        <IconButton
           className="searchbox-clear"
-          title={t("clear_search")}
+          icon="close"
+          label={t("clear_search")}
           onClick={clear}
-        >
-          ✕
-        </button>
+        />
       )}
     </div>
   );

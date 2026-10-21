@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ImageRow } from "../api";
 import { useI18n } from "../i18n";
 import Library from "../pages/Library";
+import { IconButton } from "./ui/Button";
 
 // Full-screen Library browser for picking existing images into a form that
 // isn't wired to the app-level tray (e.g. AddHistoryModal's local state).
@@ -35,10 +36,15 @@ export default function LibraryPickerModal({
   return createPortal(
     <div className="manager-overlay" onClick={(e) => e.stopPropagation()}>
       <div className="manager-header">
-        <span style={{ fontWeight: 600 }}>{t("pick_from_library")}</span>
-        <button className="manager-close" title={t("close")} onClick={onClose}>
-          ×
-        </button>
+        <span className="manager-title">{t("pick_from_library")}</span>
+        <IconButton
+          className="manager-close"
+          variant="outline"
+          size="md"
+          icon="close"
+          label={t("close")}
+          onClick={onClose}
+        />
       </div>
       <div className="manager-body">
         <Library addToTray={handlePick} onOpenViewer={() => {}} />

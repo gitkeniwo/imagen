@@ -14,6 +14,9 @@ import CustomSelect from "./CustomSelect";
 import LibraryPickerModal from "./LibraryPickerModal";
 import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
+import Icon from "./ui/Icon";
+import { Button, IconButton } from "./ui/Button";
+import Segmented from "./ui/Segmented";
 
 type Kind = "vertex" | "manual" | "draft";
 const KINDS: Kind[] = ["vertex", "manual", "draft"];
@@ -243,11 +246,10 @@ export default function AddHistoryModal({
       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
       <div
-        className="modal"
-        style={{ width: 640, maxHeight: "88vh", overflowY: "auto" }}
+        className="modal modal-wide"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ marginTop: 0 }}>
+        <h3 className="mt-0">
           {existing ? t("edit_history_title") : t("add_history_title")}
         </h3>
         <p className="muted small">
@@ -261,7 +263,7 @@ export default function AddHistoryModal({
           onChange={(e) => setPrompt(e.target.value)}
         />
 
-        <div style={{ marginTop: 14 }}>
+        <div className="mt-4">
           <ReferenceTray
             tray={inputImages}
             onAdd={(imgs) => setInputImages((prev) => [...prev, ...imgs])}
@@ -269,16 +271,12 @@ export default function AddHistoryModal({
             onMove={moveInput}
             noGlobalDrop
           />
-          <button
-            type="button"
-            style={{ marginTop: 8 }}
-            onClick={() => setPicker("input")}
-          >
-            <i className="fa-solid fa-images" /> {t("pick_from_library")}
-          </button>
+          <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("input")}>
+            {t("pick_from_library")}
+          </Button>
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div className="mt-4">
           <label>{t("add_history_output")}</label>
           <div
             className={`tray dropzone-wrap${outputDrag ? " drag" : ""}`}
@@ -299,14 +297,23 @@ export default function AddHistoryModal({
             {outputImages.map((im) => (
               <div className="chip" key={im.id} title={im.filename}>
                 <img src={imgThumbUrl(im.id)} alt={im.filename} />
-                <button className="x" onClick={() => removeOutput(im.id)}>
-                  ×
-                </button>
+                <IconButton
+                  className="x"
+                  variant="overlay"
+                  icon="close"
+                  label={t("remove_ref")}
+                  onClick={() => removeOutput(im.id)}
+                />
               </div>
             ))}
             {(isCreate || outputImages.length === 0) && (
-              <label className={`dropzone${outputDrag ? " drag" : ""}`} style={{ cursor: "pointer" }}>
-                {outputBusy ? <span className="spinner" /> : <span>{t("tray_upload")}</span>}
+              <label className={`dropzone${outputDrag ? " drag" : ""}`}>
+                {outputBusy ? <span className="spinner" /> : (
+                  <span className="dropzone-label">
+                    <Icon name="upload" />
+                    {t("tray_upload")}
+                  </span>
+                )}
                 <input
                   type="file"
                   accept="image/*"
@@ -321,21 +328,17 @@ export default function AddHistoryModal({
             )}
           </div>
           {(isCreate || outputImages.length === 0) && (
-            <button
-              type="button"
-              style={{ marginTop: 8 }}
-              onClick={() => setPicker("output")}
-            >
-              <i className="fa-solid fa-images" /> {t("pick_from_library")}
-            </button>
+            <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("output")}>
+              {t("pick_from_library")}
+            </Button>
           )}
           {isCreate && outputImages.length > 1 && (
-            <p className="muted small" style={{ marginTop: 6 }}>
+            <p className="muted small mt-1_5">
               {t("batch_output_hint", { n: outputImages.length })}
             </p>
           )}
           {outputImages.length > 0 && kind !== "draft" && (
-            <div style={{ marginTop: 10 }}>
+            <div className="mt-2_5">
               <label>{t("note_label")}</label>
               <textarea
                 rows={2}
@@ -343,19 +346,19 @@ export default function AddHistoryModal({
                 placeholder={t("note_placeholder")}
                 onChange={(e) => setOutputNote(e.target.value)}
               />
-              <label style={{ marginTop: 8 }}>{t("tags_label")}</label>
+              <label className="mt-2">{t("tags_label")}</label>
               <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
             </div>
           )}
           {kind === "draft" && (
-            <div style={{ marginTop: 10 }}>
+            <div className="mt-2_5">
               <label>{t("archive_to")}</label>
               <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
             </div>
           )}
         </div>
 
-        <div className="row" style={{ marginTop: 14 }}>
+        <div className="row mt-4">
           <div>
             <label>{t("model")}</label>
             <CustomSelect
@@ -366,22 +369,15 @@ export default function AddHistoryModal({
           </div>
           <div>
             <label>{t("resolution")}</label>
-            <div className="seg">
-              {RESOLUTIONS.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  className={resolution === r ? "on" : ""}
-                  onClick={() => setResolution(r)}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              value={resolution}
+              onChange={setResolution}
+              options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+            />
           </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div className="mt-4">
           <label>{t("aspect")}</label>
           <div className="aspect-row">
             {ASPECT_RATIOS.map((r) => {
@@ -391,6 +387,7 @@ export default function AddHistoryModal({
                   key={r}
                   type="button"
                   className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
+                  aria-pressed={aspectRatio === r}
                   onClick={() => setAspectRatio(r)}
                   title={r}
                 >
@@ -402,52 +399,42 @@ export default function AddHistoryModal({
           </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div className="mt-4">
           <label>{t("add_history_kind")}</label>
-          <div className="seg">
-            {(existing ? KINDS.filter((k) => k !== "draft") : KINDS).map((k) => (
-              <button
-                key={k}
-                type="button"
-                className={kind === k ? "on" : ""}
-                onClick={() => setKind(k)}
-              >
-                {k === "vertex"
+          <Segmented
+            value={kind}
+            onChange={setKind}
+            options={(existing ? KINDS.filter((k) => k !== "draft") : KINDS).map((k) => ({
+              value: k,
+              label:
+                k === "vertex"
                   ? t("hist_filter_vertex")
                   : k === "manual"
                   ? t("hist_filter_manual")
-                  : t("status_draft")}
-              </button>
-            ))}
-          </div>
+                  : t("status_draft"),
+            }))}
+          />
         </div>
 
         {kind !== "draft" && (
-          <div style={{ marginTop: 14 }}>
+          <div className="mt-4">
             <label>{t("add_history_status")}</label>
-            <div className="seg">
-              {REAL_STATUSES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className={status === s ? "on" : ""}
-                  onClick={() => setStatus(s)}
-                >
-                  {t(`status_${s}`)}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              value={status}
+              onChange={setStatus}
+              options={REAL_STATUSES.map((st) => ({ value: st, label: t(`status_${st}`) }))}
+            />
           </div>
         )}
 
         {kind !== "draft" && (status === "blocked" || status === "error") && (
-          <div style={{ marginTop: 14 }}>
+          <div className="mt-4">
             <label>{t("add_history_error_message")}</label>
             <textarea value={errorMessage} onChange={(e) => setErrorMessage(e.target.value)} />
           </div>
         )}
 
-        {kind !== "draft" && <div style={{ marginTop: 14 }}>
+        {kind !== "draft" && <div className="mt-4">
           <label>{t("add_history_created_at")}</label>
           <input
             type="datetime-local"
@@ -457,12 +444,12 @@ export default function AddHistoryModal({
         </div>}
 
         {err && (
-          <div className="notice error small" style={{ marginTop: 12 }}>
+          <div className="notice error small mt-3">
             {err}
           </div>
         )}
 
-        <div className="row" style={{ marginTop: 18 }}>
+        <div className="row mt-5">
           <button onClick={onClose}>{t("cancel")}</button>
           <button className="primary" onClick={save} disabled={saving}>
             {saving ? t("saving") : t("save")}

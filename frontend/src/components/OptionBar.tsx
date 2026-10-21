@@ -1,6 +1,7 @@
 import { ASPECT_RATIOS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "../api";
 import { useI18n } from "../i18n";
 import CustomSelect from "./CustomSelect";
+import Segmented from "./ui/Segmented";
 
 export default function OptionBar({
   model,
@@ -40,36 +41,24 @@ export default function OptionBar({
             {t("resolution")}
             {!isPro && t("pro_only")}
           </label>
-          <div className="seg">
-            {RESOLUTIONS.map((r) => (
-              <button
-                key={r}
-                className={resolution === r ? "on" : ""}
-                disabled={!isPro}
-                onClick={() => setResolution(r)}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            value={resolution}
+            onChange={setResolution}
+            disabled={!isPro}
+            options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+          />
         </div>
         <div>
           <label>{t("format")}</label>
-          <div className="seg">
-            {OUTPUT_FORMATS.map((f) => (
-              <button
-                key={f.id}
-                className={format === f.id ? "on" : ""}
-                onClick={() => setFormat(f.id)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            value={format}
+            onChange={setFormat}
+            options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
+          />
         </div>
       </div>
 
-      <div style={{ marginTop: 14 }}>
+      <div className="mt-4">
         <label>{t("aspect")}</label>
         <div className="aspect-row">
           {ASPECT_RATIOS.map((r) => {
@@ -78,6 +67,7 @@ export default function OptionBar({
               <button
                 key={r}
                 className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
+                aria-pressed={aspectRatio === r}
                 onClick={() => setAspectRatio(r)}
                 title={r}
               >

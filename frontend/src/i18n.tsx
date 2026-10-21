@@ -47,7 +47,7 @@ const zh: Dict = {
 
   tray_label:
     "参考图（上传新图或从图库选取；拖动可排序）",
-  tray_upload: "＋ 拖入 / 点击上传",
+  tray_upload: "拖入 / 点击上传",
   tray_drop_title: "拖入图片以上传",
   tray_drop_hint: "图片将被加入当前参考列表",
 
@@ -101,6 +101,7 @@ const zh: Dict = {
   search_placeholder_library: "搜索文件名 / 标签…",
   search_placeholder_history: "搜索提示词…",
   clear_search: "清除搜索",
+  remove_ref: "移除参考图",
   no_results: "没有匹配的结果",
   clear_filters: "清除筛选",
   loading: "加载中…",
@@ -110,6 +111,8 @@ const zh: Dict = {
   op_failed: "操作失败：{msg}",
   submit_shortcut_hint: "也可用 Cmd/Ctrl + Enter 提交",
   prev_page: "上一页",
+  prev_image: "上一张",
+  next_image: "下一张",
   next_page: "下一页",
   page_status: "第 {page}/{pages} 页 · 共 {total}",
   lib_empty: "图库是空的——在生成页上传一些图片吧。",
@@ -296,6 +299,8 @@ const zh: Dict = {
   attempts: "重试次数",
   attempts_hint:
     "一次提交排入 N 个相同任务：第一个按当前“自动跳过”设置，其余自动开启自动跳过——任意一次成功后，本组剩余任务自动跳过，不影响后续其它任务。",
+  attempts_decrease: "减少重试次数",
+  attempts_increase: "增加重试次数",
 };
 
 const en: Dict = {
@@ -341,7 +346,7 @@ const en: Dict = {
 
   tray_label:
     "Reference images (upload new ones or pick from the library; drag to reorder)",
-  tray_upload: "＋ Drag / click to upload",
+  tray_upload: "Drag / click to upload",
   tray_drop_title: "Drop images to upload",
   tray_drop_hint: "Images will be added to the current reference list",
 
@@ -395,6 +400,7 @@ const en: Dict = {
   search_placeholder_library: "Search filename / tag…",
   search_placeholder_history: "Search prompt…",
   clear_search: "Clear search",
+  remove_ref: "Remove reference image",
   no_results: "No matching results",
   clear_filters: "Clear filters",
   loading: "Loading…",
@@ -404,6 +410,8 @@ const en: Dict = {
   op_failed: "Action failed: {msg}",
   submit_shortcut_hint: "Cmd/Ctrl + Enter also submits",
   prev_page: "Prev",
+  prev_image: "Previous image",
+  next_image: "Next image",
   next_page: "Next",
   page_status: "Page {page}/{pages} · {total}",
   lib_empty: "The library is empty — upload some images on the Generate page.",
@@ -589,6 +597,8 @@ const en: Dict = {
   attempts: "Tries",
   attempts_hint:
     "One submit enqueues N copies of this task: the first uses the Auto-skip toggle, the rest are auto-skip. The first success cancels the remaining copies of this task only — later tasks are unaffected.",
+  attempts_decrease: "Fewer tries",
+  attempts_increase: "More tries",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };

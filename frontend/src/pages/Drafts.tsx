@@ -4,6 +4,9 @@ import { useI18n } from "../i18n";
 import DraftEditorModal from "../components/DraftEditorModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
+import Icon from "../components/ui/Icon";
+import { Button, IconButton } from "../components/ui/Button";
+import Segmented from "../components/ui/Segmented";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -162,20 +165,17 @@ export default function Drafts({
           onChange={(value) => { setQuery(value); setPage(0); }}
           placeholder={t("search_placeholder_drafts")}
         />
-        <button className="primary draft-new-button" onClick={() => setCreating(true)}>
-          <i className="fa-solid fa-plus" /> {t("new_draft")}
-        </button>
-        <div className="seg density-seg draft-columns" title={t("columns_per_row")}>
-          {DRAFT_COLUMN_OPTIONS.map((value) => (
-            <button
-              key={value}
-              className={columns === value ? "on" : ""}
-              onClick={() => setColumns(value)}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
+        <Button variant="primary" className="draft-new-button" icon="add" onClick={() => setCreating(true)}>
+          {t("new_draft")}
+        </Button>
+        <Segmented
+          dense
+          className="draft-columns"
+          title={t("columns_per_row")}
+          value={columns}
+          onChange={setColumns}
+          options={DRAFT_COLUMN_OPTIONS.map((value) => ({ value, label: String(value) }))}
+        />
       </div>
       {pager}
 
@@ -203,20 +203,24 @@ export default function Drafts({
             return (
             <div className={`panel draft-card${draft.pinned ? " pinned" : ""}`} key={draft.id}>
               <div className="draft-card-head">
-                <button
+                <IconButton
                   className={`icon-btn draft-pin${draft.pinned ? " is-pinned" : ""}`}
-                  title={draft.pinned ? t("unpin_draft") : t("pin_draft")}
+                  icon="pin"
+                  filled={!!draft.pinned}
+                  label={draft.pinned ? t("unpin_draft") : t("pin_draft")}
+                  aria-pressed={!!draft.pinned}
                   onClick={() => togglePin(draft)}
-                >
-                  <i className="fa-solid fa-thumbtack" />
-                </button>
+                />
                 <span className="muted small">{draft.model.replace("-image", "")}</span>
                 {draft.aspect_ratio && <span className="muted small">· {draft.aspect_ratio}</span>}
                 {draft.resolution && <span className="muted small">· {draft.resolution}</span>}
                 <div className="spacer" />
-                <button className="icon-btn" title={t("edit_draft")} onClick={() => setEditing(draft)}>
-                  <i className="fa-solid fa-sliders" />
-                </button>
+                <IconButton
+                  className="icon-btn"
+                  icon="editSettings"
+                  label={t("edit_draft")}
+                  onClick={() => setEditing(draft)}
+                />
               </div>
 
               {editingPrompt === draft.id ? (
@@ -245,13 +249,12 @@ export default function Drafts({
                     <p className={expanded.has(draft.id) ? "expanded" : ""}>
                       {draft.prompt || t("draft_empty_prompt")}
                     </p>
-                    <button
+                    <IconButton
                       className="q-icon-btn"
-                      title={t("edit_prompt_inline")}
+                      icon="edit"
+                      label={t("edit_prompt_inline")}
                       onClick={() => { setPromptValue(draft.prompt); setEditingPrompt(draft.id); }}
-                    >
-                      <i className="fa-solid fa-pen" />
-                    </button>
+                    />
                   </div>
                   {promptNeedsToggle && (
                     <button className="link-btn" onClick={() => toggleExpanded(draft.id)}>
@@ -267,7 +270,7 @@ export default function Drafts({
                   images={draft.inputImages}
                   onOpenViewer={onOpenViewer}
                 />
-                <span className="arrow">→</span>
+                <span className="arrow" aria-hidden="true"><Icon name="arrowRight" /></span>
                 <DraftImages
                   label={t("draft_outputs")}
                   images={draft.outputImages}
@@ -331,7 +334,7 @@ function DraftImages({
       <div className="draft-thumbs">
         {images.map((img) => img.deleted_at ? (
           <span className="deleted-tile" key={img.id} title={t("deleted_label")}>
-            <i className="fa-solid fa-trash-can" />
+            <Icon name="imageMissing" />
           </span>
         ) : (
           <img

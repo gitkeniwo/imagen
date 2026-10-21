@@ -106,7 +106,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           onClick={() => close(false)}
         >
           <div className="modal confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <h3 id="confirm-dialog-title" style={{ marginTop: 0 }}>
+            <h3 id="confirm-dialog-title" className="mt-0">
               {title}
             </h3>
             <p id="confirm-dialog-message" className="confirm-message">

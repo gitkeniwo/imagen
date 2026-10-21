@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import { Button } from "./ui/Button";
 
 export default function SettingsModal({
   onClose,
@@ -54,52 +55,37 @@ export default function SettingsModal({
   return (
     <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0 }}>{t("settings_title")}</h3>
+        <h3 className="mt-0">{t("settings_title")}</h3>
         <p className="muted small">{t("settings_desc")}</p>
 
         <label>{t("settings_library")}</label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div
-            style={{
-              flex: "1 1 180px",
-              minWidth: 0,
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-              fontSize: 12,
-              background: "var(--surface-2, rgba(127,127,127,.08))",
-              border: "1px solid var(--border, rgba(127,127,127,.18))",
-              borderRadius: 8,
-              padding: "8px 10px",
-              overflowWrap: "anywhere",
-              userSelect: "text",
-            }}
-          >
+        <div className="library-path-row">
+          <div className="library-path">
             {library ? library.path : "—"}
           </div>
           {library?.desktop && (
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              <button
-                type="button"
-                style={{ fontSize: 12, padding: "7px 10px" }}
+            <div className="library-path-actions">
+              <Button
+                size="sm"
                 onClick={() => {
                   window.location.href = "imagen-action://change-library";
                 }}
               >
                 {t("settings_change_library")}
-              </button>
-              <button
-                type="button"
-                style={{ fontSize: 12, padding: "7px 10px" }}
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => {
                   window.location.href = "imagen-action://reveal-library";
                 }}
               >
                 {t("settings_reveal_library")}
-              </button>
+              </Button>
             </div>
           )}
         </div>
         {library?.desktop && (
-          <p className="muted small" style={{ marginTop: 6 }}>
+          <p className="muted small mt-1_5">
             {t("settings_library_hint")}
           </p>
         )}
@@ -112,18 +98,18 @@ export default function SettingsModal({
           autoFocus
         />
 
-        <label style={{ marginTop: 12 }}>{t("settings_location")}</label>
+        <label className="mt-3">{t("settings_location")}</label>
         <input
           value={location}
           placeholder="global"
           onChange={(e) => setLocation(e.target.value)}
         />
 
-        <p className="muted small" style={{ marginTop: 12 }}>
+        <p className="muted small mt-3">
           {t("settings_adc_hint")}
         </p>
 
-        <label style={{ marginTop: 12 }}>{t("undo_send_seconds")}</label>
+        <label className="mt-3">{t("undo_send_seconds")}</label>
         <input
           type="number"
           min={0}
@@ -134,16 +120,16 @@ export default function SettingsModal({
             if (Number.isFinite(v)) setUndoSeconds(Math.min(60, Math.max(0, Math.round(v))));
           }}
         />
-        <p className="muted small" style={{ marginTop: 6 }}>
+        <p className="muted small mt-1_5">
           {t("undo_send_seconds_hint")}
         </p>
 
         {err && (
-          <div className="notice error small" style={{ marginTop: 12 }}>
+          <div className="notice error small mt-3">
             {err}
           </div>
         )}
-        <div className="row" style={{ marginTop: 18 }}>
+        <div className="row mt-5">
           <button onClick={onClose}>{t("cancel")}</button>
           <button
             className="primary"

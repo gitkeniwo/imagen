@@ -1,10 +1,14 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import Icon from "../components/ui/Icon";
+import { Button, IconButton } from "../components/ui/Button";
+import Segmented from "../components/ui/Segmented";
+import Popover from "../components/ui/Popover";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -48,7 +52,6 @@ export default function Library({
   const [starredOnly, setStarredOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [densityOpen, setDensityOpen] = useState(false);
-  const densityRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -97,16 +100,6 @@ export default function Library({
   useEffect(() => {
     localStorage.setItem(THUMB_SIZE_KEY, thumbSize);
   }, [thumbSize]);
-
-  // Close the density popover on outside click.
-  useEffect(() => {
-    if (!densityOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!densityRef.current?.contains(e.target as Node)) setDensityOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [densityOpen]);
 
   const hasActiveFilters =
     !!query || starredOnly || !!source || tagFilter !== null;
@@ -223,34 +216,30 @@ export default function Library({
     <div className={`panel library-panel${compact ? " compact" : ""}`}>
       <div className="library-sticky">
         <div className="library-toolbar">
-          <div className="seg library-source-seg">
-            {[
-              ["", t("filter_all"), null],
-              ["upload", t("filter_upload"), "fa-upload"],
-              ["generated", t("filter_generated"), "fa-robot"],
-            ].map(([val, label, icon]) => (
-              <button
-                key={val}
-                className={source === val ? "on" : ""}
-                title={label as string}
-                onClick={() => {
-                  setSource(val as string);
-                  setPage(0);
-                }}
-              >
-                {icon ? <i className={`fa-solid ${icon}`} /> : label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            className="library-source-seg"
+            value={source}
+            onChange={(val) => {
+              setSource(val);
+              setPage(0);
+            }}
+            options={[
+              { value: "", label: t("filter_all") },
+              { value: "upload", label: t("filter_upload"), icon: "uploaded", iconOnly: true, title: t("filter_upload") },
+              { value: "generated", label: t("filter_generated"), icon: "generated", iconOnly: true, title: t("filter_generated") },
+            ]}
+          />
           <button
             className={`tag-chip star-filter${starredOnly ? " on" : ""}`}
             title={t("star")}
+            aria-label={t("star")}
+            aria-pressed={starredOnly}
             onClick={() => {
               setStarredOnly((v) => !v);
               setPage(0);
             }}
           >
-            {starredOnly ? "★" : "☆"}
+            <Icon name="favorite" size="sm" filled={starredOnly} />
           </button>
           <SearchBox
             value={query}
@@ -261,55 +250,52 @@ export default function Library({
             placeholder={t("search_placeholder_library")}
           />
           {compact ? (
-            <div className="density-wrap" ref={densityRef}>
-              <button
-                className={`density-trigger${densityOpen ? " on" : ""}`}
-                title={t("density")}
-                onClick={() => setDensityOpen((v) => !v)}
-              >
-                <i className="fa-solid fa-table-cells-large" />
-              </button>
-              {densityOpen && (
-                <div className="density-popover">
-                  <span className="muted small">{t("columns_per_row")}</span>
-                  <div className="seg density-seg">
-                    {GRID_COLUMN_OPTIONS.map((n) => (
-                      <button
-                        key={n}
-                        className={columns === n ? "on" : ""}
-                        onClick={() => setColumns(n)}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <Popover
+              className="density-wrap"
+              panelClassName="density-popover"
+              open={densityOpen}
+              onClose={() => setDensityOpen(false)}
+              trigger={
+                <IconButton
+                  className={`density-trigger${densityOpen ? " on" : ""}`}
+                  variant="outline"
+                  icon="columns"
+                  label={t("density")}
+                  aria-expanded={densityOpen}
+                  onClick={() => setDensityOpen((v) => !v)}
+                />
+              }
+            >
+              <span className="muted small">{t("columns_per_row")}</span>
+              <Segmented
+                dense
+                value={columns}
+                onChange={setColumns}
+                options={GRID_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
+              />
+            </Popover>
           ) : (
-            <div className="seg density-seg thumb-size-seg" title={t("thumb_size")}>
-              {THUMB_SIZES.map((s) => (
-                <button
-                  key={s}
-                  className={thumbSize === s ? "on" : ""}
-                  onClick={() => setThumbSize(s)}
-                >
-                  {s.toUpperCase()}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              dense
+              className="thumb-size-seg"
+              title={t("thumb_size")}
+              value={thumbSize}
+              onChange={setThumbSize}
+              options={THUMB_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))}
+            />
           )}
           {!selectMode && (
-            <button
+            <Button
               className="select-toggle"
+              icon="selectMode"
               onClick={() => {
                 setSelectMode(true);
                 setSelected(new Set());
                 setBatchMode(null);
               }}
             >
-              <i className="fa-solid fa-square-check" /> {t("select_mode")}
-            </button>
+              {t("select_mode")}
+            </Button>
           )}
         </div>
 
@@ -344,47 +330,50 @@ export default function Library({
         {selectMode && (
           <div className="batch-bar">
             <span className="small">{t("selected_n", { n: selected.size })}</span>
-            <button
+            <Button
+              icon="selectAll"
               disabled={images.length === 0 || allSelected}
               onClick={selectAllOnPage}
             >
-              <i className="fa-solid fa-check-double" /> {t("select_all")}
-            </button>
+              {t("select_all")}
+            </Button>
             {selected.size > 0 && (
-              <button onClick={() => setSelected(new Set())}>
-                <i className="fa-regular fa-square" /> {t("deselect_all")}
-              </button>
+              <Button icon="deselect" onClick={() => setSelected(new Set())}>
+                {t("deselect_all")}
+              </Button>
             )}
-            <button
+            <Button
+              icon="tag"
               className={batchMode === "add" ? "on" : ""}
+              aria-pressed={batchMode === "add"}
               disabled={selected.size === 0}
               onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
             >
-              <i className="fa-solid fa-tag" /> {t("batch_add_tag")}
-            </button>
-            <button
+              {t("batch_add_tag")}
+            </Button>
+            <Button
+              icon="untag"
               className={batchMode === "remove" ? "on" : ""}
+              aria-pressed={batchMode === "remove"}
               disabled={selected.size === 0}
               onClick={() => setBatchMode(batchMode === "remove" ? null : "remove")}
             >
-              <i className="fa-solid fa-eraser" /> {t("batch_remove_tag")}
-            </button>
-            <button
-              disabled={selected.size === 0}
-              onClick={downloadSelected}
-            >
-              <i className="fa-solid fa-download" /> {t("batch_download")}
-            </button>
-            <button
+              {t("batch_remove_tag")}
+            </Button>
+            <Button icon="download" disabled={selected.size === 0} onClick={downloadSelected}>
+              {t("batch_download")}
+            </Button>
+            <Button
               className="batch-done"
+              icon="check"
               onClick={() => {
                 setSelectMode(false);
                 setSelected(new Set());
                 setBatchMode(null);
               }}
             >
-              <i className="fa-solid fa-check" /> {t("done")}
-            </button>
+              {t("done")}
+            </Button>
           </div>
         )}
         {selectMode && batchMode && selected.size > 0 && (
@@ -399,7 +388,7 @@ export default function Library({
                     className="tag-chip"
                     onClick={() => applyBatch(tag.id)}
                   >
-                    {batchMode === "add" ? "＋" : "－"} {tag.name}
+                    <Icon name={batchMode === "add" ? "add" : "remove"} size="sm" /> {tag.name}
                     <span className="tag-count">{tag.count}</span>
                   </button>
                 ))}
@@ -479,20 +468,22 @@ export default function Library({
                   }
                 />
                 {selectMode && (
-                  <span className="select-check">{selected.has(img.id) ? "✓" : ""}</span>
+                  <span className="select-check">
+                    {selected.has(img.id) && <Icon name="check" size="sm" />}
+                  </span>
                 )}
-                <button
+                <IconButton
                   className="add-input-btn"
-                  title={t("add_ref")}
+                  variant="overlay"
+                  icon="addToRefs"
+                  label={t("add_ref")}
                   onClick={(e) => {
                     e.stopPropagation();
                     addToTray(img);
                     setAdded(img.id);
                     setTimeout(() => setAdded(null), 700);
                   }}
-                >
-                  ＋
-                </button>
+                />
               </div>
               {img.tags && img.tags.length > 0 && (
                 <div className="card-tags">
@@ -508,23 +499,26 @@ export default function Library({
                   {img.source === "upload" ? t("tag_upload") : t("tag_generated")}
                 </span>
                 <span className="card-actions">
-                  <button
+                  <IconButton
                     className={`star${img.starred ? " is-starred" : ""}`}
-                    title={t("star")}
+                    icon="favorite"
+                    filled={!!img.starred}
+                    label={img.starred ? t("unfavorite") : t("favorite")}
+                    aria-pressed={!!img.starred}
                     onClick={() => toggleStar(img)}
-                  >
-                    {img.starred ? "★" : "☆"}
-                  </button>
-                  <button
+                  />
+                  <IconButton
                     className="star download-btn"
-                    title={t("download")}
+                    icon="download"
+                    label={t("download")}
                     onClick={() => download(img)}
-                  >
-                    <i className="fa-solid fa-download" />
-                  </button>
-                  <button className="star delete-btn" title={t("delete")} onClick={() => remove(img)}>
-                    <i className="fa-solid fa-trash-can" />
-                  </button>
+                  />
+                  <IconButton
+                    className="star delete-btn"
+                    icon="delete"
+                    label={t("delete")}
+                    onClick={() => remove(img)}
+                  />
                 </span>
               </div>
             </div>
