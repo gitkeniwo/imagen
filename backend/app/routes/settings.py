@@ -3,7 +3,9 @@
 Auth itself uses Application Default Credentials (ADC) on the machine — no
 secret is stored here; only the (non-secret) project id and location.
 """
+import json
 import os
+from pathlib import Path
 
 from fastapi import APIRouter
 
@@ -30,17 +32,64 @@ def read_vertex() -> tuple[str | None, str]:
     return project, location
 
 
+def _recent_libraries(current: Path) -> list[dict]:
+    """Recent libraries recorded by the desktop shell in ui.json (read-only).
+
+    The shell passes the file via IMAGEN_UI_PATH; Docker/dev have none. The
+    current library is left out. Switching is done by the shell by index into
+    its own list, so `index` is the position in the file, not in this reply.
+    """
+    raw = os.environ.get("IMAGEN_UI_PATH")
+    if not raw:
+        return []
+    try:
+        data = json.loads(Path(raw).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    items = data.get("recent_libraries") if isinstance(data, dict) else None
+    out = []
+    for i, item in enumerate(items if isinstance(items, list) else []):
+        path = item.get("path") if isinstance(item, dict) else None
+        if not isinstance(path, str) or not os.path.isabs(path):
+            continue
+        p = Path(path)
+        if p.resolve() == current:
+            continue
+        at = item.get("opened_at")
+        out.append({
+            "index": i,
+            "path": path,
+            "name": p.name or path,
+            "opened_at": at if isinstance(at, int) else None,
+            "exists": (p / "app.db").is_file(),
+        })
+    return out
+
+
 @router.get("/library")
 def get_library():
-    """Read-only library location for the Settings dialog.
+    """Library location + summary for the Settings dialog.
 
     `desktop` is true only for the desktop entry point, which sets
     IMAGEN_LIBRARY_MODE after validating/locking/backing up the library.
     Docker and dev uvicorn do not set it.
     """
+    with get_conn() as conn:
+        images = conn.execute(
+            "SELECT COUNT(*) c, COALESCE(SUM(byte_size), 0) b FROM images WHERE deleted_at IS NULL"
+        ).fetchone()
+        history = conn.execute(
+            "SELECT COUNT(*) c FROM generations WHERE status NOT IN ('note', 'running')"
+        ).fetchone()["c"]
+    current = Path(DATA_DIR).resolve()
     return {
         "path": str(DATA_DIR),
+        "name": current.name,
         "desktop": bool(os.environ.get("IMAGEN_LIBRARY_MODE")),
+        "images": images["c"],
+        "bytes": images["b"],
+        "history": history,
+        "recent": _recent_libraries(current),
     }
 
 

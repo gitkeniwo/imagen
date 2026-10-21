@@ -5,20 +5,19 @@
 //! entirely in Rust through `WebviewWindow::set_zoom`; no front-end JavaScript
 //! and no `zoomHotkeysEnabled` polyfill is involved.
 //!
-//! Levels live in `ui.json` next to the desktop config file. Data-directory
-//! test mode keeps the level in memory only and never writes a file.
+//! Levels live in `ui.json` (key `zoom`, see `ui_store.rs`) next to the
+//! desktop config file. Data-directory test mode keeps the level in memory
+//! only and never writes a file.
 
 #[cfg(debug_assertions)]
 use std::env;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 #[cfg(debug_assertions)]
 use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use tauri::menu::MenuEvent;
@@ -37,8 +36,7 @@ pub const ZOOM_LEVELS: [f64; 13] = [
     0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0,
 ];
 
-const UI_FILE: &str = "ui.json";
-const UI_VERSION: u64 = 1;
+use crate::ui_store::{self, UI_FILE, UI_VERSION};
 /// Delay between injected test actions. Long enough for the page to settle and
 /// report a fresh `innerWidth`.
 #[cfg(debug_assertions)]
@@ -208,43 +206,11 @@ fn read_ui(path: &Path) -> (f64, Option<String>) {
     }
 }
 
-/// Atomic replacement, mirroring `library::write_config`: sibling temp file,
-/// fsync, then rename.
+/// Update only the `zoom` key; other `ui.json` keys (recent libraries) stay.
 fn write_ui(path: &Path, level: f64) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "ui.json has no parent directory".to_string())?;
-    fs::create_dir_all(parent)
-        .map_err(|e| format!("cannot create config directory {}: {e}", parent.display()))?;
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp = parent.join(format!(
-        ".{}.tmp.{}.{}",
-        path.file_name().and_then(|s| s.to_str()).unwrap_or(UI_FILE),
-        std::process::id(),
-        stamp
-    ));
-    let bytes = serde_json::to_vec(&json!({
-        "version": UI_VERSION,
-        "zoom": level,
-    }))
-    .map_err(|e| format!("cannot serialize ui.json: {e}"))?;
-    let result = (|| -> Result<(), String> {
-        let mut file =
-            File::create(&tmp).map_err(|e| format!("cannot create {}: {e}", tmp.display()))?;
-        file.write_all(&bytes)
-            .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-        file.sync_all()
-            .map_err(|e| format!("cannot sync {}: {e}", tmp.display()))?;
-        drop(file);
-        fs::rename(&tmp, path).map_err(|e| format!("cannot replace {}: {e}", path.display()))
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&tmp);
-    }
-    result
+    ui_store::update(path, |map| {
+        map.insert("zoom".to_string(), json!(level));
+    })
 }
 
 /// Apply the current level to the main webview.

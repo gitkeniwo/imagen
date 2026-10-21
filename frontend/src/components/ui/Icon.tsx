@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Cloud,
   Columns3Cog,
   Copy,
   CopyPlus,
@@ -13,7 +14,10 @@ import {
   Download,
   Ellipsis,
   Eraser,
+  Folder,
   FolderInput,
+  FolderOpen,
+  FolderPlus,
   History,
   ImageOff,
   ImagePlus,
@@ -114,6 +118,12 @@ const ICONS = {
   zoomIn: ZoomIn,
   zoomOut: ZoomOut,
   togglePanel: PanelRight,
+  // Settings
+  libraryFolder: Folder,
+  openFolder: FolderOpen,
+  newFolder: FolderPlus,
+  cloud: Cloud,
+  preferences: SlidersHorizontal,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

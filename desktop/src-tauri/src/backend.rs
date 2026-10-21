@@ -248,6 +248,10 @@ pub fn spawn(app: &AppHandle) -> Result<u32, String> {
         .env("IMAGEN_PARENT_WATCH", "1")
         .env("IMAGEN_LOG_DIR", &config.log_dir)
         .stdin(Stdio::piped());
+    // Settings reads the recent-library list from here (read-only).
+    if let Some(ui) = crate::ui_store::ui_path(app) {
+        cmd.env("IMAGEN_UI_PATH", ui);
+    }
 
     let log = OpenOptions::new()
         .create(true)
@@ -449,6 +453,9 @@ pub fn wait_until_healthy(app: AppHandle) {
                     &format!("health ok in {elapsed} ms; navigating to 127.0.0.1:{port}"),
                 );
                 navigate_to_app(&app);
+                if let Some(path) = library_path.as_deref() {
+                    library::record_recent(&app, path);
+                }
                 library::maybe_auto_change(&app);
                 spawn_monitor(app.clone());
                 return;

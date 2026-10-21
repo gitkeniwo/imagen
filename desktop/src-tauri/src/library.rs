@@ -18,11 +18,21 @@ use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::backend::{self, BackendState};
+use crate::ui_store;
 
 pub const CHANGE_LIBRARY_MENU_ID: &str = "change-library";
 pub const ACTION_SCHEME: &str = "imagen-action";
 pub const CHANGE_LIBRARY_ACTION: &str = "change-library";
 pub const REVEAL_LIBRARY_ACTION: &str = "reveal-library";
+/// Settings › Library: native folder dialog first; the current backend keeps
+/// running until a folder is actually picked.
+pub const OPEN_LIBRARY_ACTION: &str = "open-library";
+pub const CREATE_LIBRARY_ACTION: &str = "create-library";
+/// `imagen-action://open-recent/<n>` — an index into the shell's own recent
+/// list, never a path.
+pub const OPEN_RECENT_ACTION: &str = "open-recent";
+const RECENT_KEY: &str = "recent_libraries";
+const MAX_RECENT: usize = 8;
 pub const CONFIG_VERSION: u64 = 1;
 const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
 
@@ -779,7 +789,149 @@ pub fn return_to_current(app: AppHandle) -> Result<(), String> {
     }
 }
 
-/// Only the two fixed, parameterless actions are accepted. A path is never
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Recently opened libraries from `ui.json`, newest first. Empty in data-dir
+/// test mode (no `ui.json`).
+pub fn recent_libraries(app: &AppHandle) -> Vec<(PathBuf, u64)> {
+    let Some(path) = ui_store::ui_path(app) else {
+        return Vec::new();
+    };
+    let Some(map) = ui_store::read_object(&path) else {
+        return Vec::new();
+    };
+    map.get(RECENT_KEY)
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let raw = item.get("path")?.as_str()?;
+                    let path = PathBuf::from(raw);
+                    path.is_absolute().then(|| {
+                        let at = item.get("opened_at").and_then(serde_json::Value::as_u64);
+                        (path, at.unwrap_or(0))
+                    })
+                })
+                .take(MAX_RECENT)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Move `library` to the front of the recent list (called once its backend is
+/// healthy).
+pub fn record_recent(app: &AppHandle, library: &Path) {
+    let Some(ui) = ui_store::ui_path(app) else {
+        return;
+    };
+    let mut list = recent_libraries(app);
+    list.retain(|(path, _)| path != library);
+    list.insert(0, (library.to_path_buf(), now_secs()));
+    list.truncate(MAX_RECENT);
+    let value: Vec<serde_json::Value> = list
+        .iter()
+        .map(|(path, at)| json!({ "path": path.to_string_lossy(), "opened_at": at }))
+        .collect();
+    if let Err(err) = ui_store::update(&ui, |map| {
+        map.insert(RECENT_KEY.to_string(), serde_json::Value::Array(value));
+    }) {
+        backend::log_line(app, &format!("recent libraries write failed: {err}"));
+    }
+}
+
+/// For the startup page: name, path, last opened (unix seconds), and whether
+/// the folder is reachable right now.
+pub fn list_recent(app: AppHandle) -> Vec<serde_json::Value> {
+    recent_libraries(&app)
+        .into_iter()
+        .map(|(path, at)| {
+            json!({
+                "path": path.to_string_lossy(),
+                "name": path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                "opened_at": at,
+                "exists": path.join("app.db").is_file(),
+            })
+        })
+        .collect()
+}
+
+/// Switch to a recent library by index (startup page and Settings).
+pub fn open_recent(app: AppHandle, index: usize) -> Result<(), String> {
+    let Some((path, _)) = recent_libraries(&app).into_iter().nth(index) else {
+        return Err("最近使用列表里没有这一项。".to_string());
+    };
+    switch_to(app, path, LibraryMode::Existing);
+    Ok(())
+}
+
+/// Show the switching page, then stop/validate/start off the UI thread.
+fn switch_to(app: AppHandle, path: PathBuf, mode: LibraryMode) {
+    let query = format!("switching=1&{}", query_pair("path", &path.to_string_lossy()));
+    navigate(&app, library_url(&query));
+    thread::spawn(move || {
+        if let Err(err) = apply_selection(&app, path, mode) {
+            backend::log_line(&app, &format!("library switch failed: {err}"));
+        }
+    });
+}
+
+/// Settings › Library › Open/Create: the native dialog opens over the running
+/// app; cancelling leaves everything as it was.
+fn pick_from_settings(app: &AppHandle, mode: LibraryMode) {
+    let state = app.state::<BackendState>();
+    if state
+        .library_change_pending
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        backend::log_line(app, "library change ignored: already in progress");
+        return;
+    }
+    if let Some(path) = debug_pick_path() {
+        switch_to(app.clone(), path, mode);
+        return;
+    }
+    let handle = app.clone();
+    app.dialog()
+        .file()
+        .set_title(match mode {
+            LibraryMode::Create => "选择空文件夹以新建 Imagen 图库",
+            _ => "选择已有的 Imagen 图库",
+        })
+        .pick_folder(move |picked| match picked.and_then(|p| p.into_path().ok()) {
+            Some(path) => switch_to(handle, path, mode),
+            None => {
+                backend::log_line(&handle, "library pick cancelled from settings");
+                finish_library_change(&handle);
+            }
+        });
+}
+
+fn recent_index(url: &Url) -> Option<usize> {
+    if url.scheme() != ACTION_SCHEME
+        || url.host_str() != Some(OPEN_RECENT_ACTION)
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+    {
+        return None;
+    }
+    let digits = url.path().strip_prefix('/')?;
+    if digits.is_empty() || digits.len() > 2 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// Only fixed, parameterless actions (plus a numeric recent index) are
+/// accepted. A path is never
 /// parsed from this URL; the library comes from the validated config state.
 fn is_fixed_action(url: &Url, action: &str) -> bool {
     url.scheme() == ACTION_SCHEME
@@ -806,6 +958,32 @@ pub fn handle_action_url(app: &AppHandle, url: &Url) {
                 backend::log_line(&handle, &format!("reveal library failed: {err}"));
             }
         });
+        return;
+    }
+    for (action, mode) in [
+        (OPEN_LIBRARY_ACTION, LibraryMode::Existing),
+        (CREATE_LIBRARY_ACTION, LibraryMode::Create),
+    ] {
+        if is_fixed_action(url, action) {
+            backend::log_line(app, &format!("imagen action: {action}"));
+            pick_from_settings(app, mode);
+            return;
+        }
+    }
+    if let Some(index) = recent_index(url) {
+        backend::log_line(app, &format!("imagen action: open-recent {index}"));
+        let state = app.state::<BackendState>();
+        if state
+            .library_change_pending
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            backend::log_line(app, "library change ignored: already in progress");
+            return;
+        }
+        if let Err(err) = open_recent(app.clone(), index) {
+            finish_library_change(app);
+            show_native_error(app, &err);
+        }
         return;
     }
     backend::log_line(app, &format!("imagen action ignored: {url}"));
