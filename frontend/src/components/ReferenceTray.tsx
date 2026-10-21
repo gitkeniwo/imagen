@@ -1,20 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
 import { peekProps } from "./HoverPeek";
+import { isRefDrag, readImageDrag } from "../imageDrag";
 import { Button, IconButton } from "./ui/Button";
-
-function isFileDrag(dataTransfer: DataTransfer | null) {
-  return !!dataTransfer && Array.from(dataTransfer.types).includes("Files");
-}
 
 export default function ReferenceTray({
   tray,
   onAdd,
   onRemove,
   onMove,
-  noGlobalDrop,
+  dropTarget,
   compact,
   onPickLibrary,
   onOpen,
@@ -23,7 +21,9 @@ export default function ReferenceTray({
   onAdd: (imgs: ImageRow[]) => void;
   onRemove: (id: number) => void;
   onMove: (from: number, to: number) => void;
-  noGlobalDrop?: boolean;
+  // Element that takes drops from anywhere on the page (the composer card).
+  // Without it only the tray itself accepts drops.
+  dropTarget?: RefObject<HTMLElement | null>;
   // Composer layout: no label, small chips, inline upload / library buttons.
   compact?: boolean;
   onPickLibrary?: () => void;
@@ -32,7 +32,6 @@ export default function ReferenceTray({
 }) {
   const { t } = useI18n();
   const [drag, setDrag] = useState(false);
-  const [pageDrag, setPageDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -53,99 +52,111 @@ export default function ReferenceTray({
     }
   }, [onAdd]);
 
-  // Use a counter pattern for reliable drag enter/leave detection.
-  // Every child element fires its own dragenter/dragleave, so a simple
-  // boolean flickers. The counter stays positive while the drag is anywhere
-  // inside the window, and only hits 0 when the pointer truly leaves.
+  const addDropped = (dt: DataTransfer) => {
+    const img = readImageDrag(dt);
+    if (img) onAdd([img]);
+    else if (dt.files.length) upload(dt.files);
+  };
+
+  // Page-wide drag (composer only): everything but `dropTarget` is blurred and
+  // refuses the drop; a dashed box over the target takes it. Dropping anywhere
+  // else is cancelled (App's guard), so the webview never navigates to the file.
+  // Every element fires its own dragenter/dragleave, so a counter tracks
+  // whether the drag is still inside the window.
+  const [hole, setHole] = useState<{ rect: DOMRect; radius: string } | null>(null);
   const dragCounter = useRef(0);
 
   useEffect(() => {
-    if (noGlobalDrop) return;
-
-    const onEnter = (e: DragEvent) => {
-      if (!isFileDrag(e.dataTransfer)) return;
-      e.preventDefault();
-      dragCounter.current++;
-      if (dragCounter.current === 1) setPageDrag(true);
-    };
-    const onOver = (e: DragEvent) => {
-      if (!isFileDrag(e.dataTransfer)) return;
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    };
-    const onLeave = (_e: DragEvent) => {
-      dragCounter.current = Math.max(0, dragCounter.current - 1);
-      if (dragCounter.current === 0) setPageDrag(false);
-    };
-    const onDrop = (e: DragEvent) => {
-      if (!isFileDrag(e.dataTransfer)) return;
-      e.preventDefault();
+    if (!dropTarget) return;
+    const reset = () => {
       dragCounter.current = 0;
-      setPageDrag(false);
+      setHole(null);
     };
-
+    const onEnter = (e: DragEvent) => {
+      if (!isRefDrag(e.dataTransfer)) return;
+      dragCounter.current++;
+      const el = dropTarget.current;
+      if (dragCounter.current !== 1 || !el) return;
+      el.scrollIntoView({ block: "nearest" });
+      setHole({ rect: el.getBoundingClientRect(), radius: getComputedStyle(el).borderRadius });
+    };
+    const onLeave = () => {
+      dragCounter.current = Math.max(0, dragCounter.current - 1);
+      if (dragCounter.current === 0) setHole(null);
+    };
     window.addEventListener("dragenter", onEnter);
-    window.addEventListener("dragover", onOver);
     window.addEventListener("dragleave", onLeave);
-    window.addEventListener("drop", onDrop);
+    window.addEventListener("drop", reset);
+    window.addEventListener("dragend", reset);
+    window.addEventListener("resize", reset);
     return () => {
       window.removeEventListener("dragenter", onEnter);
-      window.removeEventListener("dragover", onOver);
       window.removeEventListener("dragleave", onLeave);
-      window.removeEventListener("drop", onDrop);
+      window.removeEventListener("drop", reset);
+      window.removeEventListener("dragend", reset);
+      window.removeEventListener("resize", reset);
     };
-  }, [noGlobalDrop]);
+  }, [dropTarget]);
 
-  return (
-    <div>
-      {!noGlobalDrop && pageDrag && (
+  const pageDrop = hole && (() => {
+    const { rect: r, radius } = hole;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Four blurred panes around the target, so the target itself stays sharp.
+    const panes = [
+      { left: 0, top: 0, width: vw, height: Math.max(0, r.top) },
+      { left: 0, top: r.bottom, width: vw, height: Math.max(0, vh - r.bottom) },
+      { left: 0, top: r.top, width: Math.max(0, r.left), height: r.height },
+      { left: r.right, top: r.top, width: Math.max(0, vw - r.right), height: r.height },
+    ];
+    return createPortal(
+      <>
+        {panes.map((st, i) => (
+          <div key={i} className="file-drop-scrim" style={st} />
+        ))}
         <div
-          className="file-drop-overlay"
+          className="file-drop-target"
+          style={{ left: r.left, top: r.top, width: r.width, height: r.height, borderRadius: radius }}
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
           }}
-          onDragLeave={(e) => {
-            // Dismiss if the pointer exits this overlay (= leaves the window
-            // or moves to a non-child element outside). The counter handles
-            // the cross-element noise, but this provides the safety net for
-            // the overlay itself.
-            if (e.currentTarget === e.target) {
-              dragCounter.current = 0;
-              setPageDrag(false);
-            }
-          }}
           onDrop={(e) => {
             e.preventDefault();
-            e.stopPropagation();
             dragCounter.current = 0;
-            setPageDrag(false);
-            setDrag(false);
-            if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
+            setHole(null);
+            addDropped(e.dataTransfer);
           }}
         >
-          <div className="file-drop-box">
-            <strong>{t("tray_drop_title")}</strong>
-            <span>{t("tray_drop_hint")}</span>
-          </div>
+          <span className="file-drop-pill">
+            <Icon name="upload" size="sm" />
+            {t("tray_drop_title")}
+          </span>
         </div>
-      )}
+      </>,
+      document.body,
+    );
+  })();
+
+  return (
+    <div>
+      {pageDrop}
       {!compact && <label>{t("tray_label")}</label>}
       <div
         className={`tray dropzone-wrap${compact ? " tray-compact" : ""}${drag ? " drag" : ""}`}
         onDragOver={(e) => {
-          if (!isFileDrag(e.dataTransfer)) return;
+          if (!isRefDrag(e.dataTransfer)) return;
           e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
           setDrag(true);
         }}
         onDragLeave={() => setDrag(false)}
         onDrop={(e) => {
-          if (!isFileDrag(e.dataTransfer)) return;
+          if (!isRefDrag(e.dataTransfer)) return;
           e.preventDefault();
           e.stopPropagation();
           setDrag(false);
-          setPageDrag(false);
-          if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
+          addDropped(e.dataTransfer);
         }}
       >
         {tray.map((img, i) => (

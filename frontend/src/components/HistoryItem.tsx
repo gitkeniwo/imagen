@@ -3,6 +3,7 @@ import { Generation, ImageRow, TagRef, imgThumbUrl } from "../api";
 import { copyText } from "../clipboard";
 import { useI18n } from "../i18n";
 import { peekProps } from "./HoverPeek";
+import { imageDragProps } from "../imageDrag";
 import { pressable } from "../a11y";
 import Icon, { type IconName } from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
@@ -162,12 +163,16 @@ export default function HistoryItem({
   ];
 
   const media = (
-    <div className={`hcard-media${failed ? ` failed ${kind}` : ""}`}>
+    <div
+      className={`hcard-media${failed ? ` failed ${kind}` : ""}`}
+      {...(output && !output.deleted_at ? imageDragProps(output) : {})}
+    >
       {output ? (
         <>
           <img
             src={imgThumbUrl(output.id)}
             alt={output.filename}
+            draggable={false}
             title={t("open_viewer")}
             onClick={onOpen}
             {...pressable(onOpen)}

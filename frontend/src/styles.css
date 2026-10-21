@@ -16,7 +16,7 @@
   --accent-fg: #ffffff;
   --hover-border: #cbd5e1;
   --focus-border: #94a3b8;
-  --topbar-bg: rgba(248, 250, 252, 0.86);
+  --topbar-bg: color-mix(in srgb, var(--main-bg) 86%, transparent);
   --body-start: #ffffff;
   --dropzone-bg: #f8fafc;
   --aspect-selected-bg: #f8fafc;
@@ -124,7 +124,6 @@
     --accent-fg: #020617;
     --hover-border: #334155;
     --focus-border: #64748b;
-    --topbar-bg: rgba(11, 18, 34, 0.88);
     --body-start: #020617;
     --dropzone-bg: #0b1222;
     --aspect-selected-bg: #172135;
@@ -359,7 +358,6 @@ body.resizing-sidebar {
 @container (max-width: 520px) { .panel-tabs .tab-count { display: none; } }
 @container (max-width: 430px) { .panel-tabs .tab:not(.active) .tab-label { display: none; } }
 @container (max-width: 300px) { .panel-tabs .tab-label { display: none; } }
-.side-tabs-row > .popover { display: flex; }
 
 /* ===== dropdown menu (components/ui/Menu) ===== */
 .menu {
@@ -435,37 +433,23 @@ body.resizing-sidebar {
 }
 .dropzone-label { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); }
 .dropzone.drag { border-color: var(--accent); color: var(--accent); background: var(--panel-2); }
-.file-drop-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: var(--space-6);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: blur(10px);
+/* Page-wide drag: blurred panes around the composer, a dashed box over it. */
+.file-drop-scrim {
+  position: fixed; z-index: 80;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
 }
-.file-drop-box {
-  width: min(560px, 100%);
-  min-height: 240px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2_5);
-  text-align: center;
+.file-drop-target {
+  position: fixed; z-index: 81;
+  display: grid; place-items: center;
   border: 2px dashed var(--accent);
-  border-radius: var(--radius-xl);
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: var(--shadow-lg);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
-.file-drop-box strong {
-  font-size: var(--fs-xl);
-  letter-spacing: -0.02em;
-}
-.file-drop-box span {
-  color: var(--muted);
+.file-drop-pill {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-4); border-radius: 999px;
+  background: var(--panel); color: var(--accent); font-weight: 600;
+  box-shadow: var(--shadow-lg); pointer-events: none;
 }
 
 /* Segmented control: a tinted track with the selected option raised. */
@@ -984,7 +968,7 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 .manager-body .tag-filter-row { padding: 3px 0; }
 
 /* ---- Usage dashboard ---- */
-.usage-header { justify-content: flex-start; }
+.usage-header { justify-content: flex-start; min-height: 64px; }
 .usage-period {
   position: absolute; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: var(--space-3);

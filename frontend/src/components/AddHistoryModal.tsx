@@ -243,7 +243,6 @@ export default function AddHistoryModal({
             onAdd={(imgs) => setInputImages((prev) => [...prev, ...imgs])}
             onRemove={(id) => setInputImages((prev) => prev.filter((i) => i.id !== id))}
             onMove={moveInput}
-            noGlobalDrop
           />
           <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("input")}>
             {t("pick_from_library")}

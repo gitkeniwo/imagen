@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Prefill } from "../App";
 import {
   ImageRow,
@@ -71,6 +71,7 @@ export default function Generate({
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [skipIfPrecedingSucceeds, setSkipIfPrecedingSucceeds] = useState(false);
   const [pickingRefs, setPickingRefs] = useState(false);
+  const composerRef = useRef<HTMLDivElement>(null);
   // "Try up to N times": one submit enqueues N copies of the task as a retry
   // group (copies 2..N are auto-skip, so the first success cancels the rest).
   const [attempts, setAttempts] = useState(() => {
@@ -123,10 +124,11 @@ export default function Generate({
 
   return (
     <div>
-      <div className="panel composer">
+      <div className="panel composer" ref={composerRef}>
         <div className="composer-input">
           <ReferenceTray
             compact
+            dropTarget={composerRef}
             tray={tray}
             onAdd={addManyToTray}
             onRemove={removeFromTray}
