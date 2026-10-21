@@ -7,15 +7,21 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 const GAP = 6;
 const EDGE = 8;
+// Above modals and the viewer (≤ 110), below toasts.
+const FIXED_Z = 200;
 
 // Anchored floating panel: closes on outside pointer-down and on Escape.
 // The trigger stays in normal flow; the panel is positioned by `panelClassName`
 // (e.g. `.custom-select-popover`, `.density-popover`). With `fixed`, the panel
 // is placed in viewport coordinates under the trigger (aligned per `align`,
 // clamped to the window) so a scrolling, overflow-clipped parent cannot cut it off.
+// Fixed panels are portaled to <body>: an ancestor with a transform or
+// backdrop-filter (the sticky top bar) would otherwise become their containing
+// block and shift them off screen.
 export default function Popover({
   open,
   onClose,
@@ -45,7 +51,9 @@ export default function Popover({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || panelRef.current?.contains(target)) return;
+      onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -77,7 +85,7 @@ export default function Popover({
       const below = anchor.bottom + GAP;
       const above = anchor.top - GAP - height;
       const top = below + height > window.innerHeight - EDGE && above >= EDGE ? above : below;
-      setPos({ position: "fixed", top, left, right: "auto", bottom: "auto" });
+      setPos({ position: "fixed", top, left, right: "auto", bottom: "auto", zIndex: FIXED_Z });
     };
     place();
     window.addEventListener("resize", place);
@@ -91,18 +99,26 @@ export default function Popover({
   return (
     <div className={["popover", className].filter(Boolean).join(" ")} ref={ref}>
       {trigger}
-      {open && (
-        <div
-          {...panelProps}
-          ref={panelRef}
-          className={panelClassName}
-          // Until measured, keep a fixed panel invisible so it never flashes in
-          // its CSS position.
-          style={fixed ? (pos ?? { position: "fixed", visibility: "hidden" }) : undefined}
-        >
+      {open && !fixed && (
+        <div {...panelProps} ref={panelRef} className={panelClassName}>
           {children}
         </div>
       )}
+      {open &&
+        fixed &&
+        createPortal(
+          <div
+            {...panelProps}
+            ref={panelRef}
+            className={panelClassName}
+            // Until measured, keep the panel invisible so it never flashes in
+            // its CSS position.
+            style={pos ?? { position: "fixed", visibility: "hidden" }}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
