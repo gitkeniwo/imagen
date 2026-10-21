@@ -66,6 +66,9 @@ export interface CardAction {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  primary?: boolean;
+  // Tooltip when it says more than the label.
+  title?: string;
 }
 
 export type CardMedia =
@@ -83,6 +86,7 @@ export default function GenerationCard({
   status,
   statusLabel,
   imported,
+  extraBadges,
   overlay,
   markerColor,
   header,
@@ -105,6 +109,7 @@ export default function GenerationCard({
   status?: string;
   statusLabel?: string;
   imported?: boolean;
+  extraBadges?: ReactNode;
   // Top-right controls on the media (favorite …).
   overlay?: ReactNode;
   markerColor?: MarkerColor | null;
@@ -132,7 +137,7 @@ export default function GenerationCard({
       : "1 / 1";
   // No result to show: skip the media block; badges move into the body.
   const compactMedia = media.kind === "missing" || media.kind === "empty";
-  const badges = (status || imported) && (
+  const badges = (status || imported || extraBadges) && (
     <div className="gcard-badges">
       {status && <span className={`badge ${status}`}>{statusLabel}</span>}
       {imported && (
@@ -141,6 +146,7 @@ export default function GenerationCard({
           {t("imported_badge")}
         </span>
       )}
+      {extraBadges}
     </div>
   );
 
@@ -215,9 +221,9 @@ export default function GenerationCard({
             <Button
               key={a.label}
               size="sm"
-              variant="ghost"
+              variant={a.primary ? "primary" : "ghost"}
               icon={a.icon}
-              title={a.label}
+              title={a.title ?? a.label}
               aria-label={a.label}
               disabled={a.disabled}
               onClick={a.onClick}

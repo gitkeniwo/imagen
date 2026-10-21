@@ -18,8 +18,9 @@ import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
 
-type Kind = "vertex" | "manual" | "draft";
-const KINDS: Kind[] = ["vertex", "manual", "draft"];
+// Drafts have their own editor (DraftEditorModal); this form only logs results.
+type Kind = "vertex" | "manual";
+const KINDS: Kind[] = ["vertex", "manual"];
 type RealStatus = "success" | "blocked" | "error";
 const REAL_STATUSES: RealStatus[] = ["success", "blocked", "error"];
 
@@ -47,14 +48,12 @@ export default function AddHistoryModal({
   duplicate,
   onClose,
   onSaved,
-  onDraftSaved,
   aboveViewer = false,
 }: {
   existing?: Generation;
   duplicate?: Generation;
   onClose: () => void;
   onSaved: () => void;
-  onDraftSaved?: () => void;
   /** Render above the image viewer when opened from its metadata panel. */
   aboveViewer?: boolean;
 }) {
@@ -166,31 +165,6 @@ export default function AddHistoryModal({
   };
 
   const save = async () => {
-    if (kind === "draft") {
-      setSaving(true);
-      setErr(null);
-      try {
-        await api.createDraft({
-          prompt,
-          model,
-          aspectRatio,
-          resolution,
-          outputFormat: "image/jpeg",
-          skipIfPrecedingSucceeds: false,
-          inputImageIds: inputImages.map((img) => img.id),
-          outputImageIds: outputImages.map((img) => img.id),
-          tagIds: outputTagIds,
-        });
-        onDraftSaved?.();
-        onSaved();
-        onClose();
-      } catch (e) {
-        setErr((e as Error).message);
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
     const finalStatus: RealStatus = status;
     if (finalStatus === "success" && outputImages.length === 0) {
       setErr(t("add_history_need_output"));
@@ -337,7 +311,7 @@ export default function AddHistoryModal({
               {t("batch_output_hint", { n: outputImages.length })}
             </p>
           )}
-          {outputImages.length > 0 && kind !== "draft" && (
+          {outputImages.length > 0 && (
             <div className="mt-2_5">
               <label>{t("note_label")}</label>
               <textarea
@@ -347,12 +321,6 @@ export default function AddHistoryModal({
                 onChange={(e) => setOutputNote(e.target.value)}
               />
               <label className="mt-2">{t("tags_label")}</label>
-              <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
-            </div>
-          )}
-          {kind === "draft" && (
-            <div className="mt-2_5">
-              <label>{t("archive_to")}</label>
               <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
             </div>
           )}
@@ -404,44 +372,38 @@ export default function AddHistoryModal({
           <Segmented
             value={kind}
             onChange={setKind}
-            options={(existing ? KINDS.filter((k) => k !== "draft") : KINDS).map((k) => ({
+            options={KINDS.map((k) => ({
               value: k,
-              label:
-                k === "vertex"
-                  ? t("hist_filter_vertex")
-                  : k === "manual"
-                  ? t("hist_filter_manual")
-                  : t("status_draft"),
+              label: k === "vertex" ? t("hist_filter_vertex") : t("hist_filter_manual"),
+              icon: k === "vertex" ? "generated" : "imported",
             }))}
           />
         </div>
 
-        {kind !== "draft" && (
-          <div className="mt-4">
-            <label>{t("add_history_status")}</label>
-            <Segmented
-              value={status}
-              onChange={setStatus}
-              options={REAL_STATUSES.map((st) => ({ value: st, label: t(`status_${st}`) }))}
-            />
-          </div>
-        )}
+        <div className="mt-4">
+          <label>{t("add_history_status")}</label>
+          <Segmented
+            value={status}
+            onChange={setStatus}
+            options={REAL_STATUSES.map((st) => ({ value: st, label: t(`status_${st}`) }))}
+          />
+        </div>
 
-        {kind !== "draft" && (status === "blocked" || status === "error") && (
+        {(status === "blocked" || status === "error") && (
           <div className="mt-4">
             <label>{t("add_history_error_message")}</label>
             <textarea value={errorMessage} onChange={(e) => setErrorMessage(e.target.value)} />
           </div>
         )}
 
-        {kind !== "draft" && <div className="mt-4">
+        <div className="mt-4">
           <label>{t("add_history_created_at")}</label>
           <input
             type="datetime-local"
             value={createdAt}
             onChange={(e) => setCreatedAt(e.target.value)}
           />
-        </div>}
+        </div>
 
         {err && (
           <div className="notice error small mt-3">

@@ -738,7 +738,6 @@ export default function App() {
         <AddHistoryModal
           onClose={() => setShowAddHistory(false)}
           onSaved={bumpData}
-          onDraftSaved={() => setDraftVersion((v) => v + 1)}
         />
       )}
 

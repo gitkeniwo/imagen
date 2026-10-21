@@ -21,6 +21,7 @@ import {
   Languages,
   LayoutGrid,
   ListFilter,
+  ListPlus,
   type LucideIcon,
   Maximize2,
   Minus,
@@ -62,6 +63,7 @@ const ICONS = {
   // Record & image actions
   reuse: CornerUpLeft,
   rerun: RotateCw,
+  queue: ListPlus,
   addToRefs: ImagePlus,
   saveDraft: StickyNote,
   moveToDrafts: FolderInput,

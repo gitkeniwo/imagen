@@ -1,10 +1,12 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, Draft, draftToTaskSpec, ImageRow, TaskSpec, imgThumbUrl } from "../api";
+import { api, Draft, draftToTaskSpec, ImageRow, TaskSpec } from "../api";
 import { useI18n } from "../i18n";
 import DraftEditorModal from "../components/DraftEditorModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
-import Icon from "../components/ui/Icon";
+import { useConfirm } from "../components/ConfirmDialog";
+import GenerationCard from "../components/GenerationCard";
+import type { MenuItem } from "../components/ui/Menu";
 import { IconButton } from "../components/ui/Button";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import Segmented from "../components/ui/Segmented";
@@ -15,8 +17,6 @@ const FULL_PAGE_SIZE = 30;
 // legacy saved value into the new two-column default.
 const DRAFT_COLUMNS_KEY = "imagen-draft-columns-v2";
 const DRAFT_COLUMN_OPTIONS = [1, 2, 3];
-const PROMPT_PREVIEW_CHARS = 240;
-const PROMPT_PREVIEW_LINES = 4;
 
 function initialDraftColumns() {
   const saved = Number(localStorage.getItem(DRAFT_COLUMNS_KEY));
@@ -41,6 +41,7 @@ export default function Drafts({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const askConfirm = useConfirm();
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -49,10 +50,6 @@ export default function Drafts({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Draft | null>(null);
   const [creating, setCreating] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState<number | null>(null);
-  const [promptValue, setPromptValue] = useState("");
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [columns, setColumns] = useState(initialDraftColumns);
   const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
 
@@ -77,34 +74,11 @@ export default function Drafts({
     localStorage.setItem(DRAFT_COLUMNS_KEY, String(columns));
   }, [columns]);
 
-  const toggleExpanded = (id: number) => setExpanded((current) => {
-    const next = new Set(current);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-
-  const patchLocal = (draft: Draft) =>
-    setDrafts((prev) => prev.map((item) => (item.id === draft.id ? draft : item)));
-
   const togglePin = async (draft: Draft) => {
     try {
       await api.updateDraft(draft.id, { pinned: !draft.pinned });
       load();
     } catch (e) {
-      toast(t("op_failed", { msg: (e as Error).message }));
-    }
-  };
-
-  const savePrompt = async (draft: Draft) => {
-    if (editingPrompt !== draft.id) return;
-    const next = promptValue;
-    setEditingPrompt(null);
-    if (next === draft.prompt) return;
-    patchLocal({ ...draft, prompt: next });
-    try {
-      patchLocal(await api.updateDraft(draft.id, { prompt: next }));
-    } catch (e) {
-      patchLocal(draft);
       toast(t("op_failed", { msg: (e as Error).message }));
     }
   };
@@ -139,16 +113,13 @@ export default function Drafts({
   };
 
   const deleteDraft = async (draft: Draft) => {
-    if (deleting !== draft.id) {
-      setDeleting(draft.id);
-      return;
-    }
+    const ok = await askConfirm({ message: t("confirm_delete_draft_q"), confirmLabel: t("delete"), danger: true });
+    if (!ok) return;
     try {
       await api.deleteDraft(draft.id);
       setDrafts((prev) => prev.filter((item) => item.id !== draft.id));
       setTotal((value) => Math.max(0, value - 1));
       onChanged?.();
-      setDeleting(null);
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -210,106 +181,71 @@ export default function Drafts({
           style={{ "--draft-columns": columns } as CSSProperties}
         >
           {drafts.map((draft) => {
-            const promptNeedsToggle =
-              draft.prompt.length > PROMPT_PREVIEW_CHARS ||
-              draft.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES;
+            const firstOutput = draft.outputImages.find((img) => !img.deleted_at) ?? null;
+            const liveOutputs = draft.outputImages.filter((img) => !img.deleted_at);
+            const menuItems: MenuItem[] = [
+              { icon: "editSettings", label: t("edit_draft"), onSelect: () => setEditing(draft) },
+              { icon: "queue", label: t("queue_and_keep"), onSelect: () => queueDraft(draft, false) },
+              {
+                icon: "pin",
+                label: draft.pinned ? t("unpin_draft") : t("pin_draft"),
+                onSelect: () => togglePin(draft),
+              },
+              { icon: "delete", label: t("delete"), danger: true, onSelect: () => deleteDraft(draft) },
+            ];
             return (
-            <div className={`panel draft-card${draft.pinned ? " pinned" : ""}`} key={draft.id}>
-              <div className="draft-card-head">
-                <IconButton
-                  className={`icon-btn draft-pin${draft.pinned ? " is-pinned" : ""}`}
-                  icon="pin"
-                  filled={!!draft.pinned}
-                  label={draft.pinned ? t("unpin_draft") : t("pin_draft")}
-                  aria-pressed={!!draft.pinned}
-                  onClick={() => togglePin(draft)}
-                />
-                <span className="muted small">{draft.model.replace("-image", "")}</span>
-                {draft.aspect_ratio && <span className="muted small">· {draft.aspect_ratio}</span>}
-                {draft.resolution && <span className="muted small">· {draft.resolution}</span>}
-                <div className="spacer" />
-                <IconButton
-                  className="icon-btn"
-                  icon="editSettings"
-                  label={t("edit_draft")}
-                  onClick={() => setEditing(draft)}
-                />
-              </div>
-
-              {editingPrompt === draft.id ? (
-                <textarea
-                  className="draft-inline-prompt"
-                  autoFocus
-                  value={promptValue}
-                  onChange={(e) => setPromptValue(e.target.value)}
-                  onBlur={() => savePrompt(draft)}
-                  onKeyDown={(e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") e.currentTarget.blur();
-                    if (e.key === "Escape") { setPromptValue(draft.prompt); setEditingPrompt(null); }
-                  }}
-                />
-              ) : (
-                <div className="draft-prompt-wrap">
-                  {expanded.has(draft.id) && promptNeedsToggle && (
-                    <button
-                      className="link-btn draft-prompt-toggle-top"
-                      onClick={() => toggleExpanded(draft.id)}
-                    >
-                      {t("show_less")}
+              <GenerationCard
+                key={draft.id}
+                media={
+                  firstOutput
+                    ? { kind: "image", image: firstOutput, onOpen: () => onOpenViewer(firstOutput, liveOutputs) }
+                    : { kind: "empty" }
+                }
+                aspectRatio={draft.aspect_ratio}
+                extraBadges={
+                  liveOutputs.length > 1 && (
+                    <span className="badge imported" title={t("draft_outputs")}>
+                      {t("draft_outputs_n", { n: liveOutputs.length })}
+                    </span>
+                  )
+                }
+                overlay={
+                  <IconButton
+                    variant={firstOutput ? "overlay" : "ghost"}
+                    className={`draft-pin${draft.pinned ? " is-pinned" : ""}`}
+                    icon="pin"
+                    filled={!!draft.pinned}
+                    label={draft.pinned ? t("unpin_draft") : t("pin_draft")}
+                    aria-pressed={!!draft.pinned}
+                    onClick={() => togglePin(draft)}
+                  />
+                }
+                header={
+                  !draft.prompt && (
+                    <button type="button" className="link-btn draft-empty-prompt" onClick={() => setEditing(draft)}>
+                      {t("draft_empty_prompt")}
                     </button>
-                  )}
-                  <div className={`draft-prompt${draft.prompt ? "" : " empty"}`}>
-                    <p className={expanded.has(draft.id) ? "expanded" : ""}>
-                      {draft.prompt || t("draft_empty_prompt")}
-                    </p>
-                    <IconButton
-                      className="q-icon-btn"
-                      icon="edit"
-                      label={t("edit_prompt_inline")}
-                      onClick={() => { setPromptValue(draft.prompt); setEditingPrompt(draft.id); }}
-                    />
-                  </div>
-                  {promptNeedsToggle && (
-                    <button className="link-btn" onClick={() => toggleExpanded(draft.id)}>
-                      {expanded.has(draft.id) ? t("show_less") : t("show_more")}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              <div className="draft-images-row">
-                <DraftImages
-                  label={t("draft_inputs")}
-                  images={draft.inputImages}
-                  onOpenViewer={onOpenViewer}
-                />
-                <span className="arrow" aria-hidden="true"><Icon name="arrowRight" /></span>
-                <DraftImages
-                  label={t("draft_outputs")}
-                  images={draft.outputImages}
-                  onOpenViewer={onOpenViewer}
-                />
-              </div>
-
-              {draft.tags.length > 0 && (
-                <div className="card-tags">
-                  {draft.tags.map((tag) => <span className="card-tag" key={tag.id}>{tag.name}</span>)}
-                </div>
-              )}
-
-              <div className="draft-actions">
-                <button className="primary" onClick={() => queueDraft(draft, true)}>{t("queue_and_delete")}</button>
-                <button onClick={() => queueDraft(draft, false)}>{t("queue_and_keep")}</button>
-                <button
-                  className={deleting === draft.id ? "danger" : ""}
-                  onBlur={() => setDeleting((id) => id === draft.id ? null : id)}
-                  onClick={() => deleteDraft(draft)}
-                >
-                  {deleting === draft.id ? t("confirm_delete_draft") : t("delete")}
-                </button>
-              </div>
-            </div>
-          );})}
+                  )
+                }
+                meta={[draft.model.replace("-image", ""), draft.aspect_ratio, draft.resolution]}
+                prompt={draft.prompt}
+                promptLines={compact ? 3 : 4}
+                inputs={draft.inputImages}
+                onOpenInput={(img) => onOpenViewer(img, draft.inputImages.filter((item) => !item.deleted_at))}
+                tags={draft.tags}
+                actions={[
+                  {
+                    icon: "queue",
+                    label: t("draft_queue_short"),
+                    title: t("queue_and_delete_hint"),
+                    primary: true,
+                    onClick: () => queueDraft(draft, true),
+                  },
+                ]}
+                menuItems={menuItems}
+              />
+            );
+          })}
         </div>
       )}
       {pager}
@@ -334,35 +270,3 @@ export default function Drafts({
   );
 }
 
-function DraftImages({
-  label,
-  images,
-  onOpenViewer,
-}: {
-  label: string;
-  images: ImageRow[];
-  onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="draft-image-group">
-      <span className="muted small">{label}</span>
-      <div className="draft-thumbs">
-        {images.map((img) => img.deleted_at ? (
-          <span className="deleted-tile" key={img.id} title={t("deleted_label")}>
-            <Icon name="imageMissing" />
-          </span>
-        ) : (
-          <img
-            key={img.id}
-            src={imgThumbUrl(img.id)}
-            alt={img.filename}
-            title={img.filename}
-            onClick={() => onOpenViewer(img, images.filter((item) => !item.deleted_at))}
-          />
-        ))}
-        {images.length === 0 && <span className="muted small">—</span>}
-      </div>
-    </div>
-  );
-}
