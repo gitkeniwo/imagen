@@ -1,14 +1,20 @@
 import { type CSSProperties, memo, useEffect, useState } from "react";
-import { ImageRow, MARKER_COLORS, MarkerColor, QueueTask, downloadName, imgFileUrl, imgThumbUrl } from "../api";
+import { ImageRow, MARKER_COLORS, MarkerColor, QueueTask } from "../api";
 import { useI18n } from "../i18n";
-import { IconButton } from "./ui/Button";
+import { copyText } from "../clipboard";
+import { Button } from "./ui/Button";
 import Segmented from "./ui/Segmented";
 import Popover from "./ui/Popover";
+import Icon from "./ui/Icon";
+import { PopoverSection, ViewPopover } from "./ui/ToolbarPopover";
+import { useToast } from "./Toast";
+import GenerationCard, { type CardAction, type CardMedia, MarkerSwatches, downloadImage } from "./GenerationCard";
+import type { MenuItem } from "./ui/Menu";
 
-const QUEUE_COLUMNS_KEY = "imagen-queue-columns";
-const QUEUE_COLUMN_OPTIONS = [1, 2, 3];
-const PROMPT_PREVIEW_CHARS = 240;
-const PROMPT_PREVIEW_LINES = 4;
+// v2: the old key held the pre-card horizontal layout's 1-column default.
+const QUEUE_COLUMNS_KEY = "imagen-queue-columns-v2";
+// 0 = auto: as many ~260px cards as fit the width.
+const QUEUE_COLUMN_OPTIONS = [0, 1, 2, 3, 4];
 const MARKER_COLOR_KEY = "imagen-marker-color";
 
 function initialMarkerColor(): MarkerColor {
@@ -16,12 +22,54 @@ function initialMarkerColor(): MarkerColor {
   return MARKER_COLORS.some((color) => color.id === saved) ? saved as MarkerColor : "red";
 }
 
-const markerHex = (color: MarkerColor | null | undefined) =>
-  MARKER_COLORS.find((item) => item.id === color)?.hex ?? MARKER_COLORS[0].hex;
-
 function initialQueueColumns() {
-  const saved = Number(localStorage.getItem(QUEUE_COLUMNS_KEY));
-  return QUEUE_COLUMN_OPTIONS.includes(saved) ? saved : 1;
+  const raw = localStorage.getItem(QUEUE_COLUMNS_KEY);
+  const saved = Number(raw);
+  return raw !== null && QUEUE_COLUMN_OPTIONS.includes(saved) ? saved : 0;
+}
+
+// "Parallel N" dropdown: the value plus what it means, instead of a bare 1–10 strip.
+function ConcurrencyControl({
+  value,
+  onChange,
+  max,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  max: number;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover
+      fixed
+      className="toolbar-popover-wrap"
+      panelClassName="toolbar-popover"
+      panelProps={{ role: "dialog", "aria-label": t("concurrency") }}
+      open={open}
+      onClose={() => setOpen(false)}
+      trigger={
+        <Button className="toolbar-trigger" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {t("concurrency")} {value}
+          <Icon name="chevronDown" size="sm" />
+        </Button>
+      }
+    >
+      <PopoverSection label={t("concurrency")}>
+        <Segmented
+          dense
+          className="density-seg"
+          value={value}
+          onChange={onChange}
+          options={Array.from({ length: max }, (_, i) => i + 1).map((n) => ({
+            value: n,
+            label: String(n),
+          }))}
+        />
+        <span className="muted small popover-hint">{t("concurrency_hint")}</span>
+      </PopoverSection>
+    </Popover>
+  );
 }
 
 export default function QueueList({
@@ -79,34 +127,29 @@ export default function QueueList({
         <h3 className="m-0">{t("queue_title")}</h3>
         <span className="muted small">{queue.length}</span>
         <div className="spacer" />
-        <span className="muted small queue-density-label">{t("concurrency")}</span>
-        <Segmented
-          dense
-          className="queue-density"
-          title={t("concurrency_hint")}
-          value={concurrency}
-          onChange={setConcurrency}
-          options={Array.from({ length: maxConcurrency }, (_, i) => i + 1).map((n) => ({
-            value: n,
-            label: String(n),
-          }))}
-        />
-        <span className="muted small queue-density-label">{t("columns_per_row")}</span>
-        <Segmented
-          dense
-          className="queue-density"
-          value={columns}
-          onChange={setColumns}
-          options={QUEUE_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
-        />
+        <ConcurrencyControl value={concurrency} onChange={setConcurrency} max={maxConcurrency} />
+        <ViewPopover>
+          <PopoverSection label={t("columns_per_row")}>
+            <Segmented
+              dense
+              className="density-seg"
+              value={columns}
+              onChange={setColumns}
+              options={QUEUE_COLUMN_OPTIONS.map((n) => ({
+                value: n,
+                label: n === 0 ? t("columns_auto") : String(n),
+              }))}
+            />
+          </PopoverSection>
+        </ViewPopover>
         {hasDone && (
-          <button onClick={() => onClearDone()}>{t("clear_done")}</button>
+          <Button onClick={() => onClearDone()}>{t("clear_done")}</Button>
         )}
       </div>
 
       <div
-        className="queue-grid"
-        style={{ "--queue-columns": columns } as CSSProperties}
+        className={`queue-grid${columns === 0 ? " auto" : ""}`}
+        style={columns ? ({ "--queue-columns": columns } as CSSProperties) : undefined}
       >
         {ordered.map((task) => (
           <QueueItem
@@ -119,7 +162,6 @@ export default function QueueList({
             onReuseGenerate={onReuseGenerate}
             onSaveDraft={onSaveDraft}
             onSetMarker={onSetMarker}
-            defaultMarkerColor={defaultMarkerColor}
             onDefaultMarkerColor={setDefaultMarkerColor}
             onOpenViewer={onOpenViewer}
           />
@@ -140,7 +182,6 @@ const QueueItem = memo(function QueueItem({
   onReuseGenerate,
   onSaveDraft,
   onSetMarker,
-  defaultMarkerColor,
   onDefaultMarkerColor,
   onOpenViewer,
 }: {
@@ -152,13 +193,11 @@ const QueueItem = memo(function QueueItem({
   onReuseGenerate: (task: QueueTask) => void;
   onSaveDraft: (task: QueueTask, move: boolean) => void;
   onSetMarker: (id: string, color: MarkerColor | null) => void;
-  defaultMarkerColor: MarkerColor;
   onDefaultMarkerColor: (color: MarkerColor) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
 }) {
   const { t, reason } = useI18n();
-  const [promptExpanded, setPromptExpanded] = useState(false);
-  const [markerPickerOpen, setMarkerPickerOpen] = useState(false);
+  const toast = useToast();
   const [now, setNow] = useState(() => Date.now());
   const counting = task.status === "pending" && task.dispatchAt > now;
   useEffect(() => {
@@ -166,15 +205,12 @@ const QueueItem = memo(function QueueItem({
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, [counting]);
-  const [w, h] = task.aspectRatio.split(":").map(Number);
-  const promptNeedsToggle =
-    task.prompt.length > PROMPT_PREVIEW_CHARS ||
-    task.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES;
   // Seconds left in the undo-send window (0 once it has been/should be sent).
   const undoLeft =
     task.status === "pending"
       ? Math.max(0, Math.ceil((task.dispatchAt - now) / 1000))
       : 0;
+  const active = task.status === "pending" || task.status === "running" || task.status === "cancelling";
 
   // Fine-grained live status line (delaying / queued / sent / retrying).
   let substatus: string | null = null;
@@ -195,190 +231,92 @@ const QueueItem = memo(function QueueItem({
     substatus = t("phase_cancelling");
   }
 
+  const output = task.status === "success" ? task.outputImage ?? null : null;
+  const media: CardMedia = output
+    ? { kind: "image", image: output, onOpen: () => onOpenViewer(output, []) }
+    : active
+    ? { kind: "pending", active: task.status !== "pending" }
+    : { kind: "empty" };
+
+  const error =
+    task.status === "blocked" || task.status === "error"
+      ? {
+          kind: task.status,
+          message:
+            reason(task.rawFinish) ||
+            task.message ||
+            (task.status === "blocked" ? t("blocked_fallback") : t("error_fallback")),
+        }
+      : task.status === "aborted"
+      ? { kind: "aborted", message: task.message || t("aborted_fallback") }
+      : null;
+
+  const actions: CardAction[] = [
+    { icon: "reuse", label: t("reuse"), onClick: () => onReuse(task) },
+    { icon: "rerun", label: t("rerun_short"), onClick: () => onReuseGenerate(task) },
+  ];
+  if (output) actions.push({ icon: "addToRefs", label: t("as_ref_short"), onClick: () => onUseAsRef(output) });
+
+  const menuItems: MenuItem[] = [
+    { icon: "saveDraft", label: t("save_copy_to_drafts"), onSelect: () => onSaveDraft(task, false) },
+  ];
+  if (task.status === "pending") {
+    menuItems.push({ icon: "moveToDrafts", label: t("move_to_drafts"), onSelect: () => onSaveDraft(task, true) });
+  }
+  if (output) {
+    menuItems.push({
+      icon: "download",
+      label: t("download"),
+      onSelect: () => downloadImage(output),
+    });
+  }
+  if (task.prompt) {
+    menuItems.push({
+      icon: "copy",
+      label: t("copy_prompt"),
+      onSelect: async () => toast((await copyText(task.prompt)) ? t("copied") : t("copy_failed")),
+    });
+  }
+  if (!active) {
+    menuItems.push({ icon: "delete", label: t("remove_task"), danger: true, onSelect: () => onRemove(task.id) });
+  }
+
   return (
-    <div
-      className={`qcard${task.markerColor ? " marked" : ""}`}
-      style={{ "--marker-color": markerHex(task.markerColor) } as CSSProperties}
-    >
-      <div className="q-inputs">
-        {task.inputs.map((im) => (
-          <img key={im.id} className="q-thumb" src={imgThumbUrl(im.id)} alt={im.filename} />
-        ))}
-        {task.inputs.length === 0 && <span className="muted small">{t("no_refs")}</span>}
-      </div>
-
-      <div className="q-body">
-        <div className="q-meta">
-          <span className={`badge ${task.status}`}>{t(`status_${task.status}`)}</span>
-          <span className="muted small">{task.model.replace("-image", "").replace("-preview", "")}</span>
-          <span className="muted small">· {task.aspectRatio}</span>
-          {task.resolution && <span className="muted small">· {task.resolution}</span>}
-          <div className="spacer" />
-          <Popover
-            className="marker-control"
-            panelClassName="marker-picker"
-            panelProps={{ role: "group", "aria-label": t("choose_marker_color") }}
-            open={markerPickerOpen}
-            onClose={() => setMarkerPickerOpen(false)}
-            trigger={
-              <>
-                <IconButton
-                  className={`q-icon-btn marker-toggle${task.markerColor ? " marked" : ""}`}
-                  style={{ "--marker-color": markerHex(task.markerColor ?? defaultMarkerColor) } as CSSProperties}
-                  icon="marker"
-                  filled
-                  label={task.markerColor ? t("remove_marker") : t("add_marker")}
-                  onClick={() => onSetMarker(task.id, task.markerColor ? null : defaultMarkerColor)}
-                />
-                <IconButton
-                  className="q-icon-btn marker-picker-toggle"
-                  icon="chevronDown"
-                  label={t("choose_marker_color")}
-                  aria-expanded={markerPickerOpen}
-                  onClick={() => setMarkerPickerOpen((value) => !value)}
-                />
-              </>
-            }
-          >
-                {MARKER_COLORS.map((color) => (
-                  <button
-                    key={color.id}
-                    className={defaultMarkerColor === color.id ? "selected" : ""}
-                    style={{ "--marker-color": color.hex } as CSSProperties}
-                    title={t(`marker_${color.id}`)}
-                    aria-label={t(`marker_${color.id}`)}
-                    onClick={() => {
-                      onDefaultMarkerColor(color.id);
-                      onSetMarker(task.id, color.id);
-                      setMarkerPickerOpen(false);
-                    }}
-                  />
-                ))}
-          </Popover>
-          <IconButton
-            className="q-icon-btn q-reuse"
-            icon="reuse"
-            label={t("reuse")}
-            onClick={() => onReuse(task)}
-          />
-          <IconButton
-            className="q-icon-btn q-reuse-generate"
-            icon="rerun"
-            label={t("reuse_generate")}
-            onClick={() => onReuseGenerate(task)}
-          />
-          <IconButton
-            className="q-icon-btn"
-            icon="saveDraft"
-            label={t("save_copy_to_drafts")}
-            onClick={() => onSaveDraft(task, false)}
-          />
-          {task.status === "pending" && (
-            <IconButton
-              className="q-icon-btn"
-              icon="moveToDrafts"
-              label={t("move_to_drafts")}
-              onClick={() => onSaveDraft(task, true)}
-            />
-          )}
-          {undoLeft > 0 && (
-            <button
-              className="q-undo"
-              title={t("undo_send_hint")}
-              onClick={() => onRemove(task.id)}
-            >
-              {t("undo_send", { n: undoLeft })}
-            </button>
-          )}
-          {task.status === "running" && (
-            <button
-              className="q-cancel"
-              title={t("cancel_running_hint")}
-              onClick={() => onAbort(task.id)}
-            >
-              {t("cancel_running")}
-            </button>
-          )}
-          {task.status !== "running" &&
-            task.status !== "cancelling" &&
-            undoLeft === 0 && (
-              <IconButton
-                className="q-icon-btn q-x"
-                icon="close"
-                label={t("remove_task")}
-                onClick={() => onRemove(task.id)}
-              />
-            )}
-        </div>
-
-        {substatus && <div className="q-substatus">{substatus}</div>}
-
-        {task.prompt && (
-          <div className="q-prompt-wrap">
-            {promptExpanded && promptNeedsToggle && (
-              <button
-                className="link-btn q-prompt-toggle q-prompt-toggle-top"
-                onClick={() => setPromptExpanded(false)}
-              >
-                {t("show_less")}
-              </button>
-            )}
-            <p className={`q-prompt${promptExpanded ? " expanded" : ""}`}>
-              {task.prompt}
-            </p>
-            {promptNeedsToggle && (
-              <button
-                className="link-btn q-prompt-toggle"
-                onClick={() => setPromptExpanded((v) => !v)}
-              >
-                {promptExpanded ? t("show_less") : t("show_more")}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Result area */}
-        {(task.status === "pending" ||
-          task.status === "running" ||
-          task.status === "cancelling") && (
-          <div
-            className={`q-shimmer${
-              task.status === "running" || task.status === "cancelling" ? " active" : ""
-            }`}
-            style={{ aspectRatio: `${w} / ${h}` }}
-          />
-        )}
-
-        {task.status === "success" && task.outputImage && (
-          <div className="q-result">
-            <img
-              src={imgThumbUrl(task.outputImage.id)}
-              alt="result"
-              className="q-result-img"
-              title={t("open_viewer")}
-              onClick={() => onOpenViewer(task.outputImage!, [])}
-            />
-            <div className="row mt-2_5">
-              <button onClick={() => onUseAsRef(task.outputImage!)}>{t("use_as_ref")}</button>
-              <a href={imgFileUrl(task.outputImage.id)} download={downloadName(task.outputImage)}>
-                <button className="w-full">{t("download")}</button>
-              </a>
-            </div>
-          </div>
-        )}
-
-        {(task.status === "blocked" || task.status === "error") && (
-          <div className={`notice ${task.status === "blocked" ? "blocked" : "error"}`}>
-            {reason(task.rawFinish) ||
-              task.message ||
-              (task.status === "blocked" ? t("blocked_fallback") : t("error_fallback"))}
-          </div>
-        )}
-
-        {task.status === "aborted" && (
-          <div className="notice aborted">{task.message || t("aborted_fallback")}</div>
-        )}
-      </div>
-    </div>
+    <GenerationCard
+      media={media}
+      aspectRatio={task.aspectRatio}
+      status={task.status === "success" ? undefined : task.status}
+      statusLabel={t(`status_${task.status}`)}
+      markerColor={task.markerColor}
+      meta={[task.model.replace("-image", "").replace("-preview", ""), task.aspectRatio, task.resolution]}
+      substatus={substatus}
+      error={error}
+      prompt={task.prompt}
+      inputs={task.inputs}
+      onOpenInput={(im) => onOpenViewer(im, task.inputs)}
+      actions={actions}
+      extra={
+        undoLeft > 0 ? (
+          <button className="q-undo" title={t("undo_send_hint")} onClick={() => onRemove(task.id)}>
+            {t("undo_send", { n: undoLeft })}
+          </button>
+        ) : task.status === "running" ? (
+          <button className="q-cancel" title={t("cancel_running_hint")} onClick={() => onAbort(task.id)}>
+            {t("cancel_running")}
+          </button>
+        ) : null
+      }
+      menuItems={menuItems}
+      menuFooter={(close) => (
+        <MarkerSwatches
+          value={task.markerColor}
+          onPick={(color) => {
+            if (color) onDefaultMarkerColor(color);
+            onSetMarker(task.id, color);
+            close();
+          }}
+        />
+      )}
+    />
   );
 });

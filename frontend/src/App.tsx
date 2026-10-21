@@ -499,6 +499,21 @@ export default function App() {
     [enqueue],
   );
 
+  // Re-run a history record as-is (its live inputs, default format/no tags).
+  const rerunGeneration = useCallback(
+    (g: Generation) =>
+      enqueue({
+        prompt: g.prompt,
+        model: g.model,
+        aspectRatio: g.aspect_ratio ?? "1:1",
+        resolution: g.resolution,
+        format: "image/jpeg",
+        inputs: (g.inputs ?? []).filter((im) => !im.deleted_at),
+        tagIds: [],
+      }),
+    [enqueue],
+  );
+
   const taskToDraftBody = useCallback((task: TaskSpec): DraftBody => ({
     prompt: task.prompt,
     model: task.model,
@@ -637,6 +652,8 @@ export default function App() {
             ) : sidebarPanel === "history" ? (
               <History
                 onReuse={reuse}
+                onRerun={configured ? rerunGeneration : undefined}
+                onUseAsRef={addToTray}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
@@ -645,6 +662,8 @@ export default function App() {
             ) : sidebarPanel === "favorites" ? (
               <Favorites
                 onReuse={reuse}
+                onRerun={configured ? rerunGeneration : undefined}
+                onUseAsRef={addToTray}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
@@ -742,6 +761,7 @@ export default function App() {
           addToTray={addToTray}
           onOpenViewer={openViewer}
           onReuse={reuse}
+          onRerun={configured ? rerunGeneration : undefined}
           refreshKey={completedRefreshKey}
           onChanged={bumpData}
           draftRefreshKey={draftVersion}

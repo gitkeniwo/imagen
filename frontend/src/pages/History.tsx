@@ -1,20 +1,16 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, Generation, ImageRow, MARKER_COLORS, Tag, imgThumbUrl } from "../api";
+import { api, Generation, ImageRow, Tag } from "../api";
 import { useI18n } from "../i18n";
-import { pressable } from "../a11y";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
-import generationPending from "../assets/generation-pending.svg";
-import Icon from "../components/ui/Icon";
+import GenerationCard, { type CardAction, type CardMedia, generationMenu } from "../components/GenerationCard";
 import { IconButton } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
 import { FilterPopover, PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
-const PROMPT_PREVIEW_CHARS = 120;
-const PROMPT_PREVIEW_LINES = 2;
 const HISTORY_COLUMNS_KEY = "imagen-history-columns";
 const HISTORY_COLUMN_OPTIONS = [1, 2, 3];
 const HISTORY_COLUMN_OPTIONS_FULL = [1, 2, 3, 4, 5];
@@ -26,12 +22,16 @@ function initialHistoryColumns() {
 
 export default function History({
   onReuse,
+  onRerun,
+  onUseAsRef,
   onOpenViewer,
   compact = false,
   refreshKey = 0,
   live = false,
 }: {
   onReuse: (g: Generation) => void;
+  onRerun?: (g: Generation) => void;
+  onUseAsRef?: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   compact?: boolean;
   refreshKey?: number;
@@ -45,7 +45,6 @@ export default function History({
   const [kindFilter, setKindFilter] = useState<"vertex" | "manual" | null>(null);
   const [onlyWithImage, setOnlyWithImage] = useState(false);
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
   const [columns, setColumns] = useState(initialHistoryColumns);
@@ -112,13 +111,6 @@ export default function History({
   useEffect(() => {
     localStorage.setItem(HISTORY_COLUMNS_KEY, String(columns));
   }, [columns]);
-
-  const toggleExpand = (id: number) =>
-    setExpanded((s) => {
-      const next = new Set(s);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const hasPages = total > pageSize;
@@ -289,175 +281,73 @@ export default function History({
         >
           {gens.map((g) => {
             const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
-            const cornerKind = g.source === "manual" ? "manual" : null;
+            const missing = !!g.outputImage?.deleted_at || (g.status === "success" && !g.outputImage);
+            const media: CardMedia = outImg
+              ? { kind: "image", image: outImg, onOpen: () => onOpenViewer(outImg, pageOutputs) }
+              : missing
+              ? { kind: "missing" }
+              : g.status === "running"
+              ? { kind: "pending", active: true }
+              : { kind: "empty" };
+            const failed = !outImg && !missing && g.status !== "running";
+            const actions: CardAction[] = [{ icon: "reuse", label: t("reuse"), onClick: () => onReuse(g) }];
+            if (onRerun && g.status !== "running" && g.source !== "manual") {
+              actions.push({ icon: "rerun", label: t("rerun_short"), onClick: () => onRerun(g) });
+            }
+            if (onUseAsRef && outImg) {
+              actions.push({ icon: "addToRefs", label: t("as_ref_short"), onClick: () => onUseAsRef(outImg) });
+            }
             return (
-            <div
-              className={`panel history-panel${g.marker_color ? " marked" : ""}`}
-              style={g.marker_color ? ({
-                "--marker-color": MARKER_COLORS.find((item) => item.id === g.marker_color)?.hex,
-              } as CSSProperties) : undefined}
-              key={g.id}
-            >
-              {cornerKind && (
-                <span
-                  className={`card-corner ${cornerKind}`}
-                  title={t("hist_filter_manual")}
-                />
-              )}
-              <div className="history-meta">
-                <span className={`badge ${g.status}`}>{t(`status_${g.status}`)}</span>
-                <span className="muted small">{g.model}</span>
-                {g.aspect_ratio && <span className="muted small">· {g.aspect_ratio}</span>}
-                {g.resolution && <span className="muted small">· {g.resolution}</span>}
-                {outImg && (
-                  <IconButton
-                    className={`icon-btn${outImg.starred ? " is-starred" : ""}`}
-                    icon="favorite"
-                    filled={!!outImg.starred}
-                    label={outImg.starred ? t("unfavorite") : t("favorite")}
-                    aria-pressed={!!outImg.starred}
-                    onClick={() => toggleStar(outImg)}
-                  />
-                )}
-                {g.status !== "running" && (
-                  <>
+              <GenerationCard
+                key={g.id}
+                media={media}
+                aspectRatio={g.aspect_ratio}
+                status={g.status === "success" ? undefined : g.status}
+                statusLabel={t(`status_${g.status}`)}
+                imported={g.source === "manual"}
+                markerColor={g.marker_color}
+                overlay={
+                  outImg && (
                     <IconButton
-                      className="icon-btn"
-                      icon="edit"
-                      label={t("edit_annotation")}
-                      onClick={() => setEditingGen(g)}
+                      variant="overlay"
+                      className={outImg.starred ? "is-starred" : ""}
+                      icon="favorite"
+                      filled={!!outImg.starred}
+                      label={outImg.starred ? t("unfavorite") : t("favorite")}
+                      aria-pressed={!!outImg.starred}
+                      onClick={() => toggleStar(outImg)}
                     />
-                    <IconButton
-                      className="icon-btn"
-                      icon="duplicate"
-                      label={t("duplicate")}
-                      onClick={() => setDuplicatingGen(g)}
-                    />
-                  </>
-                )}
-                <div className="spacer" />
-                <button onClick={() => onReuse(g)}>{t("reuse")}</button>
-              </div>
-
-              {g.prompt && (
-                <div className="history-prompt-wrap">
-                  {expanded.has(g.id) &&
-                    (g.prompt.length > PROMPT_PREVIEW_CHARS ||
-                      g.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES) && (
-                      <button
-                        className="link-btn history-prompt-toggle history-prompt-toggle-top"
-                        onClick={() => toggleExpand(g.id)}
-                      >
-                        {t("show_less")}
-                      </button>
-                    )}
-                  <p
-                    className={`history-prompt${
-                      expanded.has(g.id) ? " expanded" : ""
-                    }`}
-                  >
-                    {g.prompt}
-                  </p>
-                  {(g.prompt.length > PROMPT_PREVIEW_CHARS ||
-                    g.prompt.split(/\r?\n/).length > PROMPT_PREVIEW_LINES) && (
-                    <button
-                      className="link-btn history-prompt-toggle"
-                      onClick={() => toggleExpand(g.id)}
-                    >
-                      {expanded.has(g.id) ? t("show_less") : t("show_more")}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {genTags(g).length > 0 && (
-                <div className="card-tags mb-1">
-                  {genTags(g).map((tg) => (
-                    <span key={tg.id} className="card-tag">
-                      {tg.name}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div className="gen-row">
-                <div className="gen-inputs">
-                  {(g.inputs ?? []).map((im) =>
-                    im.deleted_at ? (
-                      <span
-                        key={im.id}
-                        className="deleted-tile"
-                        title={t("deleted_label")}
-                      >
-                        <Icon name="imageMissing" />
-                      </span>
-                    ) : (
-                      <img
-                        key={im.id}
-                        src={imgThumbUrl(im.id)}
-                        alt={im.filename}
-                        title={im.filename}
-                        onClick={() => onOpenViewer(im, g.inputs ?? [])}
-                        {...pressable(() => onOpenViewer(im, g.inputs ?? []))}
-                      />
-                    ),
-                  )}
-                  {(g.inputs ?? []).length === 0 && (
-                    <span className="muted small">{t("no_refs")}</span>
-                  )}
-                </div>
-                <span className="arrow" aria-hidden="true"><Icon name="arrowRight" /></span>
-                <div className="gen-out">
-                  {g.outputImage?.deleted_at ||
-                  (g.status === "success" && !g.outputImage) ? (
-                    <div className="deleted-tile output">
-                      <Icon name="imageMissing" size="lg" />
-                      <span className="small">{t("deleted_label")}</span>
-                    </div>
-                  ) : g.outputImage ? (
-                    <div>
-                      <img
-                        src={imgThumbUrl(g.outputImage.id)}
-                        alt="output"
-                        title={t("open_viewer")}
-                        onClick={() => onOpenViewer(g.outputImage!, pageOutputs)}
-                        {...pressable(() => onOpenViewer(g.outputImage!, pageOutputs))}
-                      />
-                      {g.outputImage.tags && g.outputImage.tags.length > 0 && (
-                        <div className="card-tags">
-                          {g.outputImage.tags.map((tg) => (
-                            <span key={tg.id} className="card-tag">
-                              {tg.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : g.status === "running" ? (
-                    <div className="history-running-output" aria-label={t("generation_waiting")}>
-                      <img src={generationPending} alt="" className="history-running-placeholder" />
-                      <span className="small">{t("generation_waiting")}</span>
-                    </div>
-                  ) : (
-                    <div
-                      className={`notice ${
-                        g.status === "blocked"
-                          ? "blocked"
-                          : g.status === "aborted"
-                          ? "aborted"
-                          : g.status === "note"
-                          ? "note"
-                          : "error"
-                      } small`}
-                    >
-                      {g.status === "note"
-                        ? t("note_no_output")
-                        : reason(g.raw_finish) || g.error_message || t("no_output")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+                  )
+                }
+                meta={[g.model, g.aspect_ratio, g.resolution]}
+                error={
+                  failed
+                    ? {
+                        kind: g.status === "blocked" || g.status === "aborted" || g.status === "note" ? g.status : "error",
+                        message:
+                          g.status === "note"
+                            ? t("note_no_output")
+                            : reason(g.raw_finish) || g.error_message || t("no_output"),
+                      }
+                    : null
+                }
+                prompt={g.prompt}
+                promptLines={compact ? 2 : 3}
+                inputs={g.inputs ?? []}
+                onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
+                tags={genTags(g)}
+                actions={actions}
+                menuItems={
+                  g.status === "running"
+                    ? []
+                    : generationMenu(g, outImg, {
+                        t,
+                        onEdit: () => setEditingGen(g),
+                        onDuplicate: () => setDuplicatingGen(g),
+                        onCopied: (ok) => toast(ok ? t("copied") : t("copy_failed")),
+                      })
+                }
+              />
             );
           })}
         </div>
