@@ -86,11 +86,24 @@ cd backend && IMAGEN_DATA_DIR=/tmp/imagen-verify uv run uvicorn app.main:app --p
   `~/.config/imagen/desktop.json` and logs at `~/.config/imagen/logs`.
 - Page zoom is shell-side (`View` menu: 实际大小 ⌘0, 放大 ⌘= / ⌘+, 缩小 ⌘-).
   The level is stored separately from the library config in `ui.json`
-  (`{"version":1,"zoom":1.25}`), next to `desktop.json`; `desktop.json` stays
-  library-only. With `IMAGEN_CONFIG_PATH`, `ui.json` sits beside that file.
-  Data-directory-only test mode never writes `ui.json` (memory only). Missing,
-  corrupt, or off-step values fall back to 1.0 with a shell-log warning. The
-  level is reapplied after every page load (splash, restart, library change).
+  (`{"version":1,"zoom":1.25,"recent_libraries":[...]}`), next to
+  `desktop.json`; `desktop.json` stays library-only. With `IMAGEN_CONFIG_PATH`,
+  `ui.json` sits beside that file. Data-directory-only test mode never writes
+  `ui.json` (memory only). Missing, corrupt, or off-step zoom values fall back
+  to 1.0 with a shell-log warning. The level is reapplied after every page load
+  (splash, restart, library change).
+- `ui.json` is shared: every write goes through `ui_store::update` (read,
+  change one key, atomic replace), so zoom and recents never clobber each other.
+  `recent_libraries` (newest first, max 8, `{path, opened_at}`) is updated when
+  a library's backend becomes healthy. The backend gets the file as
+  `IMAGEN_UI_PATH` and only reads it (Settings › Library list).
+- Library switching: the startup page (`desktop/splash/library.html`) uses IPC
+  (`choose_library`, `list_recent_libraries`, `open_recent_library`, …).
+  The app page (Settings › Library) has no IPC and fires fixed URLs only:
+  `imagen-action://open-library`, `create-library`, `reveal-library`,
+  `change-library`, and `open-recent/<n>` (an index into the shell's own list —
+  a path is never taken from a URL). The native folder dialog opens over the
+  running app; the backend stops only after a folder is picked.
 - **Never read the user's real `~/.config/imagen/`** (or its logs/config) during
   testing. All tests use a temp `IMAGEN_CONFIG_PATH` or `IMAGEN_DATA_DIR`.
 - Build with `desktop/build.sh` (app) or `desktop/build.sh --dmg` (app + DMG).
