@@ -25,6 +25,7 @@ import SettingsModal from "./components/SettingsModal";
 import AddHistoryModal from "./components/AddHistoryModal";
 import UsageDashboard from "./components/UsageDashboard";
 import ImageViewer from "./components/ImageViewer";
+import HoverPeek from "./components/HoverPeek";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 import Drafts from "./pages/Drafts";
 import DraftEditorModal from "./components/DraftEditorModal";
@@ -772,6 +773,8 @@ export default function App() {
       {dashboardOpen && (
         <UsageDashboard onClose={() => setDashboardOpen(false)} />
       )}
+
+      <HoverPeek />
 
       {viewer && (
         <ImageViewer

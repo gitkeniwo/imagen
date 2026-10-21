@@ -132,6 +132,7 @@ export default function Generate({
             onRemove={removeFromTray}
             onMove={moveInTray}
             onPickLibrary={() => setPickingRefs(true)}
+            onOpen={(img) => onOpenViewer(img, tray)}
           />
           <textarea
             className="composer-prompt"
