@@ -13,6 +13,7 @@ import Segmented from "./ui/Segmented";
 
 const PRICES_KEY = "imagen-cost-prices";
 const PERIODS: StatPeriod[] = ["day", "week", "month", "year", "all"];
+const SPARSE_POINTS = 3;
 
 const STATUS_ORDER = ["success", "blocked", "error", "aborted", "note"] as const;
 const STATUS_CLASS: Record<string, string> = {
@@ -144,6 +145,10 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const chartPoints = p?.chart ?? [];
   const chartMax = Math.max(1, ...chartPoints.map((d) => d.total));
   const hovered = hover !== null ? chartPoints[hover] : undefined;
+  // A mostly-empty bar strip says little; with only a few active buckets,
+  // list them in a table instead.
+  const activePoints = chartPoints.filter((d) => d.total > 0);
+  const sparse = activePoints.length <= SPARSE_POINTS;
 
   return (
     <div className="manager-overlay" role="dialog" aria-modal="true">
@@ -228,64 +233,92 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
                 {/* Trend chart for the selected window */}
                 <div className="panel">
                   <h4 className="dash-h">{t("usage_series")}</h4>
-                  <div className="daily-chart-wrap" onMouseLeave={() => setHover(null)}>
-                    <div className="daily-chart">
-                      {chartPoints.map((d, i) => (
-                        <div
-                          key={`${d.label}-${i}`}
-                          className={`daily-col${hover === i ? " on" : ""}`}
-                          onMouseEnter={() => setHover(i)}
-                        >
-                          <div className="daily-bar" style={{ height: `${(d.total / chartMax) * 100}%` }}>
-                            <div
-                              className="daily-bar-ok"
-                              style={{ height: d.total ? `${(d.success / d.total) * 100}%` : "0%" }}
-                            />
+                  {sparse ? (
+                    <>
+                      <p className="muted small mt-0">{t("usage_sparse_note")}</p>
+                      <table className="cost-table usage-table">
+                        <thead>
+                          <tr>
+                            <th>{t("usage_bucket")}</th>
+                            <th>{t("stat_total")}</th>
+                            <th>{t("status_success")}</th>
+                            <th>{t("cost_estimate")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activePoints.map((d, i) => (
+                            <tr key={`${d.label}-${i}`}>
+                              <td>{d.label}</td>
+                              <td>{d.total}</td>
+                              <td>{d.success}</td>
+                              <td>≈ {currency}{costOf(d.cost_basis, prices).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  ) : (
+                    <>
+                    <div className="daily-chart-wrap" onMouseLeave={() => setHover(null)}>
+                      <div className="daily-chart">
+                        {chartPoints.map((d, i) => (
+                          <div
+                            key={`${d.label}-${i}`}
+                            className={`daily-col${hover === i ? " on" : ""}`}
+                            onMouseEnter={() => setHover(i)}
+                          >
+                            <div className="daily-bar" style={{ height: `${(d.total / chartMax) * 100}%` }}>
+                              <div
+                                className="daily-bar-ok"
+                                style={{ height: d.total ? `${(d.success / d.total) * 100}%` : "0%" }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                    {hovered && (
-                      <div
-                        className="daily-tip"
-                        style={{
-                          left: `${((hover! + 0.5) / chartPoints.length) * 100}%`,
-                          // Keep the box inside the panel at both ends.
-                          transform: `translateX(${
-                            hover! < chartPoints.length / 4
-                              ? "0"
-                              : hover! > (chartPoints.length * 3) / 4
-                                ? "-100%"
-                                : "-50%"
-                          })`,
-                        }}
-                      >
-                        <div className="daily-tip-label">{hovered.label}</div>
-                        <div className="daily-tip-row">
-                          <span>{t("stat_total")}</span>
-                          <b>{hovered.total}</b>
-                        </div>
-                        <div className="daily-tip-row">
-                          <span>{t("status_success")}</span>
-                          <b>{hovered.success}</b>
-                        </div>
-                        {hovered.total > hovered.success && (
-                          <div className="daily-tip-row muted">
-                            <span>{t("stat_other")}</span>
-                            <b>{hovered.total - hovered.success}</b>
-                          </div>
-                        )}
-                        <div className="daily-tip-row cost">
-                          <span>{t("cost_estimate")}</span>
-                          <b>≈ {currency}{costOf(hovered.cost_basis, prices).toFixed(2)}</b>
-                        </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                  <div className="daily-axis">
-                    <span className="muted small">{chartPoints[0]?.label}</span>
-                    <span className="muted small">{chartPoints[chartPoints.length - 1]?.label}</span>
-                  </div>
+                      {hovered && (
+                        <div
+                          className="daily-tip"
+                          style={{
+                            left: `${((hover! + 0.5) / chartPoints.length) * 100}%`,
+                            // Keep the box inside the panel at both ends.
+                            transform: `translateX(${
+                              hover! < chartPoints.length / 4
+                                ? "0"
+                                : hover! > (chartPoints.length * 3) / 4
+                                  ? "-100%"
+                                  : "-50%"
+                            })`,
+                          }}
+                        >
+                          <div className="daily-tip-label">{hovered.label}</div>
+                          <div className="daily-tip-row">
+                            <span>{t("stat_total")}</span>
+                            <b>{hovered.total}</b>
+                          </div>
+                          <div className="daily-tip-row">
+                            <span>{t("status_success")}</span>
+                            <b>{hovered.success}</b>
+                          </div>
+                          {hovered.total > hovered.success && (
+                            <div className="daily-tip-row muted">
+                              <span>{t("stat_other")}</span>
+                              <b>{hovered.total - hovered.success}</b>
+                            </div>
+                          )}
+                          <div className="daily-tip-row cost">
+                            <span>{t("cost_estimate")}</span>
+                            <b>≈ {currency}{costOf(hovered.cost_basis, prices).toFixed(2)}</b>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="daily-axis">
+                      <span className="muted small">{chartPoints[0]?.label}</span>
+                      <span className="muted small">{chartPoints[chartPoints.length - 1]?.label}</span>
+                    </div>
+                    </>
+                  )}
                 </div>
               </>
             )}

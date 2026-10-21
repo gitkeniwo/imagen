@@ -14,19 +14,7 @@
       color: #1f2a3d; user-select: none;
     }
     main { text-align: center; }
-    .mark {
-      width: 84px; height: 84px; margin: 0 auto 22px; border-radius: 20px;
-      background: #205cb4; position: relative;
-      box-shadow: 0 18px 40px rgba(32, 92, 180, .28);
-    }
-    .mark::before {
-      content: ""; position: absolute; inset: 20px 20px 30px 20px;
-      border-radius: 50%; background: #f5f8ff;
-    }
-    .mark::after {
-      content: ""; position: absolute; right: 20px; bottom: 20px;
-      width: 22px; height: 22px; border-radius: 6px; background: #205cb4;
-    }
+    .mark { display: block; width: 84px; height: 84px; margin: 0 auto 22px; filter: drop-shadow(0 18px 30px rgba(15, 23, 42, .28)); }
     h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; letter-spacing: .2px; }
     p { margin: 0; color: #4b5a73; font-size: 13px; }
     .spinner {
@@ -45,11 +33,19 @@
 </head>
 <body>
   <main>
-    <div class="mark" aria-hidden="true"></div>
+    <img class="mark" src="app-icon.png" alt="" />
     <h1>Imagen</h1>
-    <p>正在启动…</p>
+    <p id="starting">正在启动…</p>
     <div class="spinner" aria-hidden="true"></div>
-    <p class="hint">正在准备本地服务，首次启动可能需要几秒。</p>
+    <p class="hint" id="hint">正在准备本地服务，首次启动可能需要几秒。</p>
   </main>
+  <script>
+    (function () {
+      if ((navigator.language || "zh").toLowerCase().indexOf("zh") === 0) return;
+      document.documentElement.lang = "en";
+      document.getElementById("starting").textContent = "Starting…";
+      document.getElementById("hint").textContent = "Preparing the local service. The first launch can take a few seconds.";
+    })();
+  </script>
 </body>
 </html>

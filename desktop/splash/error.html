@@ -27,11 +27,12 @@
       border-radius: 8px; padding: 10px 12px; color: #33415c;
       overflow-wrap: anywhere; user-select: text;
     }
-    .row { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+    [hidden] { display: none !important; }
+    .row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
     button {
       appearance: none; border: 0; border-radius: 9px;
       background: #205cb4; color: #fff; font-size: 14px; font-weight: 600;
-      padding: 10px 18px; cursor: pointer;
+      padding: 10px 18px; cursor: pointer; white-space: nowrap;
     }
     button:hover { background: #1a4f9c; }
     button:disabled { background: #9db4d6; cursor: default; }
@@ -46,10 +47,10 @@
 </head>
 <body>
   <main>
-    <span class="badge"><span class="dot"></span>后端未运行</span>
-    <h1>Imagen 无法启动本地服务</h1>
+    <span class="badge"><span class="dot"></span><span id="badge-text">后端未运行</span></span>
+    <h1 id="title">Imagen 无法启动本地服务</h1>
     <p id="message">启动后端时发生错误。</p>
-    <p>日志文件：</p>
+    <p id="log-label">日志文件：</p>
     <div class="log" id="log">（未提供日志路径）</div>
     <div class="row">
       <button id="restart" type="button">重启后端</button>
@@ -58,6 +59,28 @@
   </main>
   <script>
     (function () {
+      var zh = (navigator.language || "zh").toLowerCase().indexOf("zh") === 0;
+      var text = zh ? {
+        noIpc: "当前页面没有 IPC 权限，无法自动重启。",
+        restarting: "正在重启后端…",
+        requested: "已发出重启请求，等待健康检查…",
+        failed: "重启失败："
+      } : {
+        noIpc: "This page has no IPC permission and cannot restart automatically.",
+        restarting: "Restarting the backend…",
+        requested: "Restart requested, waiting for the health check…",
+        failed: "Restart failed: "
+      };
+      if (!zh) {
+        document.documentElement.lang = "en";
+        document.title = "Imagen - Failed to start";
+        document.getElementById("badge-text").textContent = "Backend not running";
+        document.getElementById("title").textContent = "Imagen could not start its local service";
+        document.getElementById("message").textContent = "An error occurred while starting the backend.";
+        document.getElementById("log-label").textContent = "Log file:";
+        document.getElementById("log").textContent = "(no log path provided)";
+        document.getElementById("restart").textContent = "Restart Backend";
+      }
       var q = new URLSearchParams(window.location.search);
       var msg = q.get("msg");
       var log = q.get("log");
@@ -69,16 +92,16 @@
       var internals = window.__TAURI_INTERNALS__;
       if (!internals || typeof internals.invoke !== "function") {
         button.disabled = true;
-        status.textContent = "当前页面没有 IPC 权限，无法自动重启。";
+        status.textContent = text.noIpc;
         return;
       }
       button.addEventListener("click", function () {
         button.disabled = true;
-        status.textContent = "正在重启后端…";
+        status.textContent = text.restarting;
         internals.invoke("restart_backend").then(function () {
-          status.textContent = "已发出重启请求，等待健康检查…";
+          status.textContent = text.requested;
         }).catch(function (e) {
-          status.textContent = "重启失败：" + String(e);
+          status.textContent = text.failed + String(e);
           button.disabled = false;
         });
       });

@@ -219,6 +219,7 @@ button.primary:hover:not(:disabled) { background: var(--accent-2); border-color:
 
 /* Spacing utilities — replace one-off inline margins. */
 .m-0 { margin: 0; }
+.mb-0 { margin-bottom: 0; }
 .mt-0 { margin-top: 0; }
 .mt-1_5 { margin-top: var(--space-1_5); }
 .mt-2 { margin-top: var(--space-2); }
@@ -1183,3 +1184,13 @@ body.manager-open { overflow: hidden; }
   .lib-actions { opacity: 1; }
 }
 .lib-tags .card-tag { background: rgba(2, 6, 23, 0.66); color: #fff; border-color: transparent; }
+
+/* ===== settings ===== */
+.settings-modal { width: 520px; max-height: 88vh; overflow-y: auto; }
+.settings-section { padding: var(--space-4) 0; border-top: 1px solid var(--border); }
+.settings-section:first-of-type { border-top: none; padding-top: var(--space-1); }
+.settings-section h4 {
+  margin: 0 0 var(--space-2_5); font-size: var(--fs-sm); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+}
+.settings-section > label:first-of-type { margin-top: 0; }
