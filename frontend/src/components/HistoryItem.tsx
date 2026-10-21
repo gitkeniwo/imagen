@@ -2,6 +2,7 @@ import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState }
 import { Generation, ImageRow, TagRef, imgThumbUrl } from "../api";
 import { copyText } from "../clipboard";
 import { useI18n } from "../i18n";
+import { peekProps } from "./HoverPeek";
 import { pressable } from "../a11y";
 import Icon, { type IconName } from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
@@ -241,7 +242,7 @@ export default function HistoryItem({
                 key={im.id}
                 src={imgThumbUrl(im.id)}
                 alt={im.filename}
-                title={im.filename}
+                {...peekProps(im, t("peek_input", { n: inputs.indexOf(im) + 1 }))}
                 onClick={() => onOpenInput(im)}
                 {...pressable(() => onOpenInput(im))}
               />

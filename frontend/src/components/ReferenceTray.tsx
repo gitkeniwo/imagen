@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
+import { peekProps } from "./HoverPeek";
 import { Button, IconButton } from "./ui/Button";
 
 function isFileDrag(dataTransfer: DataTransfer | null) {
@@ -16,6 +17,7 @@ export default function ReferenceTray({
   noGlobalDrop,
   compact,
   onPickLibrary,
+  onOpen,
 }: {
   tray: ImageRow[];
   onAdd: (imgs: ImageRow[]) => void;
@@ -25,6 +27,8 @@ export default function ReferenceTray({
   // Composer layout: no label, small chips, inline upload / library buttons.
   compact?: boolean;
   onPickLibrary?: () => void;
+  // Click a reference to open it in the viewer.
+  onOpen?: (img: ImageRow) => void;
 }) {
   const { t } = useI18n();
   const [drag, setDrag] = useState(false);
@@ -147,8 +151,13 @@ export default function ReferenceTray({
         {tray.map((img, i) => (
           <div
             key={img.id}
-            className="chip"
+            className={`chip${onOpen ? " openable" : ""}`}
             draggable
+            {...peekProps(img, t("peek_ref", { n: i + 1 }))}
+            onClick={(e) => {
+              if (!onOpen || (e.target as HTMLElement).closest(".x")) return;
+              onOpen(img);
+            }}
             onDragStart={(e) => {
               dragIdx.current = i;
               e.dataTransfer.effectAllowed = "move";
@@ -161,7 +170,6 @@ export default function ReferenceTray({
               }
               dragIdx.current = null;
             }}
-            title={img.filename}
           >
             <img src={imgThumbUrl(img.id)} alt={img.filename} draggable={false} />
             <span className="pos">{i + 1}</span>

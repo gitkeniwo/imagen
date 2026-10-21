@@ -14,6 +14,7 @@ import Menu from "./ui/Menu";
 import { IconButton } from "./ui/Button";
 import { type IconName } from "./ui/Icon";
 import { imgThumbUrl } from "../api";
+import { peekProps } from "./HoverPeek";
 import { pressable } from "../a11y";
 
 // v2: the old key held the pre-card horizontal layout's 1-column default.
@@ -314,12 +315,12 @@ const QueueItem = memo(function QueueItem({
         </div>
         <PromptClamp text={task.prompt} lines={2} />
         <div className="hcard-chips">
-          {task.inputs.map((im) => (
+          {task.inputs.map((im, i) => (
             <img
               key={im.id}
               src={imgThumbUrl(im.id)}
               alt={im.filename}
-              title={im.filename}
+              {...peekProps(im, t("peek_input", { n: i + 1 }))}
               onClick={() => onOpenViewer(im, task.inputs)}
               {...pressable(() => onOpenViewer(im, task.inputs))}
             />
