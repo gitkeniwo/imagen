@@ -5,6 +5,7 @@
 mod backend;
 mod download;
 mod library;
+mod ui_store;
 mod zoom;
 
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -29,6 +30,16 @@ fn retry_library(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn reveal_config(app: AppHandle) -> Result<(), String> {
     library::reveal_config(app)
+}
+
+#[tauri::command]
+fn list_recent_libraries(app: AppHandle) -> Vec<serde_json::Value> {
+    library::list_recent(app)
+}
+
+#[tauri::command]
+fn open_recent_library(app: AppHandle, index: usize) -> Result<(), String> {
+    library::open_recent(app, index)
 }
 
 #[tauri::command]
@@ -187,7 +198,9 @@ fn main() {
             choose_library,
             retry_library,
             reveal_config,
-            return_to_current
+            return_to_current,
+            list_recent_libraries,
+            open_recent_library
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

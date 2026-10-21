@@ -292,7 +292,14 @@ export interface VertexConfig {
 
 export interface LibraryInfo {
   path: string;
+  name: string;
   desktop: boolean;
+  images: number;
+  bytes: number;
+  history: number;
+  // Desktop only: recently opened libraries (current one excluded). `index`
+  // is the shell's own list position used by imagen-action://open-recent/<n>.
+  recent: { index: number; path: string; name: string; opened_at: number | null; exists: boolean }[];
 }
 
 // Short-lived tags cache: Library/History/TagPicker all request /api/tags on
