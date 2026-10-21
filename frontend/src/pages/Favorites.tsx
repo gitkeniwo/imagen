@@ -6,6 +6,9 @@ import { pressable } from "../a11y";
 import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
+import Icon from "../components/ui/Icon";
+import { IconButton } from "../components/ui/Button";
+import Segmented from "../components/ui/Segmented";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -159,17 +162,17 @@ export default function Favorites({
             }}
             placeholder={t("search_placeholder_history")}
           />
-          <div className="seg density-seg history-cols-seg" title={t("columns_per_row")}>
-            {(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => (
-              <button
-                key={n}
-                className={columns === n ? "on" : ""}
-                onClick={() => setColumns(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            dense
+            className="history-cols-seg"
+            title={t("columns_per_row")}
+            value={columns}
+            onChange={setColumns}
+            options={(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => ({
+              value: n,
+              label: String(n),
+            }))}
+          />
         </div>
       </div>
       {pager}
@@ -243,33 +246,32 @@ export default function Favorites({
                 {g.resolution && (
                   <span className="muted small">· {g.resolution}</span>
                 )}
-                <button
+                <IconButton
                   className="icon-btn"
-                  title={t("edit_annotation")}
+                  icon="edit"
+                  label={t("edit_annotation")}
                   onClick={() => setEditingGen(g)}
-                >
-                  <i className="fa-solid fa-pen" />
-                </button>
-                <button
+                />
+                <IconButton
                   className="icon-btn"
-                  title={t("duplicate")}
+                  icon="duplicate"
+                  label={t("duplicate")}
                   onClick={() => setDuplicatingGen(g)}
-                >
-                  <i className="fa-solid fa-clone" />
-                </button>
-                <div className="spacer" style={{ flex: 1 }} />
+                />
+                <div className="spacer" />
                 <button className="link-btn" onClick={() => copyPrompt(g)}>
                   {copiedId === g.id ? t("copied") : t("copy_prompt")}
                 </button>
                 <button onClick={() => onReuse(g)}>{t("reuse")}</button>
                 {g.outputImage && (
-                  <button
-                    className="star is-starred"
-                    title={t("unfavorite")}
+                  <IconButton
+                    className="icon-btn is-starred"
+                    icon="favorite"
+                    filled
+                    label={t("unfavorite")}
+                    aria-pressed
                     onClick={() => unfavorite(g.outputImage!)}
-                  >
-                    ★
-                  </button>
+                  />
                 )}
               </div>
 
@@ -314,7 +316,7 @@ export default function Favorites({
                         className="deleted-tile"
                         title={t("deleted_label")}
                       >
-                        <i className="fa-solid fa-trash-can" />
+                        <Icon name="imageMissing" />
                       </span>
                     ) : (
                       <img
@@ -331,7 +333,7 @@ export default function Favorites({
                     <span className="muted small">{t("no_refs")}</span>
                   )}
                 </div>
-                <span className="arrow">→</span>
+                <span className="arrow" aria-hidden="true"><Icon name="arrowRight" /></span>
                 <div className="gen-out">
                   {g.outputImage && (
                     <div>

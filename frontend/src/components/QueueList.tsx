@@ -1,6 +1,9 @@
 import { type CSSProperties, memo, useEffect, useState } from "react";
 import { ImageRow, MARKER_COLORS, MarkerColor, QueueTask, downloadName, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { IconButton } from "./ui/Button";
+import Segmented from "./ui/Segmented";
+import Popover from "./ui/Popover";
 
 const QUEUE_COLUMNS_KEY = "imagen-queue-columns";
 const QUEUE_COLUMN_OPTIONS = [1, 2, 3];
@@ -73,33 +76,29 @@ export default function QueueList({
   return (
     <div className="queue">
       <div className="queue-head">
-        <h3 style={{ margin: 0 }}>{t("queue_title")}</h3>
+        <h3 className="m-0">{t("queue_title")}</h3>
         <span className="muted small">{queue.length}</span>
-        <div className="spacer" style={{ flex: 1 }} />
+        <div className="spacer" />
         <span className="muted small queue-density-label">{t("concurrency")}</span>
-        <div className="seg density-seg queue-density" title={t("concurrency_hint")}>
-          {Array.from({ length: maxConcurrency }, (_, i) => i + 1).map((n) => (
-            <button
-              key={n}
-              className={concurrency === n ? "on" : ""}
-              onClick={() => setConcurrency(n)}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          dense
+          className="queue-density"
+          title={t("concurrency_hint")}
+          value={concurrency}
+          onChange={setConcurrency}
+          options={Array.from({ length: maxConcurrency }, (_, i) => i + 1).map((n) => ({
+            value: n,
+            label: String(n),
+          }))}
+        />
         <span className="muted small queue-density-label">{t("columns_per_row")}</span>
-        <div className="seg density-seg queue-density">
-          {QUEUE_COLUMN_OPTIONS.map((n) => (
-            <button
-              key={n}
-              className={columns === n ? "on" : ""}
-              onClick={() => setColumns(n)}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          dense
+          className="queue-density"
+          value={columns}
+          onChange={setColumns}
+          options={QUEUE_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
+        />
         {hasDone && (
           <button onClick={() => onClearDone()}>{t("clear_done")}</button>
         )}
@@ -214,31 +213,40 @@ const QueueItem = memo(function QueueItem({
           <span className="muted small">{task.model.replace("-image", "").replace("-preview", "")}</span>
           <span className="muted small">· {task.aspectRatio}</span>
           {task.resolution && <span className="muted small">· {task.resolution}</span>}
-          <div className="spacer" style={{ flex: 1 }} />
-          <div className="marker-control">
-            <button
-              className={`q-icon-btn marker-toggle${task.markerColor ? " marked" : ""}`}
-              style={{ "--marker-color": markerHex(task.markerColor ?? defaultMarkerColor) } as CSSProperties}
-              title={task.markerColor ? t("remove_marker") : t("add_marker")}
-              onClick={() => onSetMarker(task.id, task.markerColor ? null : defaultMarkerColor)}
-            >
-              <i className="fa-solid fa-bookmark" />
-            </button>
-            <button
-              className="q-icon-btn marker-picker-toggle"
-              title={t("choose_marker_color")}
-              onClick={() => setMarkerPickerOpen((value) => !value)}
-            >
-              <i className="fa-solid fa-caret-down" />
-            </button>
-            {markerPickerOpen && (
-              <div className="marker-picker" role="group" aria-label={t("choose_marker_color")}>
+          <div className="spacer" />
+          <Popover
+            className="marker-control"
+            panelClassName="marker-picker"
+            panelProps={{ role: "group", "aria-label": t("choose_marker_color") }}
+            open={markerPickerOpen}
+            onClose={() => setMarkerPickerOpen(false)}
+            trigger={
+              <>
+                <IconButton
+                  className={`q-icon-btn marker-toggle${task.markerColor ? " marked" : ""}`}
+                  style={{ "--marker-color": markerHex(task.markerColor ?? defaultMarkerColor) } as CSSProperties}
+                  icon="marker"
+                  filled
+                  label={task.markerColor ? t("remove_marker") : t("add_marker")}
+                  onClick={() => onSetMarker(task.id, task.markerColor ? null : defaultMarkerColor)}
+                />
+                <IconButton
+                  className="q-icon-btn marker-picker-toggle"
+                  icon="chevronDown"
+                  label={t("choose_marker_color")}
+                  aria-expanded={markerPickerOpen}
+                  onClick={() => setMarkerPickerOpen((value) => !value)}
+                />
+              </>
+            }
+          >
                 {MARKER_COLORS.map((color) => (
                   <button
                     key={color.id}
                     className={defaultMarkerColor === color.id ? "selected" : ""}
                     style={{ "--marker-color": color.hex } as CSSProperties}
                     title={t(`marker_${color.id}`)}
+                    aria-label={t(`marker_${color.id}`)}
                     onClick={() => {
                       onDefaultMarkerColor(color.id);
                       onSetMarker(task.id, color.id);
@@ -246,38 +254,32 @@ const QueueItem = memo(function QueueItem({
                     }}
                   />
                 ))}
-              </div>
-            )}
-          </div>
-          <button
+          </Popover>
+          <IconButton
             className="q-icon-btn q-reuse"
-            title={t("reuse")}
+            icon="reuse"
+            label={t("reuse")}
             onClick={() => onReuse(task)}
-          >
-            <i className="fa-solid fa-pen" />
-          </button>
-          <button
+          />
+          <IconButton
             className="q-icon-btn q-reuse-generate"
-            title={t("reuse_generate")}
+            icon="rerun"
+            label={t("reuse_generate")}
             onClick={() => onReuseGenerate(task)}
-          >
-            <i className="fa-solid fa-bolt" />
-          </button>
-          <button
+          />
+          <IconButton
             className="q-icon-btn"
-            title={t("save_copy_to_drafts")}
+            icon="saveDraft"
+            label={t("save_copy_to_drafts")}
             onClick={() => onSaveDraft(task, false)}
-          >
-            <i className="fa-solid fa-box-archive" />
-          </button>
+          />
           {task.status === "pending" && (
-            <button
+            <IconButton
               className="q-icon-btn"
-              title={t("move_to_drafts")}
+              icon="moveToDrafts"
+              label={t("move_to_drafts")}
               onClick={() => onSaveDraft(task, true)}
-            >
-              <i className="fa-solid fa-box-open" />
-            </button>
+            />
           )}
           {undoLeft > 0 && (
             <button
@@ -300,9 +302,12 @@ const QueueItem = memo(function QueueItem({
           {task.status !== "running" &&
             task.status !== "cancelling" &&
             undoLeft === 0 && (
-              <button className="q-icon-btn q-x" title={t("remove_task")} onClick={() => onRemove(task.id)}>
-                ×
-              </button>
+              <IconButton
+                className="q-icon-btn q-x"
+                icon="close"
+                label={t("remove_task")}
+                onClick={() => onRemove(task.id)}
+              />
             )}
         </div>
 
@@ -353,10 +358,10 @@ const QueueItem = memo(function QueueItem({
               title={t("open_viewer")}
               onClick={() => onOpenViewer(task.outputImage!, [])}
             />
-            <div className="row" style={{ marginTop: 10 }}>
+            <div className="row mt-2_5">
               <button onClick={() => onUseAsRef(task.outputImage!)}>{t("use_as_ref")}</button>
               <a href={imgFileUrl(task.outputImage.id)} download={downloadName(task.outputImage)}>
-                <button style={{ width: "100%" }}>{t("download")}</button>
+                <button className="w-full">{t("download")}</button>
               </a>
             </div>
           </div>

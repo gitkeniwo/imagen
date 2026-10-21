@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import { Button } from "../components/ui/Button";
 
 const PAGE_SIZE = 60;
 
@@ -110,11 +111,11 @@ export default function Bin({
     <div className="panel library-panel">
       <div className="bin-toolbar">
         <span className="muted small">{t("bin_hint")}</span>
-        <div className="spacer" style={{ flex: 1 }} />
+        <div className="spacer" />
         {total > 0 && (
-          <button className="danger-btn" onClick={emptyBin}>
-            <i className="fa-solid fa-trash-can" /> {t("empty_bin")}
-          </button>
+          <Button variant="danger" icon="delete" onClick={emptyBin}>
+            {t("empty_bin")}
+          </Button>
         )}
       </div>
 
@@ -132,7 +133,7 @@ export default function Bin({
       ) : images.length === 0 ? (
         <p className="muted">{t("bin_empty_state")}</p>
       ) : (
-        <div className="grid library-grid full" style={{ "--thumb-min": "170px" } as React.CSSProperties}>
+        <div className="grid library-grid full">
           {images.map((img) => (
             <div className="card" key={img.id}>
               <div className="card-img-wrap">
@@ -145,12 +146,12 @@ export default function Bin({
                 />
               </div>
               <div className="meta bin-meta">
-                <button className="bin-restore" title={t("restore")} onClick={() => restore(img)}>
-                  <i className="fa-solid fa-rotate-left" /> {t("restore")}
-                </button>
-                <button className="bin-purge" title={t("delete_forever")} onClick={() => purge(img)}>
-                  <i className="fa-solid fa-trash-can" /> {t("delete_forever")}
-                </button>
+                <Button className="bin-restore" icon="restore" onClick={() => restore(img)}>
+                  {t("restore")}
+                </Button>
+                <Button className="bin-purge" icon="delete" onClick={() => purge(img)}>
+                  {t("delete_forever")}
+                </Button>
               </div>
             </div>
           ))}

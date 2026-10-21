@@ -6,6 +6,9 @@ import AddHistoryModal from "../components/AddHistoryModal";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import generationPending from "../assets/generation-pending.svg";
+import Icon from "../components/ui/Icon";
+import { IconButton } from "../components/ui/Button";
+import Segmented from "../components/ui/Segmented";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -216,35 +219,39 @@ export default function History({
             <button
               className={kindFilter === "vertex" ? "on" : ""}
               title={t("hist_filter_vertex")}
+              aria-label={t("hist_filter_vertex")}
+              aria-pressed={kindFilter === "vertex"}
               onClick={() => {
                 setKindFilter("vertex");
                 setPage(0);
               }}
             >
-              <i className="fa-solid fa-wand-magic-sparkles" />
+              <Icon name="generated" size="sm" />
             </button>
             <button
               className={kindFilter === "manual" ? "on" : ""}
               title={t("hist_filter_manual")}
+              aria-label={t("hist_filter_manual")}
+              aria-pressed={kindFilter === "manual"}
               onClick={() => {
                 setKindFilter("manual");
                 setPage(0);
               }}
             >
-              <i className="fa-solid fa-upload" />
+              <Icon name="imported" size="sm" />
             </button>
           </div>
-          <div className="seg density-seg history-cols-seg" title={t("columns_per_row")}>
-            {(compact ? HISTORY_COLUMN_OPTIONS : HISTORY_COLUMN_OPTIONS_FULL).map((n) => (
-              <button
-                key={n}
-                className={columns === n ? "on" : ""}
-                onClick={() => setColumns(n)}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            dense
+            className="history-cols-seg"
+            title={t("columns_per_row")}
+            value={columns}
+            onChange={setColumns}
+            options={(compact ? HISTORY_COLUMN_OPTIONS : HISTORY_COLUMN_OPTIONS_FULL).map((n) => ({
+              value: n,
+              label: String(n),
+            }))}
+          />
         </div>
         {tagBar}
       </div>
@@ -309,33 +316,32 @@ export default function History({
                 {g.aspect_ratio && <span className="muted small">· {g.aspect_ratio}</span>}
                 {g.resolution && <span className="muted small">· {g.resolution}</span>}
                 {outImg && (
-                  <button
+                  <IconButton
                     className={`icon-btn${outImg.starred ? " is-starred" : ""}`}
-                    title={outImg.starred ? t("unfavorite") : t("favorite")}
+                    icon="favorite"
+                    filled={!!outImg.starred}
+                    label={outImg.starred ? t("unfavorite") : t("favorite")}
+                    aria-pressed={!!outImg.starred}
                     onClick={() => toggleStar(outImg)}
-                  >
-                    <i className={outImg.starred ? "fa-solid fa-star" : "fa-regular fa-star"} />
-                  </button>
+                  />
                 )}
                 {g.status !== "running" && (
                   <>
-                    <button
+                    <IconButton
                       className="icon-btn"
-                      title={t("edit_annotation")}
+                      icon="edit"
+                      label={t("edit_annotation")}
                       onClick={() => setEditingGen(g)}
-                    >
-                      <i className="fa-solid fa-pen" />
-                    </button>
-                    <button
+                    />
+                    <IconButton
                       className="icon-btn"
-                      title={t("duplicate")}
+                      icon="duplicate"
+                      label={t("duplicate")}
                       onClick={() => setDuplicatingGen(g)}
-                    >
-                      <i className="fa-solid fa-clone" />
-                    </button>
+                    />
                   </>
                 )}
-                <div className="spacer" style={{ flex: 1 }} />
+                <div className="spacer" />
                 <button onClick={() => onReuse(g)}>{t("reuse")}</button>
               </div>
 
@@ -371,7 +377,7 @@ export default function History({
               )}
 
               {genTags(g).length > 0 && (
-                <div className="card-tags" style={{ marginBottom: 4 }}>
+                <div className="card-tags mb-1">
                   {genTags(g).map((tg) => (
                     <span key={tg.id} className="card-tag">
                       {tg.name}
@@ -389,7 +395,7 @@ export default function History({
                         className="deleted-tile"
                         title={t("deleted_label")}
                       >
-                        <i className="fa-solid fa-trash-can" />
+                        <Icon name="imageMissing" />
                       </span>
                     ) : (
                       <img
@@ -406,12 +412,12 @@ export default function History({
                     <span className="muted small">{t("no_refs")}</span>
                   )}
                 </div>
-                <span className="arrow">→</span>
+                <span className="arrow" aria-hidden="true"><Icon name="arrowRight" /></span>
                 <div className="gen-out">
                   {g.outputImage?.deleted_at ||
                   (g.status === "success" && !g.outputImage) ? (
                     <div className="deleted-tile output">
-                      <i className="fa-solid fa-trash-can" />
+                      <Icon name="imageMissing" size="lg" />
                       <span className="small">{t("deleted_label")}</span>
                     </div>
                   ) : g.outputImage ? (

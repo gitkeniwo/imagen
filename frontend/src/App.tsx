@@ -28,6 +28,9 @@ import ImageViewer from "./components/ImageViewer";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 import Drafts from "./pages/Drafts";
 import { useToast } from "./components/Toast";
+import Icon, { type IconName } from "./components/ui/Icon";
+import { IconButton } from "./components/ui/Button";
+import appIcon from "./assets/app-icon.png";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
@@ -537,7 +540,7 @@ export default function App() {
       <div className="topbar">
         <div className="topbar-inner">
           <div className="brand">
-            <span className="banana">🍌</span> Imagen
+            <img className="brand-icon" src={appIcon} alt="" /> Imagen
           </div>
           <div className="spacer" />
           <button
@@ -548,16 +551,16 @@ export default function App() {
             {lang === "zh" ? "EN" : "ZH"}
           </button>
           <button className="topbar-btn" onClick={() => setShowAddHistory(true)} title={t("add_history_title")}>
-            <i className="fa-solid fa-square-plus"></i> {t("add_history")}
+            <Icon name="add" /> {t("add_history")}
           </button>
           <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
-            <i className="fa-solid fa-chart-simple"></i> {t("usage")}
+            <Icon name="usage" /> {t("usage")}
           </button>
           <button className="topbar-btn" onClick={() => setShowSettings(true)}>
             {configured ? (
-              <><i className="fa-solid fa-gear"></i> {t("settings")}</>
+              <><Icon name="settings" /> {t("settings")}</>
             ) : (
-              <><i className="fa-solid fa-triangle-exclamation"></i> {t("set_api_key")}</>
+              <><Icon name="warning" /> {t("set_api_key")}</>
             )}
           </button>
         </div>
@@ -572,36 +575,40 @@ export default function App() {
             <div className="side-tabs">
               {(
                 [
-                  ["library", "fa-images"],
-                  ["history", "fa-clock-rotate-left"],
-                  ["favorites", "fa-star"],
-                  ["drafts", "fa-box-archive"],
-                ] as [SidebarPanel, string][]
+                  ["library", "library"],
+                  ["history", "history"],
+                  ["favorites", "favorite"],
+                  ["drafts", "drafts"],
+                ] as [SidebarPanel, IconName][]
               ).map(([panel, icon]) => (
                 <button
                   key={panel}
                   className={`tab${sidebarPanel === panel ? " active" : ""}`}
                   title={t(`tab_${panel}`)}
+                  aria-label={t(`tab_${panel}`)}
+                  aria-pressed={sidebarPanel === panel}
                   onClick={() => setSidebarPanel(panel)}
                 >
-                  <i className={`fa-solid ${icon}`} />
+                  <Icon name={icon} />
                 </button>
               ))}
             </div>
-            <button
+            <IconButton
               className="side-expand"
-              title={t("bin_title")}
+              variant="outline"
+              size="md"
+              icon="bin"
+              label={t("bin_title")}
               onClick={() => openManager("bin")}
-            >
-              <i className="fa-solid fa-trash-can" />
-            </button>
-            <button
+            />
+            <IconButton
               className="side-expand"
-              title={t("fullscreen_manage")}
+              variant="outline"
+              size="md"
+              icon="fullscreen"
+              label={t("fullscreen_manage")}
               onClick={() => openManager(sidebarPanel)}
-            >
-              <i className="fa-solid fa-expand" />
-            </button>
+            />
           </div>
           <div className="side-scroll">
             {sidebarPanel === "library" ? (

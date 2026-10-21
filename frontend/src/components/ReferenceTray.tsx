@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import Icon from "./ui/Icon";
+import { IconButton } from "./ui/Button";
 
 function isFileDrag(dataTransfer: DataTransfer | null) {
   return !!dataTransfer && Array.from(dataTransfer.types).includes("Files");
@@ -158,16 +160,27 @@ export default function ReferenceTray({
           >
             <img src={imgThumbUrl(img.id)} alt={img.filename} draggable={false} />
             <span className="pos">{i + 1}</span>
-            <button className="x" onClick={() => onRemove(img.id)}>
-              ×
-            </button>
+            <IconButton
+              className="x"
+              variant="overlay"
+              icon="close"
+              label={t("remove_ref")}
+              onClick={() => onRemove(img.id)}
+            />
           </div>
         ))}
         <div
           className={`dropzone${drag ? " drag" : ""}`}
           onClick={() => fileInput.current?.click()}
         >
-          {busy ? <span className="spinner" /> : <span>{t("tray_upload")}</span>}
+          {busy ? (
+            <span className="spinner" />
+          ) : (
+            <span className="dropzone-label">
+              <Icon name="upload" />
+              {t("tray_upload")}
+            </span>
+          )}
         </div>
         <input
           ref={fileInput}
@@ -181,7 +194,7 @@ export default function ReferenceTray({
           }}
         />
       </div>
-      {err && <div className="notice error small" style={{ marginTop: 8 }}>{err}</div>}
+      {err && <div className="notice error small mt-2">{err}</div>}
     </div>
   );
 }

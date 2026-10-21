@@ -15,6 +15,8 @@ import LibraryPickerModal from "./LibraryPickerModal";
 import OptionBar from "./OptionBar";
 import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
+import Icon from "./ui/Icon";
+import { Button, IconButton } from "./ui/Button";
 
 export default function DraftEditorModal({
   existing,
@@ -117,7 +119,7 @@ export default function DraftEditorModal({
       onPointerDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="modal draft-editor-modal" onPointerDown={(e) => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0 }}>{existing ? t("edit_draft") : t("new_draft")}</h3>
+        <h3 className="mt-0">{existing ? t("edit_draft") : t("new_draft")}</h3>
         <p className="muted small">{t("draft_editor_desc")}</p>
 
         <label>{t("prompt")}</label>
@@ -128,7 +130,7 @@ export default function DraftEditorModal({
           onChange={(e) => setPrompt(e.target.value)}
         />
 
-        <div style={{ marginTop: 14 }}>
+        <div className="mt-4">
           <ReferenceTray
             tray={inputs}
             onAdd={(images) => images.forEach((img) => addUnique(setInputs, img))}
@@ -136,23 +138,34 @@ export default function DraftEditorModal({
             onMove={moveInput}
             noGlobalDrop
           />
-          <button type="button" style={{ marginTop: 8 }} onClick={() => setPicker("input")}>
-            <i className="fa-solid fa-images" /> {t("pick_from_library")}
-          </button>
+          <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("input")}>
+            {t("pick_from_library")}
+          </Button>
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div className="mt-4">
           <label>{t("draft_outputs")}</label>
           <p className="muted small draft-output-hint">{t("draft_outputs_hint")}</p>
           <div className="tray dropzone-wrap">
             {outputs.map((img) => (
               <div className="chip" key={img.id} title={img.filename}>
                 <img src={imgThumbUrl(img.id)} alt={img.filename} />
-                <button className="x" onClick={() => setOutputs((prev) => prev.filter((x) => x.id !== img.id))}>×</button>
+                <IconButton
+                  className="x"
+                  variant="overlay"
+                  icon="close"
+                  label={t("remove_ref")}
+                  onClick={() => setOutputs((prev) => prev.filter((x) => x.id !== img.id))}
+                />
               </div>
             ))}
-            <label className="dropzone" style={{ cursor: "pointer" }}>
-              {outputBusy ? <span className="spinner" /> : <span>{t("tray_upload")}</span>}
+            <label className="dropzone">
+              {outputBusy ? <span className="spinner" /> : (
+                <span className="dropzone-label">
+                  <Icon name="upload" />
+                  {t("tray_upload")}
+                </span>
+              )}
               <input
                 type="file"
                 accept="image/*"
@@ -165,12 +178,12 @@ export default function DraftEditorModal({
               />
             </label>
           </div>
-          <button type="button" style={{ marginTop: 8 }} onClick={() => setPicker("output")}>
-            <i className="fa-solid fa-images" /> {t("pick_from_library")}
-          </button>
+          <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("output")}>
+            {t("pick_from_library")}
+          </Button>
         </div>
 
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <OptionBar
             model={model}
             setModel={setModel}
@@ -183,21 +196,30 @@ export default function DraftEditorModal({
           />
         </div>
 
-        <div style={{ marginTop: 14 }}>
+        <div className="mt-4">
           <label>{t("archive_to")}</label>
           <TagPicker selected={tagIds} onChange={setTagIds} />
         </div>
 
         <div className="draft-editor-toggles">
-          <button className={`skip-toggle${skip ? " on" : ""}`} onClick={() => setSkip((v) => !v)}>
+          <button
+            className={`skip-toggle${skip ? " on" : ""}`}
+            aria-pressed={skip}
+            onClick={() => setSkip((v) => !v)}
+          >
             {t("skip_if_preceding_succeeds")}
           </button>
-          <button className={`skip-toggle${pinned ? " on" : ""}`} onClick={() => setPinned((v) => !v)}>
-            <i className="fa-solid fa-thumbtack" /> {t("pin_draft")}
-          </button>
+          <Button
+            className={`skip-toggle${pinned ? " on" : ""}`}
+            icon="pin"
+            aria-pressed={pinned}
+            onClick={() => setPinned((v) => !v)}
+          >
+            {t("pin_draft")}
+          </Button>
         </div>
 
-        {err && <div className="notice error small" style={{ marginTop: 12 }}>{err}</div>}
+        {err && <div className="notice error small mt-3">{err}</div>}
         <div className="modal-actions">
           <button onClick={onClose} disabled={saving}>{t("cancel")}</button>
           <button className="primary" onClick={save} disabled={saving}>

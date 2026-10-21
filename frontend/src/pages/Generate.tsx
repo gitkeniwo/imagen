@@ -13,6 +13,7 @@ import ReferenceTray from "../components/ReferenceTray";
 import OptionBar from "../components/OptionBar";
 import QueueList from "../components/QueueList";
 import TagPicker from "../components/TagPicker";
+import { Button, IconButton } from "../components/ui/Button";
 
 const ATTEMPTS_KEY = "imagen-task-attempts";
 
@@ -128,7 +129,7 @@ export default function Generate({
           onRemove={removeFromTray}
           onMove={moveInTray}
         />
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <label>{t("prompt")}</label>
           <textarea
             value={prompt}
@@ -143,7 +144,7 @@ export default function Generate({
             placeholder={t("prompt_placeholder")}
           />
         </div>
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <OptionBar
             model={model}
             setModel={setModel}
@@ -155,11 +156,11 @@ export default function Generate({
             setFormat={setFormat}
           />
         </div>
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <label>{t("archive_to")}</label>
           <TagPicker selected={tagIds} onChange={setTagIds} />
         </div>
-        <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center" }}>
+        <div className="composer-actions">
           <button
             className="primary"
             onClick={submit}
@@ -168,15 +169,16 @@ export default function Generate({
           >
             {t("generate")}
           </button>
-          <button onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
-            <i className="fa-solid fa-box-archive" /> {t("save_draft")}
-          </button>
+          <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
+            {t("save_draft")}
+          </Button>
           <span className="muted small">
             {t("ref_count", { n: tray.length })}
             {!keyConfigured && t("need_key_inline")}
           </span>
           <button
             className={`skip-toggle${skipIfPrecedingSucceeds ? " on" : ""}`}
+            aria-pressed={skipIfPrecedingSucceeds}
             onClick={() => setSkipIfPrecedingSucceeds((v) => !v)}
             title={t("skip_if_preceding_succeeds_title")}
           >
@@ -184,12 +186,13 @@ export default function Generate({
           </button>
           <div className="attempts-field" title={t("attempts_hint")}>
             <span className="muted small">{t("attempts")}</span>
-            <button
+            <IconButton
+              variant="outline"
+              icon="remove"
+              label={t("attempts_decrease")}
               onClick={() => setAttempts((n) => Math.max(1, n - 1))}
               disabled={attempts <= 1}
-            >
-              −
-            </button>
+            />
             <input
               type="number"
               min={1}
@@ -201,14 +204,15 @@ export default function Generate({
                 setAttempts(Math.max(1, Math.min(MAX_TASK_ATTEMPTS, v || 1)));
               }}
             />
-            <button
+            <IconButton
+              variant="outline"
+              icon="add"
+              label={t("attempts_increase")}
               onClick={() =>
                 setAttempts((n) => Math.min(MAX_TASK_ATTEMPTS, n + 1))
               }
               disabled={attempts >= MAX_TASK_ATTEMPTS}
-            >
-              +
-            </button>
+            />
           </div>
           <div className="spacer" />
         </div>
