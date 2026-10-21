@@ -28,8 +28,6 @@ import ImageViewer from "./components/ImageViewer";
 import HoverPeek from "./components/HoverPeek";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 import Drafts from "./pages/Drafts";
-import DraftEditorModal from "./components/DraftEditorModal";
-import Menu from "./components/ui/Menu";
 import PanelTabs from "./components/ui/PanelTabs";
 import { usePanelCounts } from "./usePanelCounts";
 import { useToast } from "./components/Toast";
@@ -108,7 +106,6 @@ export default function App() {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showAddHistory, setShowAddHistory] = useState(false);
-  const [showNewDraft, setShowNewDraft] = useState(false);
   // Bumped by panels whose item totals change without a data refresh (drafts).
   const [countsVersion, setCountsVersion] = useState(0);
   const bumpCounts = useCallback(() => setCountsVersion((v) => v + 1), []);
@@ -686,24 +683,14 @@ export default function App() {
         <div className="main-col">
           <header className="topbar">
             <div className="spacer" />
-            <Menu
-              items={[
-                { label: t("new_draft"), icon: "drafts", onSelect: () => setShowNewDraft(true) },
-                { label: t("import_result"), icon: "imported", onSelect: () => setShowAddHistory(true) },
-              ]}
-              renderTrigger={({ open, toggle }) => (
-                <Button
-                  className="topbar-btn"
-                  icon="add"
-                  aria-haspopup="menu"
-                  aria-expanded={open}
-                  onClick={toggle}
-                >
-                  {t("new_menu")}
-                  <Icon name="chevronDown" size="sm" />
-                </Button>
-              )}
-            />
+            <Button
+              className="topbar-btn"
+              icon="add"
+              title={t("import_result")}
+              onClick={() => setShowAddHistory(true)}
+            >
+              {t("new_menu")}
+            </Button>
             <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
               <Icon name="usage" /> {t("usage")}
             </button>
@@ -759,16 +746,6 @@ export default function App() {
         <AddHistoryModal
           onClose={() => setShowAddHistory(false)}
           onSaved={bumpData}
-        />
-      )}
-
-      {showNewDraft && (
-        <DraftEditorModal
-          onClose={() => setShowNewDraft(false)}
-          onSaved={() => {
-            setDraftVersion((v) => v + 1);
-            setSidebarPanel("drafts");
-          }}
         />
       )}
 
