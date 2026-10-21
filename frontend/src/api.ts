@@ -18,6 +18,7 @@ export interface ImageRow {
   mime: string;
   width: number;
   height: number;
+  byte_size?: number;
   source: "upload" | "generated";
   starred: number;
   note?: string | null;

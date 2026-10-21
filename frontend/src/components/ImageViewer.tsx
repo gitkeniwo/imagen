@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
-import { pressable } from "../a11y";
 import TagPicker from "./TagPicker";
 import { useToast } from "./Toast";
 import AddHistoryModal from "./AddHistoryModal";
@@ -10,8 +9,10 @@ import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Menu from "./ui/Menu";
 import { downloadImage } from "./GenerationCard";
+import { peekProps } from "./HoverPeek";
 
-// Full-screen lightbox: big image + metadata + inline tag editing + actions.
+// Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
+// and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
 // For generated images it also surfaces the prompt behind the image (copy /
 // reuse), a ★ favorite toggle, and an editable note — so a good image is one
 // click from saving its prompt.
@@ -131,8 +132,7 @@ export default function ImageViewer({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       else if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
-      else if (e.key === "ArrowRight")
-        setIdx((i) => Math.min(items.length - 1, i + 1));
+      else if (e.key === "ArrowRight") setIdx((i) => Math.min(items.length - 1, i + 1));
     };
     if (editingGen || duplicatingGen) return;
     window.addEventListener("keydown", onKey);
@@ -169,43 +169,51 @@ export default function ImageViewer({
   };
 
   const multi = items.length > 1;
+  const prev = () => setIdx((i) => Math.max(0, i - 1));
+  const next = () => setIdx((i) => Math.min(items.length - 1, i + 1));
+  const format = (current.mime || "").replace("image/", "").toUpperCase();
+  const params = gen
+    ? [gen.model.replace("-image", "").replace("-preview", ""), gen.aspect_ratio, gen.resolution, format]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   return (
     <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={onClose}>
-      <IconButton
-        className="viewer-close"
-        variant="overlay"
-        size="lg"
-        icon="close"
-        label={t("close")}
-        onClick={onClose}
-      />
-      {multi && (
-        <IconButton
-          className="viewer-nav prev"
-          variant="overlay"
-          size="lg"
-          icon="prev"
-          label={t("prev_image")}
-          disabled={idx === 0}
-          onClick={(e) => {
-            e.stopPropagation();
-            setIdx((i) => Math.max(0, i - 1));
-          }}
-        />
-      )}
-
-      <div className="viewer-body" onClick={(e) => e.stopPropagation()}>
+      <div className="viewer-window" onClick={(e) => e.stopPropagation()}>
         <div className="viewer-stage">
           <img src={imgFileUrl(current.id)} alt={current.filename} />
+          {multi && (
+            <>
+              <span className="viewer-count">{idx + 1} / {items.length}</span>
+              <IconButton
+                className="viewer-nav prev"
+                variant="overlay"
+                size="lg"
+                icon="prev"
+                label={t("prev_image")}
+                disabled={idx === 0}
+                onClick={prev}
+              />
+              <IconButton
+                className="viewer-nav next"
+                variant="overlay"
+                size="lg"
+                icon="next"
+                label={t("next_image")}
+                disabled={idx === items.length - 1}
+                onClick={next}
+              />
+            </>
+          )}
         </div>
-        <div className="viewer-side">
-          <div className="viewer-head">
-            <div className="viewer-name">{current.filename}</div>
-            <div className="viewer-head-actions">
+
+        <aside className="viewer-side" aria-label={t("image_info")}>
+          <div className="viewer-top">
+            <div className="viewer-head">
+              <h2 className="viewer-name">{current.filename}</h2>
               <IconButton
                 className={`viewer-star${starred ? " is-starred" : ""}`}
-                variant="outline"
                 size="md"
                 icon="favorite"
                 filled={starred}
@@ -214,7 +222,6 @@ export default function ImageViewer({
                 onClick={toggleStar}
               />
               <IconButton
-                variant="outline"
                 size="md"
                 icon="download"
                 label={t("download")}
@@ -236,7 +243,6 @@ export default function ImageViewer({
                 ]}
                 renderTrigger={({ open, toggle }) => (
                   <IconButton
-                    variant="outline"
                     size="md"
                     icon="more"
                     label={t("more_actions")}
@@ -245,100 +251,114 @@ export default function ImageViewer({
                   />
                 )}
               />
+              <IconButton
+                className="viewer-close"
+                size="md"
+                icon="close"
+                label={t("close")}
+                onClick={onClose}
+              />
+            </div>
+            <div className="viewer-meta">
+              <button
+                type="button"
+                className={`badge source-badge ${source}`}
+                title={source === "upload" ? t("mark_as_generated") : t("mark_as_upload")}
+                onClick={toggleSource}
+              >
+                <Icon name={source === "upload" ? "uploaded" : "generated"} size="sm" />
+                {source === "upload" ? t("tag_upload") : t("tag_generated")}
+              </button>
+              <span>{current.width}×{current.height}</span>
+              <span className="sep">·</span>
+              <span>
+                {format}
+                {current.byte_size ? ` · ${fmtBytes(current.byte_size)}` : ""}
+              </span>
+              <span className="sep">·</span>
+              <span>{fmtTime(current.created_at)}</span>
+            </div>
+            <div className="viewer-actions">
+              <Button variant="primary" icon="addToRefs" onClick={() => onAddToTray(current)}>
+                {t("add_to_input")}
+              </Button>
+              {onReuse && gen && (
+                <Button icon="reuse" onClick={() => onReuse(gen)}>
+                  {t("reuse")}
+                </Button>
+              )}
             </div>
           </div>
-          <div className="viewer-meta muted small">
-            <span>{current.width}×{current.height}</span>
-            <span className={`badge source-badge ${source}`}>
-              <Icon name={source === "upload" ? "uploaded" : "generated"} size="sm" />
-              {source === "upload" ? t("tag_upload") : t("tag_generated")}
-            </span>
-            {multi && <span>{idx + 1}/{items.length}</span>}
-          </div>
 
-          <div className="viewer-actions">
-            <Button variant="primary" icon="addToRefs" onClick={() => onAddToTray(current)}>
-              {t("add_to_input")}
-            </Button>
-            {onReuse && gen && (
-              <Button icon="reuse" onClick={() => onReuse(gen)}>
-                {t("reuse")}
-              </Button>
+          <div className="viewer-sections">
+            {source === "generated" && gen?.prompt && (
+              <section className="viewer-section">
+                <div className="viewer-section-head">
+                  <h3>{t("prompt_label")}</h3>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={copied ? "check" : "copy"}
+                    title={t("copy_prompt")}
+                    onClick={copyPrompt}
+                  >
+                    {copied ? t("copied") : t("copy")}
+                  </Button>
+                </div>
+                <p className="viewer-prompt-text">{gen.prompt}</p>
+                <span className="viewer-params">{params}</span>
+              </section>
             )}
-          </div>
 
-          {source === "generated" && gen?.prompt && (
-            <div className="viewer-prompt">
-              <div className="viewer-prompt-head">
-                <label>{t("prompt_label")}</label>
-                <IconButton
-                  icon={copied ? "check" : "copy"}
-                  label={copied ? t("copied") : t("copy_prompt")}
-                  onClick={copyPrompt}
-                />
-              </div>
-              <p className="viewer-prompt-text">{gen.prompt}</p>
-              {gen.inputs && gen.inputs.length > 0 && (
-                <div className="viewer-inputs gen-inputs">
-                  {gen.inputs.map((im) =>
+            {source === "generated" && gen?.inputs && gen.inputs.length > 0 && (
+              <section className="viewer-section">
+                <h3>{t("viewer_inputs", { n: gen.inputs.length })}</h3>
+                <div className="viewer-inputs">
+                  {gen.inputs.map((im, i) =>
                     im.deleted_at ? (
-                      <span
-                        key={im.id}
-                        className="deleted-tile"
-                        title={t("deleted_label")}
-                      >
+                      <span key={im.id} className="deleted-tile" title={t("deleted_label")}>
                         <Icon name="imageMissing" />
                       </span>
                     ) : (
-                      <img
+                      <button
                         key={im.id}
-                        src={imgThumbUrl(im.id)}
-                        alt={im.filename}
-                        title={`${im.filename} · ${t("add_to_input")}`}
+                        type="button"
+                        className="viewer-input"
+                        aria-label={`${im.filename} · ${t("add_to_input")}`}
+                        {...peekProps(im, t("peek_input", { n: i + 1 }))}
                         onClick={() => onAddToTray(im)}
-                        {...pressable(() => onAddToTray(im))}
-                      />
+                      >
+                        <img src={imgThumbUrl(im.id)} alt="" />
+                        <span className="pos">{i + 1}</span>
+                      </button>
                     ),
                   )}
                 </div>
-              )}
-            </div>
-          )}
+              </section>
+            )}
 
-          {source === "generated" && (
-            <>
-              <label className="mt-4">{t("note_label")}</label>
-              <textarea
-                className="viewer-note"
-                rows={2}
-                value={note}
-                placeholder={t("note_placeholder")}
-                onChange={(e) => setNote(e.target.value)}
-                onBlur={saveNote}
-              />
-            </>
-          )}
+            {source === "generated" && (
+              <section className="viewer-section">
+                <label htmlFor="viewer-note" className="viewer-section-label">{t("note_label")}</label>
+                <textarea
+                  id="viewer-note"
+                  className="viewer-note"
+                  rows={2}
+                  value={note}
+                  placeholder={t("note_placeholder")}
+                  onChange={(e) => setNote(e.target.value)}
+                  onBlur={saveNote}
+                />
+              </section>
+            )}
 
-          <label className="mt-4">{t("tags_label")}</label>
-          <TagPicker selected={tagIds} onChange={applyTags} />
-
-        </div>
+            <section className="viewer-section">
+              <h3>{t("tags_label")}</h3>
+              <TagPicker selected={tagIds} onChange={applyTags} />
+            </section>
+          </div>
+        </aside>
       </div>
-
-      {multi && (
-        <IconButton
-          className="viewer-nav next"
-          variant="overlay"
-          size="lg"
-          icon="next"
-          label={t("next_image")}
-          disabled={idx === items.length - 1}
-          onClick={(e) => {
-            e.stopPropagation();
-            setIdx((i) => Math.min(items.length - 1, i + 1));
-          }}
-        />
-      )}
 
       {editingGen && (
         <AddHistoryModal
@@ -365,4 +385,19 @@ export default function ImageViewer({
       )}
     </div>
   );
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// "10-19 14:32" in local time; earlier years keep the year.
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 16);
+  const p = (x: number) => String(x).padStart(2, "0");
+  const md = `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}-${md}`;
 }
