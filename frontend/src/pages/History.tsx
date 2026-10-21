@@ -198,15 +198,6 @@ export default function History({
             }}
             placeholder={t("search_placeholder_history")}
           />
-          <Segmented
-            className="view-seg"
-            value={layout}
-            onChange={setLayout}
-            options={[
-              { value: "grid", label: t("view_grid"), icon: "columns", iconOnly: true, title: t("view_grid") },
-              { value: "list", label: t("view_list"), icon: "listView", iconOnly: true, title: t("view_list") },
-            ]}
-          />
           {layout === "grid" && (
           <ViewPopover>
             <PopoverSection label={t("columns_per_row")}>
@@ -222,6 +213,15 @@ export default function History({
             </PopoverSection>
           </ViewPopover>
           )}
+          <Segmented
+            className="view-seg"
+            value={layout}
+            onChange={setLayout}
+            options={[
+              { value: "grid", label: t("view_grid"), icon: "columns", iconOnly: true, title: t("view_grid") },
+              { value: "list", label: t("view_list"), icon: "listView", iconOnly: true, title: t("view_list") },
+            ]}
+          />
         </div>
         <div className="filter-row">
           <Segmented

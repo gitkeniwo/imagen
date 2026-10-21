@@ -1314,7 +1314,9 @@ body.manager-open { overflow: hidden; }
   width: 24px; height: 24px; flex: none; border-radius: 5px; object-fit: cover; border: 1px solid var(--border); cursor: pointer;
 }
 .hcard-chips .deleted-tile { display: inline-flex; align-items: center; justify-content: center; color: var(--muted-2); background: var(--panel-2); cursor: default; }
-.hcard-chips .card-tag { flex: none; }
+.hcard-chips .hcard-tag { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hcard-more { flex: none; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); padding: 0 var(--space-1); font-variant-numeric: tabular-nums; }
+.hcard-chips + .hcard-actions { margin-top: auto; padding-top: var(--space-1); }
 .hcard-actions { display: flex; align-items: center; gap: var(--space-1_5); margin-top: auto; }
 .hcard-actions .btn-sm { min-height: 28px; box-shadow: none; }
 .hcard-tools { display: flex; align-items: center; margin-left: auto; }

@@ -21,7 +21,7 @@ export function ViewPopover({ children }: { children: ReactNode }) {
           className="toolbar-trigger"
           variant="outline"
           size="md"
-          icon="columns"
+          icon="columnSettings"
           label={t("view")}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
