@@ -136,7 +136,6 @@ export default function DraftEditorModal({
             onAdd={(images) => images.forEach((img) => addUnique(setInputs, img))}
             onRemove={(id) => setInputs((prev) => prev.filter((img) => img.id !== id))}
             onMove={moveInput}
-            noGlobalDrop
           />
           <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("input")}>
             {t("pick_from_library")}

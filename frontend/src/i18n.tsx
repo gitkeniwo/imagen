@@ -45,7 +45,7 @@ const zh: Dict = {
   tray_label:
     "参考图（上传新图或从图库选取；拖动可排序）",
   tray_upload: "拖入 / 点击上传",
-  tray_drop_title: "拖入图片以上传",
+  tray_drop_title: "松开以添加为参考图",
   tray_drop_hint: "图片将被加入当前参考列表",
 
   prompt: "提示词",
@@ -432,7 +432,7 @@ const en: Dict = {
   tray_label:
     "Reference images (upload new ones or pick from the library; drag to reorder)",
   tray_upload: "Drag / click to upload",
-  tray_drop_title: "Drop images to upload",
+  tray_drop_title: "Drop to add as references",
   tray_drop_hint: "Images will be added to the current reference list",
 
   prompt: "Prompt",

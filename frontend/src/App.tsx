@@ -36,6 +36,7 @@ import { useToast } from "./components/Toast";
 import Icon from "./components/ui/Icon";
 import { Button, IconButton } from "./components/ui/Button";
 import appIcon from "./assets/app-icon.png";
+import { isRefDrag } from "./imageDrag";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
@@ -140,6 +141,32 @@ export default function App() {
 
   useEffect(() => {
     refreshConfig();
+  }, []);
+
+  // Drag guard. A file dropped where nothing takes it would make the webview
+  // navigate to that file and lose the composer, so unhandled file drags are
+  // refused here (targets call preventDefault first). Plain <img> drags are
+  // cancelled too: library images drag as rows (imageDrag.ts), not files.
+  useEffect(() => {
+    const onDragStart = (e: DragEvent) => {
+      if (e.target instanceof HTMLImageElement) e.preventDefault();
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (e.defaultPrevented || !isRefDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
+    };
+    const onDrop = (e: DragEvent) => {
+      if (isRefDrag(e.dataTransfer)) e.preventDefault();
+    };
+    window.addEventListener("dragstart", onDragStart);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragstart", onDragStart);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
   }, []);
 
   // The Tauri shell dispatches this after a download finishes. Browsers never
@@ -585,27 +612,21 @@ export default function App() {
                 { id: "drafts", label: t("tab_drafts"), icon: "drafts", count: counts.drafts },
               ]}
             />
-            <Menu
-              items={[
-                { label: t("bin_title"), icon: "bin", hint: counts.bin, onSelect: () => openManager("bin") },
-                {
-                  label: t("fullscreen_manage"),
-                  icon: "fullscreen",
-                  onSelect: () => openManager(sidebarPanel),
-                },
-              ]}
-              renderTrigger={({ open, toggle }) => (
-                <IconButton
-                  className="side-expand"
-                  variant="outline"
-                  size="md"
-                  icon="more"
-                  label={t("more_actions")}
-                  aria-haspopup="menu"
-                  aria-expanded={open}
-                  onClick={toggle}
-                />
-              )}
+            <IconButton
+              className="side-expand"
+              variant="outline"
+              size="md"
+              icon="bin"
+              label={counts.bin ? `${t("bin_title")} (${counts.bin})` : t("bin_title")}
+              onClick={() => openManager("bin")}
+            />
+            <IconButton
+              className="side-expand"
+              variant="outline"
+              size="md"
+              icon="fullscreen"
+              label={t("fullscreen_manage")}
+              onClick={() => openManager(sidebarPanel)}
             />
           </div>
           <div className="side-scroll">

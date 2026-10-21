@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useState } from "react";
 import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
+import { imageDragProps } from "../imageDrag";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
@@ -456,10 +457,12 @@ export default function Library({
                   added === img.id ? " just-added" : ""
                 }`}
                 key={img.id}
+                {...(selectMode ? {} : imageDragProps(img))}
               >
                 <img
                   src={imgThumbUrl(img.id)}
                   alt={img.filename}
+                  draggable={false}
                   title={[img.filename, ...tagNames].join(" · ")}
                   onClick={() => onCardClick(img)}
                   {...pressable(() => onCardClick(img))}
