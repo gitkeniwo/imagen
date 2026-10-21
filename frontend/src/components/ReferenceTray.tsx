@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
-import { IconButton } from "./ui/Button";
+import { Button, IconButton } from "./ui/Button";
 
 function isFileDrag(dataTransfer: DataTransfer | null) {
   return !!dataTransfer && Array.from(dataTransfer.types).includes("Files");
@@ -14,12 +14,17 @@ export default function ReferenceTray({
   onRemove,
   onMove,
   noGlobalDrop,
+  compact,
+  onPickLibrary,
 }: {
   tray: ImageRow[];
   onAdd: (imgs: ImageRow[]) => void;
   onRemove: (id: number) => void;
   onMove: (from: number, to: number) => void;
   noGlobalDrop?: boolean;
+  // Composer layout: no label, small chips, inline upload / library buttons.
+  compact?: boolean;
+  onPickLibrary?: () => void;
 }) {
   const { t } = useI18n();
   const [drag, setDrag] = useState(false);
@@ -121,9 +126,9 @@ export default function ReferenceTray({
           </div>
         </div>
       )}
-      <label>{t("tray_label")}</label>
+      {!compact && <label>{t("tray_label")}</label>}
       <div
-        className={`tray dropzone-wrap${drag ? " drag" : ""}`}
+        className={`tray dropzone-wrap${compact ? " tray-compact" : ""}${drag ? " drag" : ""}`}
         onDragOver={(e) => {
           if (!isFileDrag(e.dataTransfer)) return;
           e.preventDefault();
@@ -169,19 +174,39 @@ export default function ReferenceTray({
             />
           </div>
         ))}
-        <div
-          className={`dropzone${drag ? " drag" : ""}`}
-          onClick={() => fileInput.current?.click()}
-        >
-          {busy ? (
-            <span className="spinner" />
-          ) : (
-            <span className="dropzone-label">
-              <Icon name="upload" />
-              {t("tray_upload")}
-            </span>
-          )}
-        </div>
+        {compact ? (
+          <div className="tray-actions">
+            <Button
+              size="sm"
+              icon="upload"
+              title={t("tray_drop_hint")}
+              disabled={busy}
+              onClick={() => fileInput.current?.click()}
+            >
+              {busy ? <span className="spinner" /> : t("upload_short")}
+            </Button>
+            {onPickLibrary && (
+              <Button size="sm" icon="pickFromLibrary" onClick={onPickLibrary}>
+                {t("pick_from_library")}
+              </Button>
+            )}
+            {tray.length === 0 && <span className="muted small">{t("tray_compact_hint")}</span>}
+          </div>
+        ) : (
+          <div
+            className={`dropzone${drag ? " drag" : ""}`}
+            onClick={() => fileInput.current?.click()}
+          >
+            {busy ? (
+              <span className="spinner" />
+            ) : (
+              <span className="dropzone-label">
+                <Icon name="upload" />
+                {t("tray_upload")}
+              </span>
+            )}
+          </div>
+        )}
         <input
           ref={fileInput}
           type="file"
