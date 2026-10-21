@@ -193,6 +193,8 @@ export interface SeriesPoint {
   label: string;
   total: number;
   success: number;
+  blocked: number;
+  error: number;
   // Per-bucket success counts, so the chart tooltip can price a single bar.
   cost_basis: CostBasisRow[];
 }
@@ -205,6 +207,9 @@ export interface PeriodStats {
   cost_basis: CostBasisRow[];
   images: { total: number; by_source: Record<string, number>; bytes: number };
   chart: SeriesPoint[];
+  // Most common blocked/error causes: `code` is a raw_finish the UI localizes;
+  // `message` is the stored text when there is no code.
+  failures: { code: string | null; message: string | null; count: number }[];
 }
 
 export interface Stats {

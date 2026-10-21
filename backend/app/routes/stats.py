@@ -42,26 +42,27 @@ def _in_window(d: date, period: str, today: date) -> bool:
 
 
 def _series_from(rows, ordered_keys, keyfn):
-    """Aggregate (dt,status,model,resolution) rows into ordered buckets.
+    """Aggregate generation rows into ordered buckets.
 
     Each bucket carries its own ``cost_basis`` (same shape as the period-level
     one) so the chart tooltip can price a single day/hour/month with the user's
-    unit prices without a second request.
+    unit prices without a second request, plus blocked/error counts for the
+    stacked bars (anything else, e.g. aborted, is total minus the three).
     """
-    agg = {k: [0, 0] for k, _ in ordered_keys}
+    agg = {k: {"total": 0, "success": 0, "blocked": 0, "error": 0} for k, _ in ordered_keys}
     cost = {k: {} for k, _ in ordered_keys}
-    for dt, st, model, res in rows:
+    for dt, st, model, res, *_ in rows:
         k = keyfn(dt)
         if k in agg:
-            agg[k][0] += 1
+            agg[k]["total"] += 1
+            if st in ("success", "blocked", "error"):
+                agg[k][st] += 1
             if st == "success":
-                agg[k][1] += 1
                 cost[k][(model, res)] = cost[k].get((model, res), 0) + 1
     return [
         {
             "label": lbl,
-            "total": agg[k][0],
-            "success": agg[k][1],
+            **agg[k],
             "cost_basis": [
                 {"model": m, "resolution": r, "count": c}
                 for (m, r), c in cost[k].items()
@@ -69,6 +70,19 @@ def _series_from(rows, ordered_keys, keyfn):
         }
         for k, lbl in ordered_keys
     ]
+
+
+def _failure_reasons(rows, limit: int = 5):
+    """Most common blocked/error causes, keyed by raw_finish (a code the
+    frontend localizes) and falling back to the stored message."""
+    counts = {}
+    for _, st, _m, _r, raw_finish, message in rows:
+        if st not in ("blocked", "error"):
+            continue
+        key = (raw_finish or None, None if raw_finish else (message or "").strip()[:200] or None)
+        counts[key] = counts.get(key, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: -kv[1])[:limit]
+    return [{"code": c, "message": m, "count": n} for (c, m), n in ranked]
 
 
 def _chart(rows, period: str, today: date):
@@ -111,9 +125,13 @@ def _chart(rows, period: str, today: date):
 def get_stats():
     with get_conn() as conn:
         gens = [
-            (_parse_dt(r["created_at"]), r["status"], r["model"], r["resolution"])
+            (
+                _parse_dt(r["created_at"]), r["status"], r["model"], r["resolution"],
+                r["raw_finish"], r["error_message"],
+            )
             for r in conn.execute(
-                "SELECT created_at, status, model, resolution FROM generations "
+                "SELECT created_at, status, model, resolution, raw_finish, error_message "
+                "FROM generations "
                 "WHERE status NOT IN ('note', 'running')"
             )
         ]
@@ -135,7 +153,7 @@ def get_stats():
         isub = [i for i in imgs if _in_window(i[0].date(), p, today)]
 
         by_status, by_model, cost = {}, {}, {}
-        for _, st, model, res in gsub:
+        for _, st, model, res, *_ in gsub:
             by_status[st] = by_status.get(st, 0) + 1
             by_model[model] = by_model.get(model, 0) + 1
             if st == "success":
@@ -156,6 +174,7 @@ def get_stats():
             ],
             "images": {"total": len(isub), "by_source": by_source, "bytes": bytes_sum},
             "chart": _chart(gsub, p, today),
+            "failures": _failure_reasons(gsub),
         }
 
     dts = [g[0] for g in gens]
