@@ -5,29 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imagen</title>
   <style>
-    :root { color-scheme: light dark; }
+    /* Same neutral palette as library.html and the app, so the hand-off from
+       splash → library page → app has no colour jump. */
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f8fa; --text: #0f172a; --muted: #64748b; --faint: #94a3b8;
+      --track: #e2e8f0; --bar: #0f172a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1120; --text: #e6ecf6; --muted: #94a3b8; --faint: #64748b;
+        --track: #1c2638; --bar: #e6ecf6;
+      }
+    }
     html, body { height: 100%; margin: 0; }
     body {
       display: flex; align-items: center; justify-content: center;
       font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-      background: radial-gradient(circle at 30% 20%, #eef4ff, #dbe6f7 55%, #cfdcef);
-      color: #1f2a3d; user-select: none;
+      background: var(--bg); color: var(--text);
+      user-select: none; -webkit-user-select: none; cursor: default;
     }
-    main { text-align: center; }
-    .mark { display: block; width: 84px; height: 84px; margin: 0 auto 22px; filter: drop-shadow(0 18px 30px rgba(15, 23, 42, .28)); }
-    h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; letter-spacing: .2px; }
-    p { margin: 0; color: #4b5a73; font-size: 13px; }
-    .spinner {
-      width: 18px; height: 18px; margin: 26px auto 10px;
-      border: 2px solid rgba(32, 92, 180, .22); border-top-color: #205cb4;
-      border-radius: 50%; animation: spin .9s linear infinite;
+    main {
+      display: flex; flex-direction: column; align-items: center;
+      /* Fast launches never show it; slow ones fade in. */
+      opacity: 0; animation: show .4s ease-out .15s forwards;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .hint { margin-top: 18px; font-size: 12px; color: #6b7a93; }
-    @media (prefers-color-scheme: dark) {
-      body { background: radial-gradient(circle at 30% 20%, #243247, #172133 55%, #101827); color: #e6ecf6; }
-      p { color: #a9b8ce; }
-      .hint { color: #8595ad; }
+    .mark {
+      width: 72px; height: 72px; border-radius: 16px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .08), 0 12px 32px -8px rgba(15, 23, 42, .25);
+    }
+    h1 { margin: 18px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+    .bar {
+      position: relative; overflow: hidden;
+      width: 140px; height: 3px; margin-top: 22px; border-radius: 999px; background: var(--track);
+    }
+    .bar::after {
+      content: ""; position: absolute; top: 0; bottom: 0; width: 40%;
+      border-radius: inherit; background: var(--bar);
+      animation: sweep 1.3s cubic-bezier(.65, 0, .35, 1) infinite;
+    }
+    #starting { margin: 14px 0 0; font-size: 13px; color: var(--muted); }
+    #hint {
+      margin: 0; font-size: 12px; color: var(--faint);
+      position: fixed; left: 0; right: 0; bottom: 28px; text-align: center;
+      opacity: 0; animation: show .4s ease-out 2.5s forwards;
+    }
+    @keyframes show { to { opacity: 1; } }
+    @keyframes sweep { from { left: -40%; } to { left: 100%; } }
+    @media (prefers-reduced-motion: reduce) {
+      main, #hint { animation: none; opacity: 1; }
+      .bar::after { animation: none; left: 0; width: 100%; opacity: .35; }
     }
   </style>
 </head>
@@ -35,10 +62,10 @@
   <main>
     <img class="mark" src="app-icon.png" alt="" />
     <h1>Imagen</h1>
+    <div class="bar" role="progressbar" aria-label="Loading"></div>
     <p id="starting">正在启动…</p>
-    <div class="spinner" aria-hidden="true"></div>
-    <p class="hint" id="hint">正在准备本地服务，首次启动可能需要几秒。</p>
   </main>
+  <p id="hint">正在准备本地服务，首次启动可能需要几秒。</p>
   <script>
     (function () {
       if ((navigator.language || "zh").toLowerCase().indexOf("zh") === 0) return;
