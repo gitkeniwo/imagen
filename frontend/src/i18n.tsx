@@ -26,7 +26,7 @@ const zh: Dict = {
   no_key_warning:
     "尚未设置 Vertex 项目。点击右上角“设置 Vertex”并填入你的 Project ID 即可开始生成。",
 
-  settings_title: "Vertex AI 设置（ADC）",
+  settings_title: "设置",
   settings_desc:
     "本应用使用 ADC（应用默认凭据）进行认证，不存储任何密钥——仅保存非敏感的 Project ID 与 Location。",
   settings_project: "Project ID",
@@ -104,6 +104,17 @@ const zh: Dict = {
   remove_ref: "移除参考图",
   no_results: "没有匹配的结果",
   clear_filters: "清除筛选",
+  filter: "筛选",
+  view: "视图",
+  new_menu: "新建",
+  import_result: "导入外部结果",
+  more_actions: "更多",
+  settings_language: "界面语言",
+  filter_source: "来源",
+  filter_kind: "记录类型",
+  filter_content: "内容",
+  filter_starred_only: "仅收藏",
+  thumb_size_label: "缩略图大小",
   loading: "加载中…",
   load_error: "加载失败：{msg}",
   retry: "重试",
@@ -325,7 +336,7 @@ const en: Dict = {
   no_key_warning:
     "Vertex project is not set. Click “Set Vertex” in the top-right and enter your Project ID to start generating.",
 
-  settings_title: "Vertex AI settings (ADC)",
+  settings_title: "Settings",
   settings_desc:
     "This app authenticates with ADC (Application Default Credentials) and stores no secrets — only the non-sensitive Project ID and Location.",
   settings_project: "Project ID",
@@ -403,6 +414,17 @@ const en: Dict = {
   remove_ref: "Remove reference image",
   no_results: "No matching results",
   clear_filters: "Clear filters",
+  filter: "Filter",
+  view: "View",
+  new_menu: "New",
+  import_result: "Import external result",
+  more_actions: "More",
+  settings_language: "Language",
+  filter_source: "Source",
+  filter_kind: "Record type",
+  filter_content: "Content",
+  filter_starred_only: "Starred only",
+  thumb_size_label: "Thumbnail size",
   loading: "Loading…",
   load_error: "Failed to load: {msg}",
   retry: "Retry",

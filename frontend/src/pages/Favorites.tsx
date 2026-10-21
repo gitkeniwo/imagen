@@ -9,6 +9,7 @@ import { useToast } from "../components/Toast";
 import Icon from "../components/ui/Icon";
 import { IconButton } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
+import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -162,17 +163,19 @@ export default function Favorites({
             }}
             placeholder={t("search_placeholder_history")}
           />
-          <Segmented
-            dense
-            className="history-cols-seg"
-            title={t("columns_per_row")}
-            value={columns}
-            onChange={setColumns}
-            options={(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => ({
-              value: n,
-              label: String(n),
-            }))}
-          />
+          <ViewPopover>
+            <PopoverSection label={t("columns_per_row")}>
+              <Segmented
+                dense
+                value={columns}
+                onChange={setColumns}
+                options={(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => ({
+                  value: n,
+                  label: String(n),
+                }))}
+              />
+            </PopoverSection>
+          </ViewPopover>
         </div>
       </div>
       {pager}

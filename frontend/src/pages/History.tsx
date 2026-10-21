@@ -9,6 +9,7 @@ import generationPending from "../assets/generation-pending.svg";
 import Icon from "../components/ui/Icon";
 import { IconButton } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
+import { FilterPopover, PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -195,63 +196,55 @@ export default function History({
             }}
             placeholder={t("search_placeholder_history")}
           />
-          <div className="seg history-kind-seg">
-            <button
-              className={kindFilter === null ? "on" : ""}
-              title={t("filter_all")}
-              onClick={() => {
-                setKindFilter(null);
-                setPage(0);
-              }}
-            >
-              {t("filter_all")}
-            </button>
-            <button
-              className={onlyWithImage ? "on" : ""}
-              title={t("hist_filter_with_image")}
-              onClick={() => {
-                setOnlyWithImage((value) => !value);
-                setPage(0);
-              }}
-            >
-              {t("hist_filter_with_image")}
-            </button>
-            <button
-              className={kindFilter === "vertex" ? "on" : ""}
-              title={t("hist_filter_vertex")}
-              aria-label={t("hist_filter_vertex")}
-              aria-pressed={kindFilter === "vertex"}
-              onClick={() => {
-                setKindFilter("vertex");
-                setPage(0);
-              }}
-            >
-              <Icon name="generated" size="sm" />
-            </button>
-            <button
-              className={kindFilter === "manual" ? "on" : ""}
-              title={t("hist_filter_manual")}
-              aria-label={t("hist_filter_manual")}
-              aria-pressed={kindFilter === "manual"}
-              onClick={() => {
-                setKindFilter("manual");
-                setPage(0);
-              }}
-            >
-              <Icon name="imported" size="sm" />
-            </button>
-          </div>
-          <Segmented
-            dense
-            className="history-cols-seg"
-            title={t("columns_per_row")}
-            value={columns}
-            onChange={setColumns}
-            options={(compact ? HISTORY_COLUMN_OPTIONS : HISTORY_COLUMN_OPTIONS_FULL).map((n) => ({
-              value: n,
-              label: String(n),
-            }))}
-          />
+          <FilterPopover
+            activeCount={(kindFilter !== null ? 1 : 0) + (onlyWithImage ? 1 : 0)}
+            onReset={() => {
+              setKindFilter(null);
+              setOnlyWithImage(false);
+              setPage(0);
+            }}
+          >
+            <PopoverSection label={t("filter_kind")}>
+              <Segmented
+                value={kindFilter ?? "all"}
+                onChange={(v) => {
+                  setKindFilter(v === "all" ? null : v);
+                  setPage(0);
+                }}
+                options={[
+                  { value: "all", label: t("filter_all") },
+                  { value: "vertex", label: t("hist_filter_vertex"), icon: "generated" },
+                  { value: "manual", label: t("hist_filter_manual"), icon: "imported" },
+                ]}
+              />
+            </PopoverSection>
+            <PopoverSection label={t("filter_content")}>
+              <button
+                type="button"
+                className={`skip-toggle${onlyWithImage ? " on" : ""}`}
+                aria-pressed={onlyWithImage}
+                onClick={() => {
+                  setOnlyWithImage((value) => !value);
+                  setPage(0);
+                }}
+              >
+                {t("hist_filter_with_image")}
+              </button>
+            </PopoverSection>
+          </FilterPopover>
+          <ViewPopover>
+            <PopoverSection label={t("columns_per_row")}>
+              <Segmented
+                dense
+                value={columns}
+                onChange={setColumns}
+                options={(compact ? HISTORY_COLUMN_OPTIONS : HISTORY_COLUMN_OPTIONS_FULL).map((n) => ({
+                  value: n,
+                  label: String(n),
+                }))}
+              />
+            </PopoverSection>
+          </ViewPopover>
         </div>
         {tagBar}
       </div>
@@ -270,7 +263,7 @@ export default function History({
         </div>
       ) : gens.length === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
-          {query || tagFilter !== null || kindFilter !== null ? (
+          {query || tagFilter !== null || kindFilter !== null || onlyWithImage ? (
             <div className="empty-state">
               <span>{t("no_results")}</span>
               <button
@@ -278,6 +271,7 @@ export default function History({
                   setQuery("");
                   setTagFilter(null);
                   setKindFilter(null);
+                  setOnlyWithImage(false);
                   setPage(0);
                 }}
               >
