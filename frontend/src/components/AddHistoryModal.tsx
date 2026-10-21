@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import CustomSelect from "./CustomSelect";
+import { AspectShape } from "./ComposerControls";
 import LibraryPickerModal from "./LibraryPickerModal";
 import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
@@ -348,7 +349,6 @@ export default function AddHistoryModal({
           <label>{t("aspect")}</label>
           <div className="aspect-row">
             {ASPECT_RATIOS.map((r) => {
-              const [w, h] = r.split(":").map(Number);
               return (
                 <button
                   key={r}
@@ -358,7 +358,7 @@ export default function AddHistoryModal({
                   onClick={() => setAspectRatio(r)}
                   title={r}
                 >
-                  <span className="aspect-shape" style={{ aspectRatio: `${w} / ${h}` }} />
+                  <span className="aspect-box"><AspectShape ratio={r} /></span>
                   <span className="aspect-label">{r}</span>
                 </button>
               );
