@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
@@ -16,6 +16,7 @@ export default function ReferenceTray({
   compact,
   onPickLibrary,
   onOpen,
+  action,
 }: {
   tray: ImageRow[];
   onAdd: (imgs: ImageRow[]) => void;
@@ -29,6 +30,8 @@ export default function ReferenceTray({
   onPickLibrary?: () => void;
   // Click a reference to open it in the viewer.
   onOpen?: (img: ImageRow) => void;
+  // Shown at the right end of the label row (e.g. "Pick from library").
+  action?: ReactNode;
 }) {
   const { t } = useI18n();
   const [drag, setDrag] = useState(false);
@@ -141,7 +144,12 @@ export default function ReferenceTray({
   return (
     <div>
       {pageDrop}
-      {!compact && <label>{t("tray_label")}</label>}
+      {!compact && (
+        <div className="field-head">
+          <label>{t("tray_label")}</label>
+          {action}
+        </div>
+      )}
       <div
         className={`tray dropzone-wrap${compact ? " tray-compact" : ""}${drag ? " drag" : ""}`}
         onDragOver={(e) => {
