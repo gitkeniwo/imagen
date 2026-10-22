@@ -272,6 +272,7 @@ export default function Library({
               { value: "", label: t("filter_all") },
               { value: "upload", label: t("filter_upload"), icon: "uploaded" },
               { value: "generated", label: t("filter_generated"), icon: "generated" },
+              { value: "app", label: t("filter_in_app"), icon: "cloud" },
             ]}
           />
           <Button
