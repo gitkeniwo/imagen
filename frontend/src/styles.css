@@ -996,6 +996,25 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 .manager-body .history-toolbar { background: var(--panel); }
 .manager-body .tag-filter-row { padding: 3px 0; }
 
+/* Fullscreen Library manager: the picker sits inside one sidebar-coloured
+   island that fills the window below the title bar. */
+.library-manager { padding: var(--space-2); }
+.manager-island {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-island);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --seg-track: var(--sidebar-track);
+}
+.manager-island-head {
+  flex: none; position: relative; display: flex; align-items: center; justify-content: center;
+  padding: var(--space-3) var(--space-5) var(--space-1);
+}
+.manager-island .manager-body { margin: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.manager-island .library-sticky,
+.manager-island .history-toolbar { background: var(--sidebar-bg); }
+
 /* ---- Usage dashboard ---- */
 .usage-header { justify-content: flex-start; min-height: 64px; }
 .usage-period {

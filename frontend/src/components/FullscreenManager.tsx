@@ -72,70 +72,72 @@ export default function FullscreenManager({
   };
 
   return (
-    <div className="manager-overlay" role="dialog" aria-modal="true">
-      <div className="manager-header">
-        <PanelTabs
-          className="manager-tabs"
-          value={panel}
-          onChange={setPanel}
-          tabs={[
-            { id: "library", label: t("tab_library"), icon: "library", count: counts.library },
-            { id: "history", label: t("tab_history"), icon: "history", count: counts.history },
-            { id: "favorites", label: t("tab_favorites"), icon: "favorite", count: counts.favorites },
-            { id: "drafts", label: t("tab_drafts"), icon: "drafts", count: counts.drafts },
-            { id: "bin", label: t("tab_bin"), icon: "bin", count: counts.bin },
-          ]}
-        />
-        <IconButton
-          className="manager-close"
-          variant="outline"
-          size="md"
-          icon="close"
-          label={t("close")}
-          onClick={onClose}
-        />
-      </div>
-      <div className="manager-body">
-        {panel === "library" ? (
-          <Library
-            addToTray={addToTray}
-            onOpenViewer={onOpenViewer}
-            refreshKey={refreshKey}
-            onChanged={onChanged}
+    <div className="manager-overlay library-manager" role="dialog" aria-modal="true">
+      <div className="manager-island">
+        <div className="manager-island-head">
+          <PanelTabs
+            className="manager-tabs"
+            value={panel}
+            onChange={setPanel}
+            tabs={[
+              { id: "library", label: t("tab_library"), icon: "library", count: counts.library },
+              { id: "history", label: t("tab_history"), icon: "history", count: counts.history },
+              { id: "favorites", label: t("tab_favorites"), icon: "favorite", count: counts.favorites },
+              { id: "drafts", label: t("tab_drafts"), icon: "drafts", count: counts.drafts },
+              { id: "bin", label: t("tab_bin"), icon: "bin", count: counts.bin },
+            ]}
           />
-        ) : panel === "history" ? (
-          <History
-            onReuse={handleReuse}
-            onRerun={onRerun}
-            onUseAsRef={addToTray}
-            onOpenViewer={onOpenViewer}
-            refreshKey={refreshKey}
-            live={historyLive}
+          <IconButton
+            className="manager-close"
+            variant="outline"
+            size="md"
+            icon="close"
+            label={t("close")}
+            onClick={onClose}
           />
-        ) : panel === "favorites" ? (
-          <Favorites
-            onReuse={handleReuse}
-            onRerun={onRerun}
-            onUseAsRef={addToTray}
-            onOpenViewer={onOpenViewer}
-            refreshKey={refreshKey}
-            onChanged={onChanged}
-          />
-        ) : panel === "drafts" ? (
-          <Drafts
-            onChanged={onCountsChanged}
-            refreshKey={draftRefreshKey}
-            canQueue={canQueue}
-            onQueue={onQueueDraft}
-            onOpenViewer={onOpenViewer}
-          />
-        ) : (
-          <Bin
-            onOpenViewer={onOpenViewer}
-            refreshKey={refreshKey}
-            onChanged={onChanged}
-          />
-        )}
+        </div>
+        <div className="manager-body">
+          {panel === "library" ? (
+            <Library
+              addToTray={addToTray}
+              onOpenViewer={onOpenViewer}
+              refreshKey={refreshKey}
+              onChanged={onChanged}
+            />
+          ) : panel === "history" ? (
+            <History
+              onReuse={handleReuse}
+              onRerun={onRerun}
+              onUseAsRef={addToTray}
+              onOpenViewer={onOpenViewer}
+              refreshKey={refreshKey}
+              live={historyLive}
+            />
+          ) : panel === "favorites" ? (
+            <Favorites
+              onReuse={handleReuse}
+              onRerun={onRerun}
+              onUseAsRef={addToTray}
+              onOpenViewer={onOpenViewer}
+              refreshKey={refreshKey}
+              onChanged={onChanged}
+            />
+          ) : panel === "drafts" ? (
+            <Drafts
+              onChanged={onCountsChanged}
+              refreshKey={draftRefreshKey}
+              canQueue={canQueue}
+              onQueue={onQueueDraft}
+              onOpenViewer={onOpenViewer}
+            />
+          ) : (
+            <Bin
+              onOpenViewer={onOpenViewer}
+              refreshKey={refreshKey}
+              onChanged={onChanged}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
