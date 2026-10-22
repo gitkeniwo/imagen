@@ -958,13 +958,22 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 .side-tabs-row .side-tabs { flex: 1; min-width: 0; margin-bottom: 0; }
 .side-expand { width: 36px; height: auto; align-self: stretch; }
 .manager-overlay {
-  position: fixed; inset: 0; z-index: 90; background: var(--bg);
+  position: fixed; inset: 0; z-index: 90; background: var(--main-bg);
   display: flex; flex-direction: column;
 }
 .manager-header {
   display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-2_5) var(--space-5); border-bottom: 1px solid var(--border);
-  background: var(--panel); position: relative;
+  padding: var(--space-2_5) var(--space-5);
+  background: var(--main-bg); position: relative;
+}
+/* Below the title row, the whole manager or dashboard is one floating island. */
+.manager-body,
+.usage-layout {
+  margin: 0 var(--space-2) var(--space-2);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-island);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .manager-tabs {
   flex: 0 0 auto;
@@ -990,7 +999,7 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 .usage-err { margin: var(--space-3) var(--space-5) 0; }
 .usage-layout {
   flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px;
-  background: var(--main-bg);
+  overflow: hidden;
 }
 .usage-main {
   min-width: 0; overflow: auto; padding: var(--space-6) 28px;
