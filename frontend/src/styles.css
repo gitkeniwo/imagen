@@ -1484,6 +1484,9 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 .side-panel .library-panel { background: transparent; border: 0; box-shadow: none; padding: 0; }
 .side-panel .library-sticky { margin: 0 0 var(--space-2); background: var(--sidebar-bg); border-bottom: 0; }
 .side-panel .library-toolbar { padding: 0 0 var(--space-2); border-bottom: 0; }
+/* Tag chips and Prev/Next share the search box's edges. */
+.side-panel .tag-filter-row { padding-left: 0; padding-right: 0; }
+.side-panel .library-sticky .pager { padding-left: 0; padding-right: 0; }
 .side-panel .history-toolbar { background: var(--sidebar-bg); }
 
 /* ===== inline filter row (Library / History) ===== */
