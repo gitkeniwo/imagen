@@ -15,6 +15,7 @@ import { AspectShape } from "./ComposerControls";
 import LibraryPickerModal from "./LibraryPickerModal";
 import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
+import { isRefDrag, readImageDrag } from "../imageDrag";
 import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
@@ -220,201 +221,219 @@ export default function AddHistoryModal({
       onDragLeave={(e) => { e.stopPropagation(); }}
       onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
-      <div
-        className="modal modal-wide"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mt-0">
-          {existing ? t("edit_history_title") : t("add_history_title")}
-        </h3>
-        <p className="muted small">
-          {existing ? t("edit_history_desc") : t("add_history_desc")}
-        </p>
-
-        <label>{t("prompt")}</label>
-        <textarea
-          value={prompt}
-          placeholder={t("prompt_placeholder")}
-          onChange={(e) => setPrompt(e.target.value)}
-        />
-
-        <div className="mt-4">
-          <ReferenceTray
-            tray={inputImages}
-            onAdd={(imgs) => setInputImages((prev) => [...prev, ...imgs])}
-            onRemove={(id) => setInputImages((prev) => prev.filter((i) => i.id !== id))}
-            onMove={moveInput}
-          />
-          <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("input")}>
-            {t("pick_from_library")}
-          </Button>
+      <div className="modal import-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="import-head">
+          <h3 className="mt-0">
+            {existing ? t("edit_history_title") : t("add_history_title")}
+          </h3>
+          <p className="muted small">
+            {existing ? t("edit_history_desc") : t("add_history_desc")}
+          </p>
         </div>
 
-        <div className="mt-4">
-          <label>{t("add_history_output")}</label>
-          <div
-            className={`tray dropzone-wrap${outputDrag ? " drag" : ""}`}
-            onDragOver={(e) => {
-              if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
-              e.preventDefault();
-              setOutputDrag(true);
-            }}
-            onDragLeave={() => setOutputDrag(false)}
-            onDrop={(e) => {
-              if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
-              e.preventDefault();
-              e.stopPropagation();
-              setOutputDrag(false);
-              uploadOutput(e.dataTransfer.files);
-            }}
-          >
-            {outputImages.map((im) => (
-              <div className="chip" key={im.id} title={im.filename}>
-                <img src={imgThumbUrl(im.id)} alt={im.filename} />
-                <IconButton
-                  className="x"
-                  variant="overlay"
-                  icon="close"
-                  label={t("remove_ref")}
-                  onClick={() => removeOutput(im.id)}
+        <div className="import-body">
+          {/* Images: what came out, what went in. */}
+          <div className="import-col">
+            <div>
+              <div className="field-head">
+                <label>{t("add_history_output")}</label>
+                {(isCreate || outputImages.length === 0) && (
+                  <Button size="sm" variant="ghost" icon="pickFromLibrary" onClick={() => setPicker("output")}>
+                    {t("pick_from_library")}
+                  </Button>
+                )}
+              </div>
+              <div
+                className={`tray dropzone-wrap${outputDrag ? " drag" : ""}`}
+                onDragOver={(e) => {
+                  if (!isRefDrag(e.dataTransfer)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setOutputDrag(true);
+                }}
+                onDragLeave={() => setOutputDrag(false)}
+                onDrop={(e) => {
+                  if (!isRefDrag(e.dataTransfer)) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOutputDrag(false);
+                  const picked = readImageDrag(e.dataTransfer);
+                  if (picked) pickOutput(picked);
+                  else uploadOutput(e.dataTransfer.files);
+                }}
+              >
+                {outputImages.map((im) => (
+                  <div className="chip" key={im.id} title={im.filename}>
+                    <img src={imgThumbUrl(im.id)} alt={im.filename} draggable={false} />
+                    <IconButton
+                      className="x"
+                      variant="overlay"
+                      icon="close"
+                      label={t("remove_ref")}
+                      onClick={() => removeOutput(im.id)}
+                    />
+                  </div>
+                ))}
+                {(isCreate || outputImages.length === 0) && (
+                  <label className={`dropzone${outputImages.length === 0 ? " dropzone-tall" : ""}${outputDrag ? " drag" : ""}`}>
+                    {outputBusy ? <span className="spinner" /> : (
+                      <span className="dropzone-label">
+                        <Icon name="upload" />
+                        {t("tray_upload")}
+                      </span>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple={isCreate}
+                      hidden
+                      onChange={(e) => {
+                        uploadOutput(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {outputImages.length > 0 && (
+              <div className="import-pair">
+                <div>
+                  <label>{t("note_label")}</label>
+                  <textarea
+                    rows={2}
+                    className="import-note"
+                    value={outputNote}
+                    placeholder={t("note_placeholder")}
+                    onChange={(e) => setOutputNote(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label>{t("tags_label")}</label>
+                  <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
+                </div>
+              </div>
+            )}
+
+            <ReferenceTray
+              tray={inputImages}
+              onAdd={(imgs) => imgs.forEach(addInputImage)}
+              onRemove={(id) => setInputImages((prev) => prev.filter((i) => i.id !== id))}
+              onMove={moveInput}
+              action={
+                <Button size="sm" variant="ghost" icon="pickFromLibrary" onClick={() => setPicker("input")}>
+                  {t("pick_from_library")}
+                </Button>
+              }
+            />
+          </div>
+
+          {/* Prompt and the parameters the record is filed under. */}
+          <div className="import-col">
+            <div>
+              <label>{t("prompt")}</label>
+              <textarea
+                className="import-prompt"
+                value={prompt}
+                placeholder={t("prompt_placeholder")}
+                onChange={(e) => setPrompt(e.target.value)}
+              />
+            </div>
+
+            <div className="import-pair">
+              <div>
+                <label>{t("model")}</label>
+                <CustomSelect
+                  value={model}
+                  onChange={setModel}
+                  options={MODELS.map((m) => ({ id: m.id, label: m.label }))}
                 />
               </div>
-            ))}
-            {(isCreate || outputImages.length === 0) && (
-              <label className={`dropzone${outputDrag ? " drag" : ""}`}>
-                {outputBusy ? <span className="spinner" /> : (
-                  <span className="dropzone-label">
-                    <Icon name="upload" />
-                    {t("tray_upload")}
-                  </span>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple={isCreate}
-                  hidden
-                  onChange={(e) => {
-                    uploadOutput(e.target.files);
-                    e.target.value = "";
-                  }}
+              <div>
+                <label>{t("resolution")}</label>
+                <Segmented
+                  value={resolution}
+                  onChange={setResolution}
+                  options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
                 />
-              </label>
+              </div>
+            </div>
+
+            <div>
+              <label>{t("aspect")}</label>
+              <div className="aspect-row">
+                {ASPECT_RATIOS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
+                    aria-pressed={aspectRatio === r}
+                    onClick={() => setAspectRatio(r)}
+                    title={r}
+                  >
+                    <span className="aspect-box"><AspectShape ratio={r} /></span>
+                    <span className="aspect-label">{r}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="import-pair">
+              <div>
+                <label>{t("add_history_kind")}</label>
+                <Segmented
+                  value={kind}
+                  onChange={setKind}
+                  options={KINDS.map((k) => ({
+                    value: k,
+                    label: k === "vertex" ? t("hist_filter_vertex") : t("hist_filter_manual"),
+                    icon: k === "vertex" ? "generated" : "imported",
+                  }))}
+                />
+              </div>
+              <div>
+                <label>{t("add_history_status")}</label>
+                <Segmented
+                  value={status}
+                  onChange={setStatus}
+                  options={REAL_STATUSES.map((st) => ({ value: st, label: t(`status_${st}`) }))}
+                />
+              </div>
+            </div>
+
+            {(status === "blocked" || status === "error") && (
+              <div>
+                <label>{t("add_history_error_message")}</label>
+                <textarea value={errorMessage} onChange={(e) => setErrorMessage(e.target.value)} />
+              </div>
+            )}
+
+            <div>
+              <label>{t("add_history_created_at")}</label>
+              <input
+                type="datetime-local"
+                value={createdAt}
+                onChange={(e) => setCreatedAt(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="import-foot">
+          <div className="import-foot-msg">
+            {err ? (
+              <span className="notice error small">{err}</span>
+            ) : (
+              isCreate && outputImages.length > 1 && (
+                <span className="muted small">{t("batch_output_hint", { n: outputImages.length })}</span>
+              )
             )}
           </div>
-          {(isCreate || outputImages.length === 0) && (
-            <Button className="mt-2" icon="pickFromLibrary" onClick={() => setPicker("output")}>
-              {t("pick_from_library")}
-            </Button>
-          )}
-          {isCreate && outputImages.length > 1 && (
-            <p className="muted small mt-1_5">
-              {t("batch_output_hint", { n: outputImages.length })}
-            </p>
-          )}
-          {outputImages.length > 0 && (
-            <div className="mt-2_5">
-              <label>{t("note_label")}</label>
-              <textarea
-                rows={2}
-                value={outputNote}
-                placeholder={t("note_placeholder")}
-                onChange={(e) => setOutputNote(e.target.value)}
-              />
-              <label className="mt-2">{t("tags_label")}</label>
-              <TagPicker selected={outputTagIds} onChange={setOutputTagIds} />
-            </div>
-          )}
-        </div>
-
-        <div className="row mt-4">
-          <div>
-            <label>{t("model")}</label>
-            <CustomSelect
-              value={model}
-              onChange={setModel}
-              options={MODELS.map((m) => ({ id: m.id, label: m.label }))}
-            />
-          </div>
-          <div>
-            <label>{t("resolution")}</label>
-            <Segmented
-              value={resolution}
-              onChange={setResolution}
-              options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
-            />
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <label>{t("aspect")}</label>
-          <div className="aspect-row">
-            {ASPECT_RATIOS.map((r) => {
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
-                  aria-pressed={aspectRatio === r}
-                  onClick={() => setAspectRatio(r)}
-                  title={r}
-                >
-                  <span className="aspect-box"><AspectShape ratio={r} /></span>
-                  <span className="aspect-label">{r}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <label>{t("add_history_kind")}</label>
-          <Segmented
-            value={kind}
-            onChange={setKind}
-            options={KINDS.map((k) => ({
-              value: k,
-              label: k === "vertex" ? t("hist_filter_vertex") : t("hist_filter_manual"),
-              icon: k === "vertex" ? "generated" : "imported",
-            }))}
-          />
-        </div>
-
-        <div className="mt-4">
-          <label>{t("add_history_status")}</label>
-          <Segmented
-            value={status}
-            onChange={setStatus}
-            options={REAL_STATUSES.map((st) => ({ value: st, label: t(`status_${st}`) }))}
-          />
-        </div>
-
-        {(status === "blocked" || status === "error") && (
-          <div className="mt-4">
-            <label>{t("add_history_error_message")}</label>
-            <textarea value={errorMessage} onChange={(e) => setErrorMessage(e.target.value)} />
-          </div>
-        )}
-
-        <div className="mt-4">
-          <label>{t("add_history_created_at")}</label>
-          <input
-            type="datetime-local"
-            value={createdAt}
-            onChange={(e) => setCreatedAt(e.target.value)}
-          />
-        </div>
-
-        {err && (
-          <div className="notice error small mt-3">
-            {err}
-          </div>
-        )}
-
-        <div className="row mt-5">
-          <button onClick={onClose}>{t("cancel")}</button>
-          <button className="primary" onClick={save} disabled={saving}>
+          <Button onClick={onClose}>{t("cancel")}</Button>
+          <Button variant="primary" onClick={save} disabled={saving}>
             {saving ? t("saving") : t("save")}
-          </button>
+          </Button>
         </div>
       </div>
       {picker && (

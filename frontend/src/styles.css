@@ -431,6 +431,9 @@ body.resizing-sidebar {
   text-align: center; color: var(--muted); font-size: var(--fs-sm); background: var(--dropzone-bg);
   cursor: pointer;
 }
+/* In a full tray the dropzone takes the rest of its row, so the whole strip
+   reads as one target instead of a single "+" tile. */
+.tray:not(.tray-compact) > .dropzone { flex: 1 1 92px; width: auto; min-width: 92px; }
 .dropzone-label { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); }
 .dropzone.drag { border-color: var(--accent); color: var(--accent); background: var(--panel-2); }
 /* Page-wide drag: blurred panes around the composer, a dashed box over it. */
@@ -1179,6 +1182,36 @@ body.manager-open { overflow: hidden; }
 .draft-output-hint { margin: var(--space-0_5) 0 var(--space-2); }
 .draft-editor-toggles { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
 .modal-wide { width: 640px; max-height: 88vh; overflow-y: auto; }
+/* Import / edit history record: images left, prompt and parameters right;
+   the body scrolls between a fixed header and footer. */
+.import-modal {
+  width: 1080px; max-width: 94vw; max-height: 90vh; padding: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.import-head { padding: var(--space-6) var(--space-6) 0; }
+.import-head p { margin: var(--space-1) 0 0; }
+.import-body {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-6);
+  padding: var(--space-5) var(--space-6) var(--space-6); overflow-y: auto; min-height: 0;
+}
+.import-col { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+/* Pairs sit side by side and wrap when a segmented control can't fit. */
+.import-pair { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); }
+.import-pair > * { flex: 1 1 auto; min-width: 200px; }
+.import-prompt { min-height: 140px; }
+.dropzone.dropzone-tall { height: 160px; }
+.import-note { min-height: 64px; }
+.import-foot {
+  display: flex; align-items: center; gap: var(--space-2_5);
+  padding: var(--space-3) var(--space-6); border-top: 1px solid var(--divider); background: var(--foot-bg);
+}
+.import-foot-msg { flex: 1; min-width: 0; }
+.import-foot-msg .notice { display: inline-block; padding: var(--space-1_5) var(--space-2_5); }
+@media (max-width: 860px) {
+  .import-body { grid-template-columns: minmax(0, 1fr); }
+}
+.field-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1_5); }
+.field-head label { margin-bottom: 0; }
 .composer-actions { margin-top: var(--space-5); display: flex; gap: var(--space-3); align-items: center; }
 .modal-actions { display: flex; justify-content: flex-end; gap: var(--space-2_5); margin-top: var(--space-5); }
 

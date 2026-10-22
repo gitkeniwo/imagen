@@ -369,7 +369,7 @@ const zh: Dict = {
   add_history: "添加",
   add_history_title: "导入外部结果",
   add_history_desc:
-    "把在别处生成的图片连同提示词与参考图记入历史。要保存稍后执行的任务，请用「新建 → 草稿」。",
+    "把在别处生成的图片连同提示词与参考图记入历史。要保存稍后执行的任务，请在编辑器里点「保存草稿」。",
   edit_history_title: "编辑历史记录",
   edit_history_desc: "编辑此记录的任意字段——提示词、图片、参数、状态或时间戳。",
   add_history_output: "输出图片",
@@ -759,7 +759,7 @@ const en: Dict = {
   add_history: "Add",
   add_history_title: "Import external result",
   add_history_desc:
-    "Log an image generated elsewhere, with its prompt and references, into History. To save a task for later, use New → Draft.",
+    "Log an image generated elsewhere, with its prompt and references, into History. To save a task for later, use Save draft in the editor.",
   edit_history_title: "Edit history record",
   edit_history_desc: "Edit any field of this record — prompt, images, params, status, or timestamp.",
   add_history_output: "Output image",
