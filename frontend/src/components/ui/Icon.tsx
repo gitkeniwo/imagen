@@ -1,4 +1,5 @@
 import {
+  ArrowRightFromLine,
   Bookmark,
   ChartColumn,
   Check,
@@ -93,6 +94,7 @@ const ICONS = {
   generated: Sparkles,
   uploaded: Upload,
   imported: Import,
+  output: ArrowRightFromLine,
   // Selection
   selectMode: SquareCheck,
   selectAll: CheckCheck,
