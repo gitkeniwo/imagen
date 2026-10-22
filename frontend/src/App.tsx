@@ -670,12 +670,36 @@ export default function App() {
           <div
             className="resize-handle"
             role="separator"
+            tabIndex={0}
             aria-orientation="vertical"
             aria-label={t("resize_sidebar")}
+            aria-valuenow={Math.round(sidebarWidth)}
+            aria-valuemin={MIN_SIDEBAR_WIDTH}
+            aria-valuemax={Math.round(window.innerWidth * SIDEBAR_MAX_RATIO)}
             title={t("resize_sidebar")}
             onPointerDown={(e) => {
               e.preventDefault();
+              e.currentTarget.setPointerCapture(e.pointerId);
               setResizingSidebar(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Home") {
+                e.preventDefault();
+                setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+                return;
+              }
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              const rect = workspaceRef.current?.getBoundingClientRect();
+              if (!rect) return;
+              e.preventDefault();
+              const step = e.shiftKey ? 64 : 16;
+              const delta = e.key === "ArrowLeft" ? -step : step;
+              setSidebarWidth((prev) =>
+                Math.min(
+                  rect.width * SIDEBAR_MAX_RATIO,
+                  Math.max(MIN_SIDEBAR_WIDTH, prev + delta),
+                ),
+              );
             }}
             onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
           />

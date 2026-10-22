@@ -312,9 +312,12 @@ label { font-size: var(--fs-md); font-weight: 500; color: var(--text); display: 
   background: var(--sidebar-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-island);
-  --island-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  box-shadow: var(--island-shadow);
-  transition: box-shadow 0.16s ease;
+  /* Two layers so the resize states can deepen the lift and thicken the edge
+     without touching border-width (which would reflow the content). */
+  --island-lift: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --island-ring: 0 0 0 0 transparent;
+  box-shadow: var(--island-lift), var(--island-ring);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
   --seg-track: var(--sidebar-track);
 }
 .side-brand {
@@ -360,15 +363,34 @@ body.resizing-sidebar {
   cursor: col-resize;
   user-select: none;
 }
-/* The edge lights up with the handle, so the grip reads as part of the panel
-   rather than a stray line floating in the gutter. */
+/* Hovering or dragging the handle lifts the whole island: the border takes a
+   hint of the accent and a hairline ring sits outside it (so the edge reads as
+   thicker without reflowing anything), plus a deeper drop shadow. Only the
+   right edge is still the hit area. */
 .side-panel:has(.resize-handle:hover) {
-  --island-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
-    inset -1px 0 0 color-mix(in srgb, var(--ui-accent) 26%, transparent);
+  border-color: color-mix(in srgb, var(--ui-accent) 45%, var(--border));
+  --island-lift: 0 2px 4px rgba(15, 23, 42, 0.06), 0 10px 24px -8px rgba(15, 23, 42, 0.32);
+  --island-ring: 0 0 0 1px color-mix(in srgb, var(--ui-accent) 26%, transparent);
 }
 body.resizing-sidebar .side-panel,
 body.resizing-sidebar .side-panel:has(.resize-handle:hover) {
-  --island-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), inset -1px 0 0 var(--ui-accent-line);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, var(--border));
+  --island-lift: 0 2px 4px rgba(15, 23, 42, 0.08), 0 16px 40px -10px rgba(15, 23, 42, 0.44);
+  --island-ring:
+    0 0 0 1px color-mix(in srgb, var(--ui-accent) 45%, transparent),
+    inset -1px 0 0 var(--ui-accent-line);
+}
+/* Dark surfaces need near-black shadows; the light-theme slate values vanish. */
+@media (prefers-color-scheme: dark) {
+  .side-panel:has(.resize-handle:hover) {
+    --island-lift: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 20px -10px rgba(0, 0, 0, 0.7),
+      0 2px 6px -3px rgba(0, 0, 0, 0.5);
+  }
+  body.resizing-sidebar .side-panel,
+  body.resizing-sidebar .side-panel:has(.resize-handle:hover) {
+    --island-lift: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 32px -12px rgba(0, 0, 0, 0.82),
+      0 3px 10px -4px rgba(0, 0, 0, 0.6);
+  }
 }
 .side-tabs {
   display: flex;
