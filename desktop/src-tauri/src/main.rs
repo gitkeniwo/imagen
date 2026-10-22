@@ -10,7 +10,21 @@ mod zoom;
 
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
+use tauri::window::Color;
+use tauri::{
+    AppHandle, Manager, RunEvent, Theme, TitleBarStyle, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent, Wry,
+};
+
+/// The title bar is transparent, so it shows the window's background color.
+/// Match the frontend's page background (`--main-bg`) so the title row and
+/// the page read as one surface.
+fn title_bar_color(theme: Theme) -> Color {
+    match theme {
+        Theme::Dark => Color(2, 6, 23, 255),
+        _ => Color(255, 255, 255, 255),
+    }
+}
 
 #[tauri::command]
 fn restart_backend(app: tauri::AppHandle) -> Result<(), String> {
@@ -197,10 +211,12 @@ fn main() {
                 library::handle_menu_event(app, event);
             }
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                window.app_handle().exit(0);
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { .. } => window.app_handle().exit(0),
+            WindowEvent::ThemeChanged(theme) => {
+                let _ = window.set_background_color(Some(title_bar_color(*theme)));
             }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             restart_backend,
@@ -242,7 +258,7 @@ fn main() {
                 "library.html"
             };
             let nav_handle = handle.clone();
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App(initial.into()))
+            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App(initial.into()))
                 .title("Imagen")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(960.0, 640.0)
@@ -260,7 +276,11 @@ fn main() {
                         zoom::on_page_load(window.app_handle(), payload.url());
                     }
                 })
+                .title_bar_style(TitleBarStyle::Transparent)
+                .hidden_title(true)
                 .build()?;
+            let theme = window.theme().unwrap_or(Theme::Light);
+            let _ = window.set_background_color(Some(title_bar_color(theme)));
 
             zoom::install_plus_alias(&handle);
 
