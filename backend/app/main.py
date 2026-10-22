@@ -70,12 +70,20 @@ def _resolve_dist() -> Path:
 
 
 DIST = _resolve_dist()
+
+# The webview (WKWebView inside the desktop shell, or a browser) heuristically
+# caches `index.html` because FileResponse sends no Cache-Control header. That
+# pins the whole SPA to a previously built bundle: asset filenames are hashed,
+# but the HTML that points at them is reused, so a fresh install keeps showing
+# the old UI until the cache entry expires. Never let HTML be stored.
+NO_STORE = {"Cache-Control": "no-store, max-age=0"}
+
 if DIST.exists():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
     @app.get("/")
     def index():
-        return FileResponse(DIST / "index.html")
+        return FileResponse(DIST / "index.html", headers=NO_STORE)
 
     @app.get("/{full_path:path}")
     def spa(full_path: str):
@@ -87,5 +95,5 @@ if DIST.exists():
         # escape the build directory.
         candidate = (DIST / full_path).resolve()
         if candidate.is_relative_to(DIST) and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(DIST / "index.html")
+            return FileResponse(candidate, headers=NO_STORE)
+        return FileResponse(DIST / "index.html", headers=NO_STORE)

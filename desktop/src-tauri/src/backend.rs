@@ -341,7 +341,15 @@ pub fn navigate_to_app(app: &AppHandle) {
         #[cfg(not(debug_assertions))]
         let path = "/".to_string();
 
-        let target = format!("http://127.0.0.1:{port}{path}");
+        // A versioned URL keeps the webview's HTTP cache from serving an
+        // `index.html` left over from a previous release. (The backend also
+        // marks HTML `no-store`; this covers caches primed before that fix
+        // landed, and any webview that ignores the header.)
+        let sep = if path.contains('?') { '&' } else { '?' };
+        let target = format!(
+            "http://127.0.0.1:{port}{path}{sep}v={}",
+            env!("CARGO_PKG_VERSION")
+        );
         match target.parse::<Url>() {
             Ok(url) => {
                 if let Err(e) = window.navigate(url) {

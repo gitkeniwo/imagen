@@ -39,6 +39,13 @@ APP="$ROOT/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Im
 VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
   "$ROOT/desktop/src-tauri/tauri.conf.json")"
 echo "==> built: $APP"
+
+echo "==> bundled frontend matches frontend/dist"
+BUNDLED_DIST="$APP/Contents/Resources/imagen-backend/_internal/frontend_dist"
+[ -d "$BUNDLED_DIST" ] || { echo "FAIL: $BUNDLED_DIST missing" >&2; exit 1; }
+diff -r "$ROOT/frontend/dist" "$BUNDLED_DIST" \
+  || { echo "FAIL: bundled frontend differs from frontend/dist (stale build?)" >&2; exit 1; }
+
 du -sh "$APP"
 
 if [ "$DO_DMG" = "1" ]; then
