@@ -52,24 +52,28 @@ export function ComposerParams({
           onChange={setModel}
           options={MODELS.map((m) => ({ value: m.id, label: shortModelLabel(m.label), title: m.label }))}
         />
-        <div className="param-inline">
-          <span className="param-sublabel">{t("resolution")}</span>
-          <Segmented
-            value={resolution}
-            onChange={setResolution}
-            disabled={!isPro}
-            title={isPro ? undefined : `${t("resolution")}${t("pro_only")}`}
-            options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
-          />
-          {!isPro && <span className="param-note">{t("pro_only_short")}</span>}
-        </div>
-        <div className="param-inline">
-          <span className="param-sublabel">{t("format_short")}</span>
-          <Segmented
-            value={format}
-            onChange={setFormat}
-            options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
-          />
+        {/* Resolution + format travel as one block, so a narrow line never
+            leaves a lone group dangling next to the model picker. */}
+        <div className="param-groups">
+          <div className="param-inline">
+            <span className="param-sublabel">{t("resolution")}</span>
+            <Segmented
+              value={resolution}
+              onChange={setResolution}
+              disabled={!isPro}
+              title={isPro ? undefined : `${t("resolution")}${t("pro_only")}`}
+              options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+            />
+            {!isPro && <span className="param-note">{t("pro_only_short")}</span>}
+          </div>
+          <div className="param-inline">
+            <span className="param-sublabel">{t("format_short")}</span>
+            <Segmented
+              value={format}
+              onChange={setFormat}
+              options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
+            />
+          </div>
         </div>
       </div>
 

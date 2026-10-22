@@ -1356,7 +1356,12 @@ body.manager-open { overflow: hidden; }
   align-items: center; padding: var(--space-3_5) var(--space-4) var(--space-4); border-top: 1px solid var(--divider);
 }
 .param-label, .param-sublabel { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); white-space: nowrap; }
+/* The model row can wrap onto a second line: keep its label on the first line
+   instead of letting it float between the lines. 36px matches one segmented
+   control (30px track buttons + 3px padding each side). */
+.param-label:has(+ .param-line) { align-self: start; display: flex; align-items: center; min-height: 36px; }
 .param-line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2_5) var(--space-5); min-width: 0; }
+.param-groups { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2_5) var(--space-5); min-width: 0; }
 .param-inline { display: flex; align-items: center; gap: var(--space-2); }
 .param-note { font-size: var(--fs-sm); color: var(--muted); }
 .composer-foot {
