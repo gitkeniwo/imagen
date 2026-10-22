@@ -770,7 +770,13 @@ body.resizing-sidebar {
 .tag-chip-row, .tag-filter-row {
   display: flex; gap: 3px; flex-wrap: wrap; align-items: center;
 }
-.tag-filter-row { padding: 3px var(--space-3); border-bottom: 1px solid var(--border); }
+.tag-filter-row {
+  padding: 3px var(--space-3); border-bottom: 1px solid var(--border);
+  flex-wrap: nowrap; align-items: flex-start; gap: var(--space-1_5);
+}
+.tag-filter-chips { flex: 1; min-width: 0; display: flex; gap: 3px; flex-wrap: wrap; align-items: center; }
+.tag-hidden-count { font-size: var(--fs-sm); color: var(--muted); padding: 0 var(--space-1); }
+.tag-filter-toggle { flex: none; color: var(--muted); }
 .tag-chip {
   display: inline-flex; align-items: center; gap: var(--space-1);
   padding: 0 var(--space-2_5); border-radius: var(--radius-full); font-size: var(--fs-md);

@@ -5,6 +5,7 @@ import { pressable } from "../a11y";
 import { imageDragProps } from "../imageDrag";
 import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
+import TagFilterRow from "../components/TagFilterRow";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import Icon from "../components/ui/Icon";
@@ -298,31 +299,14 @@ export default function Library({
         </div>
 
         {/* Tag filter bar (collection-style) */}
-        <div className="tag-filter-row">
-          <button
-            className={`tag-chip${tagFilter === null ? " on" : ""}`}
-            onClick={() => {
-              setTagFilter(null);
-              setPage(0);
-            }}
-          >
-            {t("tags_all")}
-          </button>
-          {tags.map((tag) => (
-            <button
-              key={tag.id}
-              className={`tag-chip${tagFilter === tag.id ? " on" : ""}`}
-              style={tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined}
-              onClick={() => {
-                setTagFilter(tag.id);
-                setPage(0);
-              }}
-            >
-              {tag.name}
-              <span className="tag-count">{tag.count}</span>
-            </button>
-          ))}
-        </div>
+        <TagFilterRow
+          tags={tags}
+          value={tagFilter}
+          onChange={(id) => {
+            setTagFilter(id);
+            setPage(0);
+          }}
+        />
 
         {/* Batch tagging bar (only in select mode with a selection) */}
         {selectMode && (

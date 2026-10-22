@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import AddHistoryModal from "../components/AddHistoryModal";
 import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
+import TagFilterRow from "../components/TagFilterRow";
 import { useToast } from "../components/Toast";
 import HistoryItem, { type HistoryLayout } from "../components/HistoryItem";
 import { Button } from "../components/ui/Button";
@@ -154,31 +155,14 @@ export default function History({
   ) : null;
 
   const tagBar = (
-    <div className="tag-filter-row">
-      <button
-        className={`tag-chip${tagFilter === null ? " on" : ""}`}
-        onClick={() => {
-          setTagFilter(null);
-          setPage(0);
-        }}
-      >
-        {t("tags_all")}
-      </button>
-      {tags.map((tag) => (
-        <button
-          key={tag.id}
-          className={`tag-chip${tagFilter === tag.id ? " on" : ""}`}
-          style={tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined}
-          onClick={() => {
-            setTagFilter(tag.id);
-            setPage(0);
-          }}
-        >
-          {tag.name}
-          <span className="tag-count">{tag.count}</span>
-        </button>
-      ))}
-    </div>
+    <TagFilterRow
+      tags={tags}
+      value={tagFilter}
+      onChange={(id) => {
+        setTagFilter(id);
+        setPage(0);
+      }}
+    />
   );
 
   // Collect unique tags from all images in a generation (inputs + output).
