@@ -232,13 +232,15 @@ export default function History({
           <Button
             className={`skip-toggle${onlyWithImage ? " on" : ""}`}
             icon="library"
+            title={t("hist_filter_with_image")}
+            aria-label={t("hist_filter_with_image")}
             aria-pressed={onlyWithImage}
             onClick={() => {
               setOnlyWithImage((value) => !value);
               setPage(0);
             }}
           >
-            {t("hist_filter_with_image")}
+            <span className="filter-label">{t("hist_filter_with_image")}</span>
           </Button>
         </div>
         {tagBar}

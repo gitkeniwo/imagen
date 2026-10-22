@@ -45,13 +45,13 @@ export default function Segmented<T extends string | number>({
             type="button"
             className={on ? "on" : ""}
             aria-pressed={on}
-            aria-label={o.iconOnly ? tip : undefined}
-            title={o.title}
+            aria-label={o.icon ? tip : undefined}
+            title={o.title ?? (o.icon && !o.iconOnly ? tip : undefined)}
             disabled={disabled}
             onClick={() => onChange(o.value)}
           >
             {o.icon && <Icon name={o.icon} size="sm" />}
-            {!o.iconOnly && o.label}
+            {!o.iconOnly && (o.icon ? <span className="seg-label">{o.label}</span> : o.label)}
           </button>
         );
       })}

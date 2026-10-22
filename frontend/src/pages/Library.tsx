@@ -288,13 +288,15 @@ export default function Library({
           <Button
             className={`skip-toggle${starredOnly ? " on" : ""}`}
             icon="favorite"
+            title={t("filter_starred_only")}
+            aria-label={t("filter_starred_only")}
             aria-pressed={starredOnly}
             onClick={() => {
               setStarredOnly((v) => !v);
               setPage(0);
             }}
           >
-            {t("filter_starred_only")}
+            <span className="filter-label">{t("filter_starred_only")}</span>
           </Button>
         </div>
 
