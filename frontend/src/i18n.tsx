@@ -22,7 +22,7 @@ const zh: Dict = {
     "还没有收藏。在生成的图片上（查看器或图库里）点 ☆，它的提示词就会出现在这里。",
   settings: "设置",
   set_api_key: "设置 Vertex",
-  resize_sidebar: "拖动调整侧栏宽度；双击重置",
+  resize_sidebar: "拖动调整侧栏宽度；双击重置；方向键微调",
   no_key_warning:
     "尚未设置 Vertex 项目。点击右上角“设置 Vertex”并填入你的 Project ID 即可开始生成。",
 
@@ -42,8 +42,8 @@ const zh: Dict = {
   show_more: "展开",
   show_less: "收起",
 
-  tray_label:
-    "参考图（上传新图或从图库选取；拖动可排序）",
+  tray_label: "参考图",
+  tray_label_hint: "上传新图或从图库选取；拖动可排序",
   tray_upload: "拖入 / 点击上传",
   tray_drop_title: "松开以添加为参考图",
   tray_drop_hint: "图片将被加入当前参考列表",
@@ -419,7 +419,7 @@ const en: Dict = {
     "No favorites yet. Hit ☆ on a generated image (in the viewer or library) and its prompt shows up here.",
   settings: "Settings",
   set_api_key: "Set Vertex",
-  resize_sidebar: "Drag to resize sidebar; double-click to reset",
+  resize_sidebar: "Drag to resize sidebar; double-click to reset; arrow keys to nudge",
   no_key_warning:
     "Vertex project is not set. Click “Set Vertex” in the top-right and enter your Project ID to start generating.",
 
@@ -439,8 +439,8 @@ const en: Dict = {
   show_more: "Show more",
   show_less: "Show less",
 
-  tray_label:
-    "Reference images (upload new ones or pick from the library; drag to reorder)",
+  tray_label: "Reference images",
+  tray_label_hint: "Upload new ones or pick from the library; drag to reorder",
   tray_upload: "Drag / click to upload",
   tray_drop_title: "Drop to add as references",
   tray_drop_hint: "Images will be added to the current reference list",

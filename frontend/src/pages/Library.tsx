@@ -258,13 +258,15 @@ export default function Library({
             <Button
               className="select-toggle"
               icon="selectMode"
+              title={t("select_mode")}
+              aria-label={t("select_mode")}
               onClick={() => {
                 setSelectMode(true);
                 setSelected(new Set());
                 setBatchMode(null);
               }}
             >
-              {t("select_mode")}
+              <span className="select-toggle-label">{t("select_mode")}</span>
             </Button>
           )}
         </div>
@@ -332,13 +334,16 @@ export default function Library({
                 variant="primary"
                 size="sm"
                 icon="check"
+                className="batch-done"
+                title={t("done")}
+                aria-label={t("done")}
                 onClick={() => {
                   setSelectMode(false);
                   setSelected(new Set());
                   setBatchMode(null);
                 }}
               >
-                {t("done")}
+                <span className="batch-btn-label">{t("done")}</span>
               </Button>
             </div>
             <div className="batch-bar-row">
@@ -348,24 +353,35 @@ export default function Library({
                   icon="tag"
                   className={batchMode === "add" ? "on" : ""}
                   aria-pressed={batchMode === "add"}
+                  title={t("batch_add_tag")}
+                  aria-label={t("batch_add_tag")}
                   disabled={selected.size === 0}
                   onClick={() => setBatchMode(batchMode === "add" ? null : "add")}
                 >
-                  {t("batch_add_tag")}
+                  <span className="batch-btn-label">{t("batch_add_tag")}</span>
                 </Button>
                 <Button
                   size="sm"
                   icon="untag"
                   className={batchMode === "remove" ? "on" : ""}
                   aria-pressed={batchMode === "remove"}
+                  title={t("batch_remove_tag")}
+                  aria-label={t("batch_remove_tag")}
                   disabled={selected.size === 0}
                   onClick={() => setBatchMode(batchMode === "remove" ? null : "remove")}
                 >
-                  {t("batch_remove_tag")}
+                  <span className="batch-btn-label">{t("batch_remove_tag")}</span>
                 </Button>
               </div>
-              <Button size="sm" icon="download" disabled={selected.size === 0} onClick={downloadSelected}>
-                {t("batch_download")}
+              <Button
+                size="sm"
+                icon="download"
+                title={t("batch_download")}
+                aria-label={t("batch_download")}
+                disabled={selected.size === 0}
+                onClick={downloadSelected}
+              >
+                <span className="batch-btn-label">{t("batch_download")}</span>
               </Button>
             </div>
           </div>

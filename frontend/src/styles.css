@@ -312,27 +312,63 @@ label { font-size: var(--fs-md); font-weight: 500; color: var(--text); display: 
   background: var(--sidebar-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-island);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --island-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--island-shadow);
+  transition: box-shadow 0.16s ease;
   --seg-track: var(--sidebar-track);
 }
 .side-brand {
   flex: none; display: flex; align-items: center; align-self: center; gap: var(--space-2);
   padding: 0 var(--space-1) 0 var(--space-1); font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.01em;
 }
-/* The sidebar's right edge is the resize handle: invisible until hovered. */
+/* The sidebar's right edge is the resize handle: invisible until hovered, then a
+   short grip appears in the vertical center. Dragging grows the grip, fills the
+   gutter with a soft accent band and lights the island's right edge. */
 .resize-handle {
-  position: absolute; top: 0; bottom: 0; right: -4px; width: 8px; z-index: 20; cursor: col-resize;
+  position: absolute; top: var(--space-2); bottom: var(--space-2); right: -5px;
+  width: 10px; z-index: 20; cursor: col-resize; touch-action: none; outline: none;
 }
+.resize-handle::before,
+.resize-handle::after {
+  content: ""; position: absolute; border-radius: var(--radius-full); opacity: 0;
+  transition: opacity 0.16s ease, height 0.2s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.2s cubic-bezier(0.32, 0.72, 0, 1), background-color 0.16s ease;
+}
+/* Soft band: says "the whole gutter is grabbable" without drawing a full-height line. */
 .resize-handle::before {
-  content: ""; position: absolute; top: var(--space-4); bottom: var(--space-4); left: 2px; width: 3px;
-  border-radius: var(--radius-full); background: var(--ui-accent); opacity: 0; transition: opacity 0.15s;
+  left: 0; right: 0; top: 50%; height: 0; transform: translateY(-50%);
+  background: var(--ui-accent-soft);
 }
-.resize-handle:hover::before,
-.resize-handle:focus-visible::before,
-body.resizing-sidebar .resize-handle::before { opacity: 1; }
+/* The grip: a short pill at the vertical center, where the pointer actually grabs. */
+.resize-handle::after {
+  left: 50%; top: 50%; width: 4px; height: 24px;
+  transform: translate(-50%, -50%) scaleY(0.6);
+  background: var(--muted-2);
+}
+.resize-handle:hover::before { opacity: 1; height: 120px; }
+.resize-handle:hover::after { opacity: 0.6; transform: translate(-50%, -50%) scaleY(1); }
+.resize-handle:focus-visible::before { opacity: 1; height: 160px; }
+.resize-handle:focus-visible::after {
+  opacity: 1; background: var(--ui-accent); transform: translate(-50%, -50%) scaleY(1);
+}
+body.resizing-sidebar .resize-handle::before { opacity: 1; height: 160px; }
+body.resizing-sidebar .resize-handle::after {
+  opacity: 1; height: 40px; background: var(--ui-accent);
+  transform: translate(-50%, -50%) scaleY(1);
+}
 body.resizing-sidebar {
   cursor: col-resize;
   user-select: none;
+}
+/* The edge lights up with the handle, so the grip reads as part of the panel
+   rather than a stray line floating in the gutter. */
+.side-panel:has(.resize-handle:hover) {
+  --island-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
+    inset -1px 0 0 color-mix(in srgb, var(--ui-accent) 26%, transparent);
+}
+body.resizing-sidebar .side-panel,
+body.resizing-sidebar .side-panel:has(.resize-handle:hover) {
+  --island-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), inset -1px 0 0 var(--ui-accent-line);
 }
 .side-tabs {
   display: flex;
@@ -771,7 +807,7 @@ body.resizing-sidebar {
   display: flex; gap: 3px; flex-wrap: wrap; align-items: center;
 }
 .tag-filter-row {
-  padding: 3px var(--space-3); border-bottom: 1px solid var(--border);
+  padding: 3px var(--space-3);
   flex-wrap: nowrap; align-items: flex-start; gap: var(--space-1_5);
 }
 .tag-filter-chips { flex: 1; min-width: 0; display: flex; gap: 3px; flex-wrap: wrap; align-items: center; }
@@ -805,6 +841,13 @@ body.resizing-sidebar {
 .batch-bar-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .batch-count { font-weight: 600; font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
 .batch-bar button.on { background: var(--selected-bg); color: var(--selected-fg); border-color: var(--selected-border); font-weight: 600; }
+/* Narrow batch bar: buttons drop their words so Done stays on the count row
+   and the three selection actions share one row. */
+@container (max-width: 670px) {
+  .batch-bar .batch-btn-label { display: none; }
+  .batch-bar .batch-done,
+  .batch-bar .btn-group > .btn { padding-inline: var(--space-2); }
+}
 .btn-group { display: inline-flex; }
 .btn-group > .btn { border-radius: 0; }
 .btn-group > .btn:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
@@ -812,6 +855,12 @@ body.resizing-sidebar {
 .btn-group > .btn + .btn { margin-left: -1px; }
 .batch-tags { margin-bottom: var(--space-2_5); }
 .select-toggle.on { background: var(--selected-bg); color: var(--selected-fg); border-color: var(--selected-border); font-weight: 600; }
+/* Narrow toolbar: the Select toggle becomes an icon button so it shares the
+   search row instead of wrapping onto a line of its own. */
+@container (max-width: 670px) {
+  .library-toolbar .select-toggle { width: 34px; min-width: 34px; min-height: 34px; padding: 0; }
+  .library-toolbar .select-toggle-label { display: none; }
+}
 
 /* library card additions */
 .card-img-wrap { position: relative; }
@@ -1138,7 +1187,7 @@ input.usage-currency { width: 48px; height: 28px; padding: 0 var(--space-2); tex
 .daily-tip-row.muted { color: var(--muted); }
 .daily-tip-row.cost { margin-top: var(--space-1); padding-top: var(--space-1); border-top: 1px solid var(--border); }
 
-.manager-body .library-panel .library-sticky { margin: 0; }
+.manager-body .library-panel .library-sticky { margin: 0; border-bottom: 0; }
 .manager-body .library-toolbar { border-bottom: none; padding: var(--space-2_5) 0; }
 
 .library-grid.full {
@@ -1257,6 +1306,9 @@ body.manager-open { overflow: hidden; }
 }
 .field-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1_5); }
 .field-head label { margin-bottom: 0; }
+/* Title + muted sub-line used above the reference tray. */
+.field-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.field-hint { font-size: var(--fs-sm); color: var(--muted); line-height: 1.45; }
 .composer-actions { margin-top: var(--space-5); display: flex; gap: var(--space-3); align-items: center; }
 .modal-actions { display: flex; justify-content: flex-end; gap: var(--space-2_5); margin-top: var(--space-5); }
 
@@ -1652,4 +1704,9 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 .hover-peek-dims { color: var(--muted); font-variant-numeric: tabular-nums; }
 @keyframes peek-in { from { opacity: 0; transform: translateY(2px); } }
 @media (prefers-reduced-motion: reduce) { .hover-peek { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .resize-handle::before,
+  .resize-handle::after,
+  .side-panel { transition: none; }
+}
 .chip.openable { cursor: zoom-in; }

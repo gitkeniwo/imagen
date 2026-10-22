@@ -327,19 +327,6 @@ export default function AddHistoryModal({
                 </Button>
               }
             />
-          </div>
-
-          {/* Prompt and the parameters the record is filed under. */}
-          <div className="import-col">
-            <div>
-              <label>{t("prompt")}</label>
-              <textarea
-                className="import-prompt"
-                value={prompt}
-                placeholder={t("prompt_placeholder")}
-                onChange={(e) => setPrompt(e.target.value)}
-              />
-            </div>
 
             <div className="import-pair">
               <div>
@@ -377,6 +364,19 @@ export default function AddHistoryModal({
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Prompt and the record metadata. */}
+          <div className="import-col">
+            <div>
+              <label>{t("prompt")}</label>
+              <textarea
+                className="import-prompt"
+                value={prompt}
+                placeholder={t("prompt_placeholder")}
+                onChange={(e) => setPrompt(e.target.value)}
+              />
             </div>
 
             <div className="import-pair">

@@ -146,7 +146,10 @@ export default function ReferenceTray({
       {pageDrop}
       {!compact && (
         <div className="field-head">
-          <label>{t("tray_label")}</label>
+          <div className="field-title">
+            <label>{t("tray_label")}</label>
+            <span className="field-hint">{t("tray_label_hint")}</span>
+          </div>
           {action}
         </div>
       )}
