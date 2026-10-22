@@ -1336,7 +1336,7 @@ body.manager-open { overflow: hidden; }
 }
 
 /* ===== composer: input, flat parameter grid, footer ===== */
-.composer { padding: 0; overflow: hidden; }
+.composer { padding: 0; overflow: hidden; container-type: inline-size; }
 .composer-input { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-1); }
 .composer-prompt {
   border: none; box-shadow: none; background: transparent; padding: 0;
@@ -1344,18 +1344,30 @@ body.manager-open { overflow: hidden; }
 }
 .composer-prompt:focus, .composer-prompt:focus-visible { outline: none; box-shadow: none; border: none; }
 .composer-params {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-4); row-gap: var(--space-3_5);
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr);
+  column-gap: var(--space-5); row-gap: var(--space-3_5);
   align-items: center; padding: var(--space-3_5) var(--space-4) var(--space-4); border-top: 1px solid var(--divider);
 }
-.param-label, .param-sublabel { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); white-space: nowrap; }
-/* The model row can wrap onto a second line: keep its label on the first line
-   instead of letting it float between the lines. 36px matches one segmented
-   control (30px track buttons + 3px padding each side). */
-.param-label:has(+ .param-line) { align-self: start; display: flex; align-items: center; min-height: 36px; }
-.param-line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2_5) var(--space-5); min-width: 0; }
-.param-groups { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2_5) var(--space-5); min-width: 0; }
-.param-inline { display: flex; align-items: center; gap: var(--space-2); }
-.param-note { font-size: var(--fs-sm); color: var(--muted); }
+.param-label { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); white-space: nowrap; }
+/* Model and output share a line; both labels sit on that line's centre so a
+   wrapped control never leaves its label floating between rows. */
+.param-label-model, .param-label-output { align-self: start; display: flex; align-items: center; min-height: 36px; }
+/* The second label only appears once the card is too narrow to share one line. */
+.param-label-output { display: none; }
+.param-model { grid-column: 2; display: flex; min-width: 0; }
+.param-output { grid-column: 3; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2_5); min-width: 0; }
+.aspect-row { grid-column: 2 / -1; }
+.composer-params > .tag-picker { grid-column: 2 / -1; min-width: 0; }
+/* Both controls fit next to the model picker above ~632px; below that the
+   pair moves to its own row. The number is content-driven (label + model +
+   1K/2K/4K + JPG/PNG + gaps ≈ 615px), so a longer locale or model name needs
+   it raised. */
+@container (max-width: 632px) {
+  .composer-params { grid-template-columns: auto minmax(0, 1fr); }
+  .param-label-output { display: flex; }
+  .param-model, .param-output { grid-column: 2; }
+  .param-output { gap: var(--space-2_5) var(--space-5); }
+}
 .composer-foot {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-5);
   padding: var(--space-3) var(--space-4); border-top: 1px solid var(--divider); background: var(--foot-bg);

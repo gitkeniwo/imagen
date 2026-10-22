@@ -45,36 +45,33 @@ export function ComposerParams({
 
   return (
     <div className="composer-params">
-      <span className="param-label">{t("model")}</span>
-      <div className="param-line">
+      <span className="param-label param-label-model">{t("model")}</span>
+      <div className="param-model">
         <Segmented
           value={model}
           onChange={setModel}
           options={MODELS.map((m) => ({ value: m.id, label: shortModelLabel(m.label), title: m.label }))}
         />
-        {/* Resolution + format travel as one block, so a narrow line never
-            leaves a lone group dangling next to the model picker. */}
-        <div className="param-groups">
-          <div className="param-inline">
-            <span className="param-sublabel">{t("resolution")}</span>
-            <Segmented
-              value={resolution}
-              onChange={setResolution}
-              disabled={!isPro}
-              title={isPro ? undefined : `${t("resolution")}${t("pro_only")}`}
-              options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
-            />
-            {!isPro && <span className="param-note">{t("pro_only_short")}</span>}
-          </div>
-          <div className="param-inline">
-            <span className="param-sublabel">{t("format_short")}</span>
-            <Segmented
-              value={format}
-              onChange={setFormat}
-              options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
-            />
-          </div>
-        </div>
+      </div>
+
+      {/* Resolution + format ride along on the model row while there is room.
+          A narrow card drops them onto their own labelled row instead of
+          letting them wrap unevenly next to the model picker. */}
+      <span className="param-label param-label-output">{t("output")}</span>
+      <div className="param-output">
+        <Segmented
+          value={resolution}
+          onChange={setResolution}
+          disabled={!isPro}
+          title={isPro ? t("resolution") : `${t("resolution")}${t("pro_only")}`}
+          options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+        />
+        <Segmented
+          value={format}
+          onChange={setFormat}
+          title={t("format_short")}
+          options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
+        />
       </div>
 
       <span className="param-label">{t("aspect_short")}</span>
