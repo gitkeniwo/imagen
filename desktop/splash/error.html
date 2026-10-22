@@ -7,10 +7,13 @@
   <style>
     :root { color-scheme: light dark; }
     html, body { height: 100%; margin: 0; }
+    /* Match the native window background (`title_bar_color` in
+       src-tauri/src/main.rs), which is what the transparent title bar shows,
+       so the title row and the page read as one surface. */
     body {
       display: flex; align-items: center; justify-content: center;
       font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-      background: #f6f8fc; color: #1f2a3d; padding: 32px; box-sizing: border-box;
+      background: #ffffff; color: #1f2a3d; padding: 32px; box-sizing: border-box;
     }
     main { max-width: 640px; width: 100%; }
     .badge {
@@ -38,7 +41,7 @@
     button:disabled { background: #9db4d6; cursor: default; }
     #status { font-size: 13px; color: #4b5a73; }
     @media (prefers-color-scheme: dark) {
-      body { background: #101827; color: #e6ecf6; }
+      body { background: #020617; color: #e6ecf6; }
       p, #status { color: #a9b8ce; }
       .log { background: #172133; border-color: #26344b; color: #c3d0e2; }
       .badge { background: #3a1d1d; color: #fda29b; }

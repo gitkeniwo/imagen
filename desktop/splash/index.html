@@ -5,16 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imagen</title>
   <style>
-    /* Same neutral palette as library.html and the app, so the hand-off from
-       splash → library page → app has no colour jump. */
+    /* Match the native window background (`title_bar_color` in
+       src-tauri/src/main.rs), which is what the transparent title bar shows,
+       so the title row and the splash read as one surface. */
     :root {
       color-scheme: light dark;
-      --bg: #f6f8fa; --text: #0f172a; --muted: #64748b; --faint: #94a3b8;
+      --bg: #ffffff; --text: #0f172a; --muted: #64748b; --faint: #94a3b8;
       --track: #e2e8f0; --bar: #0f172a;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0b1120; --text: #e6ecf6; --muted: #94a3b8; --faint: #64748b;
+        --bg: #020617; --text: #e6ecf6; --muted: #94a3b8; --faint: #64748b;
         --track: #1c2638; --bar: #e6ecf6;
       }
     }

@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Imagen - 选择图库</title>
   <style>
+    /* Match the native window background (`title_bar_color` in
+       src-tauri/src/main.rs), which is what the transparent title bar shows,
+       so the title row and the page read as one surface. */
     :root {
       color-scheme: light dark;
-      --bg: #f6f8fa; --card: #ffffff; --border: #e2e8f0; --divider: #f1f5f9;
+      --bg: #ffffff; --card: #ffffff; --border: #e2e8f0; --divider: #f1f5f9;
       --text: #0f172a; --muted: #64748b; --faint: #94a3b8;
       --accent: #4f46e5; --accent-soft: #eef2ff; --tile: #f1f5f9; --tile-fg: #475569;
       --hover: #f8fafc; --mono: #475569;
@@ -16,7 +19,7 @@
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0b1120; --card: #111a2e; --border: #24304a; --divider: #1c2638;
+        --bg: #020617; --card: #111a2e; --border: #24304a; --divider: #1c2638;
         --text: #e6ecf6; --muted: #94a3b8; --faint: #64748b;
         --accent: #a5b4fc; --accent-soft: rgba(129, 140, 248, 0.14); --tile: #1c2638; --tile-fg: #cbd5e1;
         --hover: #172135; --mono: #a9b8ce;
