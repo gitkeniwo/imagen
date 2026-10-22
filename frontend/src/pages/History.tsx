@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow, Tag } from "../api";
 import { useI18n } from "../i18n";
 import AddHistoryModal from "../components/AddHistoryModal";
+import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import HistoryItem, { type HistoryLayout } from "../components/HistoryItem";
@@ -58,7 +59,12 @@ export default function History({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
+  // Enter grid rows per page, never a ragged last row; list view has one item
+  // per row, so it keeps the plain target size.
+  const pageSize = pageSizedToColumns(
+    compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
+    layout === "list" ? 1 : columns,
+  );
 
   const load = (quiet = false) => {
     if (!quiet) {
@@ -204,7 +210,10 @@ export default function History({
               <Segmented
                 dense
                 value={columns}
-                onChange={setColumns}
+                onChange={(n) => {
+                  setColumns(n);
+                  setPage(0);
+                }}
                 options={(compact ? HISTORY_COLUMN_OPTIONS : HISTORY_COLUMN_OPTIONS_FULL).map((n) => ({
                   value: n,
                   label: String(n),

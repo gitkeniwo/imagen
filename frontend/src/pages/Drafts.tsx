@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useState } from "react";
 import { api, Draft, draftToTaskSpec, ImageRow, TaskSpec } from "../api";
 import { useI18n } from "../i18n";
 import DraftEditorModal from "../components/DraftEditorModal";
+import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
@@ -51,7 +52,10 @@ export default function Drafts({
   const [editing, setEditing] = useState<Draft | null>(null);
   const [creating, setCreating] = useState(false);
   const [columns, setColumns] = useState(initialDraftColumns);
-  const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
+  const pageSize = pageSizedToColumns(
+    compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
+    columns,
+  );
 
   const load = () => {
     setLoading(true);
@@ -155,7 +159,10 @@ export default function Drafts({
             <Segmented
               dense
               value={columns}
-              onChange={setColumns}
+              onChange={(n) => {
+                setColumns(n);
+                setPage(0);
+              }}
               options={DRAFT_COLUMN_OPTIONS.map((value) => ({ value, label: String(value) }))}
             />
           </PopoverSection>

@@ -3,6 +3,7 @@ import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThum
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import { imageDragProps } from "../imageDrag";
+import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
@@ -63,7 +64,11 @@ export default function Library({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [batchMode, setBatchMode] = useState<"add" | "remove" | null>(null);
   const [draft, setDraft] = useState("");
-  const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
+  // Compact grid columns are fixed, so the page must hold whole rows; the full
+  // grid uses auto-fill and stays on a fixed page size.
+  const pageSize = compact
+    ? pageSizedToColumns(COMPACT_PAGE_SIZE, columns)
+    : FULL_PAGE_SIZE;
 
   const load = () => {
     setLoading(true);
@@ -230,7 +235,10 @@ export default function Library({
                 <Segmented
                   dense
                   value={columns}
-                  onChange={setColumns}
+                  onChange={(n) => {
+                    setColumns(n);
+                    setPage(0);
+                  }}
                   options={GRID_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
                 />
               </PopoverSection>

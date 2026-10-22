@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useState } from "react";
 import { api, Generation, ImageRow } from "../api";
 import { useI18n } from "../i18n";
 import AddHistoryModal from "../components/AddHistoryModal";
+import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import HistoryItem from "../components/HistoryItem";
@@ -51,7 +52,10 @@ export default function Favorites({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const pageSize = compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE;
+  const pageSize = pageSizedToColumns(
+    compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
+    columns,
+  );
 
   const load = () => {
     setLoading(true);
@@ -148,7 +152,10 @@ export default function Favorites({
               <Segmented
                 dense
                 value={columns}
-                onChange={setColumns}
+                onChange={(n) => {
+                  setColumns(n);
+                  setPage(0);
+                }}
                 options={(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => ({
                   value: n,
                   label: String(n),
