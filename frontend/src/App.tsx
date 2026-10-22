@@ -595,10 +595,11 @@ export default function App() {
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
         <aside className="side-panel">
-          <div className="side-brand">
-            <img className="brand-icon" src={appIcon} alt="" /> Imagen
-          </div>
           <div className="side-tabs-row">
+            <div className="side-brand">
+              <img className="brand-icon" src={appIcon} alt="" />
+              <span className="side-brand-name">Imagen</span>
+            </div>
             <PanelTabs
               value={sidebarPanel}
               onChange={setSidebarPanel}

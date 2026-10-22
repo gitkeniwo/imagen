@@ -98,6 +98,7 @@
   --radius-lg: 10px;
   --radius-xl: 12px;
   --radius-full: 999px;
+  --radius-island: 16px;
   --icon-sm: 14px;
   --icon-md: 16px;
   --icon-lg: 20px;
@@ -305,21 +306,26 @@ label { font-size: var(--fs-md); font-weight: 500; color: var(--text); display: 
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  /* A floating island inset from the window edges; its right edge is the
+     resize handle. */
+  margin: var(--space-2) 0 var(--space-2) var(--space-2);
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-island);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   --seg-track: var(--sidebar-track);
 }
 .side-brand {
-  flex: none; height: 56px; display: flex; align-items: center; gap: var(--space-2);
-  padding: 0 var(--space-4); font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.01em;
+  flex: none; display: flex; align-items: center; align-self: center; gap: var(--space-2);
+  padding: 0 var(--space-1) 0 var(--space-1); font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.01em;
 }
 /* The sidebar's right edge is the resize handle: invisible until hovered. */
 .resize-handle {
   position: absolute; top: 0; bottom: 0; right: -4px; width: 8px; z-index: 20; cursor: col-resize;
 }
 .resize-handle::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 3px;
-  background: var(--ui-accent); opacity: 0; transition: opacity 0.15s;
+  content: ""; position: absolute; top: var(--space-4); bottom: var(--space-4); left: 2px; width: 3px;
+  border-radius: var(--radius-full); background: var(--ui-accent); opacity: 0; transition: opacity 0.15s;
 }
 .resize-handle:hover::before,
 .resize-handle:focus-visible::before,
@@ -355,9 +361,12 @@ body.resizing-sidebar {
 .side-panel { container-type: inline-size; }
 .panel-tabs .tab { flex: 1 1 auto; }
 .panel-tabs .tab .icon, .tab-count { flex-shrink: 0; }
-@container (max-width: 520px) { .panel-tabs .tab-count { display: none; } }
-@container (max-width: 430px) { .panel-tabs .tab:not(.active) .tab-label { display: none; } }
-@container (max-width: 300px) { .panel-tabs .tab-label { display: none; } }
+/* The tabs share the title row with the app name, so they collapse earlier;
+   at the narrowest width the name goes too and only the icon stays. */
+@container (max-width: 670px) { .panel-tabs .tab-count { display: none; } }
+@container (max-width: 560px) { .panel-tabs .tab:not(.active) .tab-label { display: none; } }
+@container (max-width: 410px) { .panel-tabs .tab-label { display: none; } }
+@container (max-width: 350px) { .side-brand-name { display: none; } }
 
 /* ===== dropdown menu (components/ui/Menu) ===== */
 .menu {
@@ -398,6 +407,8 @@ body.resizing-sidebar {
   min-height: 0;
   overflow: auto;
   padding: 0 var(--space-3) var(--space-4);
+  /* Clip scrolled content to the island's rounded bottom corners. */
+  border-radius: 0 0 var(--radius-island) var(--radius-island);
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -714,7 +725,7 @@ body.resizing-sidebar {
   .main-col { height: auto; overflow: visible; }
   .main-panel { padding: 0 var(--space-3_5) var(--space-12); }
   .resize-handle { display: none; }
-  .side-panel { border-right: 0; border-bottom: 1px solid var(--border); }
+  .side-panel { margin: var(--space-2); }
   .side-scroll { max-height: 48vh; }
   .library-grid.compact { grid-template-columns: repeat(var(--library-columns, 2), minmax(0, 1fr)); }
 }
@@ -943,9 +954,9 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 .fav-note:focus { border-color: var(--accent-2); background: var(--panel-2); }
 
 /* ===== fullscreen Library/History manager (sits below the lightbox) ===== */
-.side-tabs-row { display: flex; gap: var(--space-1_5); align-items: stretch; margin-bottom: var(--space-2_5); padding: 0 var(--space-3); }
+.side-tabs-row { flex: none; display: flex; gap: var(--space-1_5); align-items: stretch; padding: var(--space-2_5) var(--space-3); }
 .side-tabs-row .side-tabs { flex: 1; min-width: 0; margin-bottom: 0; }
-.side-expand { width: 42px; height: auto; align-self: stretch; }
+.side-expand { width: 36px; height: auto; align-self: stretch; }
 .manager-overlay {
   position: fixed; inset: 0; z-index: 90; background: var(--bg);
   display: flex; flex-direction: column;
