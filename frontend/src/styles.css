@@ -1468,6 +1468,8 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 
 /* ===== inline filter row (Library / History) ===== */
 .filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1_5); padding: 0 0 var(--space-2); }
+/* Five source filters: wrap inside the pill rather than clip in a narrow sidebar. */
+.filter-row .seg { flex-wrap: wrap; max-width: 100%; }
 .filter-row .seg button { min-height: 28px; padding: 0 var(--space-2_5); font-size: var(--fs-sm); }
 .filter-row .skip-toggle { min-height: 34px; font-size: var(--fs-sm); }
 .history-toolbar-row + .filter-row { margin-top: var(--space-2); }

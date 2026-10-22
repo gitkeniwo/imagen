@@ -50,13 +50,15 @@ def list_images(
     q: str | None = None,
 ):
     clauses, params = ["deleted_at IS NULL"], []
-    if source == "app":
-        # Outputs of real Vertex calls made in this app. Plain "generated" also
-        # covers imported results, whose output image is flipped to generated.
+    # "generated" is every output image (imported results flip their output to
+    # generated); "app" / "imported" split it by the record that produced it.
+    gen_source = {"app": "vertex", "imported": "manual"}.get(source or "")
+    if gen_source:
         clauses.append(
             "id IN (SELECT output_image_id FROM generations "
-            "WHERE source = 'vertex' AND output_image_id IS NOT NULL)"
+            "WHERE source = ? AND output_image_id IS NOT NULL)"
         )
+        params.append(gen_source)
     elif source:
         clauses.append("source = ?")
         params.append(source)

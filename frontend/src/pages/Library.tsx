@@ -271,8 +271,9 @@ export default function Library({
             options={[
               { value: "", label: t("filter_all") },
               { value: "upload", label: t("filter_upload"), icon: "uploaded" },
-              { value: "generated", label: t("filter_generated"), icon: "generated" },
-              { value: "app", label: t("filter_in_app"), icon: "cloud" },
+              { value: "generated", label: t("filter_output"), icon: "output", title: t("filter_output_hint") },
+              { value: "app", label: t("filter_in_app"), icon: "generated" },
+              { value: "imported", label: t("filter_imported"), icon: "imported" },
             ]}
           />
           <Button
