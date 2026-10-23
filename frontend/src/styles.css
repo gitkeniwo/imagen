@@ -2503,8 +2503,9 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-grid .lib-tile.just-added { outline-width: 3px; }
 
   .phone-textbtn {
-    min-height: 44px;
-    padding: 0 var(--space-1_5);
+    min-height: 34px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-md);
     border: 0;
     background: transparent;
     box-shadow: none;
@@ -2513,7 +2514,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     font-weight: 600;
   }
   .phone-textbtn:disabled { opacity: 0.4; }
-  .phone-selhead { gap: var(--space-2); }
+  .phone-selhead { gap: var(--space-2); padding: 0 var(--space-1) !important; }
   .phone-selhead b { flex: 1; text-align: center; font-size: var(--fs-lg); font-weight: 650; }
 
   .phone-selbar {
