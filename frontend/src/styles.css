@@ -1582,6 +1582,8 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 @media (max-width: 720px) {
   .settings-modal { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: 90vh; }
   .settings-nav { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--border); padding: 8px; overflow-x: auto; }
+  .settings-nav { scrollbar-width: none; }
+  .settings-nav::-webkit-scrollbar { display: none; }
   .settings-nav h2 { display: none; }
   .settings-options, .settings-vertex-grid { grid-template-columns: 1fr; }
 }
