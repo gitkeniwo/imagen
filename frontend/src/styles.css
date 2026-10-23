@@ -2650,6 +2650,30 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   }
   :is(.phone-island, .composer-phone) .hcard-actions .btn-sm { min-height: 30px; padding-inline: var(--space-2); }
   :is(.phone-island, .composer-phone) .hcard-btn-label { display: none; }
+  /* History grid: two columns of stacked cards (list keeps the row cards). */
+  .phone-island .hlist.grid.phone-cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .phone-island .phone-cols2 .hcard.grid {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
+    border-radius: var(--radius-lg);
+  }
+  .phone-island .phone-cols2 .hcard.grid .hcard-media {
+    width: auto;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    border-radius: 0;
+  }
+  .phone-island .phone-cols2 .hcard.grid .hcard-body {
+    padding: var(--space-2);
+    min-height: 0;
+    justify-content: flex-start;
+    gap: var(--space-1);
+  }
+  .phone-island .phone-cols2 .hcard.grid .hcard-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+  .phone-island .phone-cols2 .hcard.grid .hcard-btn-label { display: none; }
+  .phone-island .phone-cols2 .hcard.grid .hcard-tools { justify-content: space-between; margin-left: 0; }
   .phone-island .hcard.list .hcard-media { width: 88px; }
   .phone-island .hcard.list { gap: var(--space-3); padding: var(--space-2); border-radius: 14px; }
   .phone-island .hcard.list .hcard-body { padding: 0; }

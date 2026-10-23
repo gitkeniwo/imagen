@@ -68,8 +68,8 @@ export default function History({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Enter grid rows per page, never a ragged last row; list view has one item
-  // per row, so it keeps the plain target size. The phone is always one column.
-  const effectiveColumns = phone ? 1 : columns;
+  // per row, so it keeps the plain target size. The phone grid is two columns.
+  const effectiveColumns = phone ? 2 : columns;
   const pageSize = pageSizedToColumns(
     compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
     layout === "list" ? 1 : effectiveColumns,
@@ -335,7 +335,7 @@ export default function History({
         </div>
       ) : (
         <div
-          className={`history-list hlist ${layout}${compact ? " compact" : ""}`}
+          className={`history-list hlist ${layout}${compact ? " compact" : ""}${phone && layout === "grid" ? " phone-cols2" : ""}`}
           style={layout === "grid" ? ({ "--history-columns": effectiveColumns } as CSSProperties) : undefined}
         >
           {gens.map((g) => {
