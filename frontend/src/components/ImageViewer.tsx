@@ -11,6 +11,7 @@ import Menu from "./ui/Menu";
 import { downloadImage } from "./GenerationCard";
 import { peekProps } from "./HoverPeek";
 import ZoomStage from "./ZoomStage";
+import { useIsPhone } from "../useIsPhone";
 
 // Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
 // and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
@@ -61,6 +62,9 @@ export default function ImageViewer({
     setZoomed(z);
   }, []);
   const [panelHidden, setPanelHidden] = useState(false);
+  // Phone: bottom sheet-style info panel; collapsed shows a 3-line prompt.
+  const phone = useIsPhone();
+  const [expanded, setExpanded] = useState(false);
 
   // Reset editable tags when navigating to another image.
   useEffect(() => {
@@ -69,6 +73,7 @@ export default function ImageViewer({
     setNote(current.note ?? "");
     setSource(current.source);
     setCopied(false);
+    setExpanded(false);
   }, [current.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch the prompt that produced this image (generated images only).
@@ -182,6 +187,33 @@ export default function ImageViewer({
     }
   };
 
+  const moreMenu = (
+    <Menu
+      items={[
+        ...(gen
+          ? [
+              { icon: "edit" as const, label: t("edit_annotation"), onSelect: () => setEditingGen(gen) },
+              { icon: "duplicate" as const, label: t("duplicate_record"), onSelect: () => setDuplicatingGen(gen) },
+            ]
+          : []),
+        {
+          icon: source === "upload" ? ("generated" as const) : ("uploaded" as const),
+          label: source === "upload" ? t("mark_as_generated") : t("mark_as_upload"),
+          onSelect: toggleSource,
+        },
+      ]}
+      renderTrigger={({ open, toggle }) => (
+        <IconButton
+          size="md"
+          icon="more"
+          label={t("more_actions")}
+          aria-expanded={open}
+          onClick={toggle}
+        />
+      )}
+    />
+  );
+
   const multi = items.length > 1;
   const prev = () => setIdx((i) => Math.max(0, i - 1));
   const next = () => setIdx((i) => Math.min(items.length - 1, i + 1));
@@ -195,7 +227,7 @@ export default function ImageViewer({
   return (
     <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div
-        className={`viewer-window${panelHidden ? " panel-hidden" : ""}`}
+        className={`viewer-window${panelHidden ? " panel-hidden" : ""}${phone ? " phone" : ""}${phone && expanded ? " expanded" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         <ZoomStage
@@ -204,6 +236,13 @@ export default function ImageViewer({
           onTogglePanel={() => setPanelHidden((h) => !h)}
           onZoomedChange={onZoomedChange}
         >
+          {phone && (
+            <div className="viewer-phone-top">
+              <IconButton variant="overlay" size="md" icon="close" label={t("close")} onClick={onClose} />
+              {multi && <span className="viewer-phone-count">{idx + 1} / {items.length}</span>}
+              <span className="viewer-phone-menu">{moreMenu}</span>
+            </div>
+          )}
           {multi && (
             <>
               <span className="viewer-count">{idx + 1} / {items.length}</span>
@@ -250,30 +289,7 @@ export default function ImageViewer({
                 label={t("download")}
                 onClick={() => downloadImage(current)}
               />
-              <Menu
-                items={[
-                  ...(gen
-                    ? [
-                        { icon: "edit" as const, label: t("edit_annotation"), onSelect: () => setEditingGen(gen) },
-                        { icon: "duplicate" as const, label: t("duplicate_record"), onSelect: () => setDuplicatingGen(gen) },
-                      ]
-                    : []),
-                  {
-                    icon: source === "upload" ? ("generated" as const) : ("uploaded" as const),
-                    label: source === "upload" ? t("mark_as_generated") : t("mark_as_upload"),
-                    onSelect: toggleSource,
-                  },
-                ]}
-                renderTrigger={({ open, toggle }) => (
-                  <IconButton
-                    size="md"
-                    icon="more"
-                    label={t("more_actions")}
-                    aria-expanded={open}
-                    onClick={toggle}
-                  />
-                )}
-              />
+              {moreMenu}
               <IconButton
                 className="viewer-close"
                 size="md"
@@ -311,6 +327,26 @@ export default function ImageViewer({
                 </Button>
               )}
             </div>
+            <div className="viewer-phone-actions">
+              {onReuse && gen && (
+                <button type="button" onClick={() => onReuse(gen)}>
+                  <Icon name="reuse" />
+                  {t("reuse")}
+                </button>
+              )}
+              <button type="button" className="prim" onClick={() => onAddToTray(current)}>
+                <Icon name="addToRefs" />
+                {t("phone_use_as_ref")}
+              </button>
+              <button type="button" className={starred ? "is-starred" : undefined} aria-pressed={starred} onClick={toggleStar}>
+                <Icon name="favorite" filled={starred} />
+                {starred ? t("unfavorite") : t("favorite")}
+              </button>
+              <button type="button" onClick={() => downloadImage(current)}>
+                <Icon name="download" />
+                {t("download")}
+              </button>
+            </div>
           </div>
 
           <div className="viewer-sections">
@@ -329,6 +365,10 @@ export default function ImageViewer({
                   </Button>
                 </div>
                 <p className="viewer-prompt-text">{gen.prompt}</p>
+                <button type="button" className="viewer-prompt-more" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+                  {expanded ? t("phone_show_less_prompt") : t("phone_show_full_prompt")}
+                  <Icon name="chevronDown" size="sm" />
+                </button>
                 <span className="viewer-params">{params}</span>
               </section>
             )}
@@ -360,8 +400,14 @@ export default function ImageViewer({
               </section>
             )}
 
+            {(current.tags ?? []).length > 0 && (
+              <div className="viewer-phone-tags">
+                {(current.tags ?? []).map((tg) => <span key={tg.id}>{tg.name}</span>)}
+              </div>
+            )}
+
             {source === "generated" && (
-              <section className="viewer-section">
+              <section className="viewer-section viewer-section-edit">
                 <label htmlFor="viewer-note" className="viewer-section-label">{t("note_label")}</label>
                 <textarea
                   id="viewer-note"
@@ -375,7 +421,7 @@ export default function ImageViewer({
               </section>
             )}
 
-            <section className="viewer-section">
+            <section className="viewer-section viewer-section-edit">
               <h3>{t("tags_label")}</h3>
               <TagPicker selected={tagIds} onChange={applyTags} />
             </section>
