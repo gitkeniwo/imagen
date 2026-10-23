@@ -91,6 +91,9 @@ export interface QueueTask extends TaskSpec {
   dispatchAt: number;
   // Live backend phase while running (polled); undefined until first poll.
   phase?: TaskPhase;
+  // Remote only: the connection dropped while this ran. The Mac keeps going;
+  // the result is reconciled from history once the connection is back.
+  interrupted?: boolean;
   message?: string | null;
   text?: string | null;
   rawFinish?: string | null;
@@ -278,6 +281,10 @@ async function handle<T>(res: Response): Promise<T> {
       detail = (await res.json()).detail ?? detail;
     } catch {
       /* ignore */
+    }
+    // LAN session expired or was revoked on the Mac: back to the code page.
+    if (res.status === 401 && detail === "remote_auth_required") {
+      location.href = "/login";
     }
     throw new Error(detail);
   }
@@ -561,3 +568,119 @@ export const OUTPUT_FORMATS = [
 
 // Upper bound for "enqueue this task N times" (a retry group).
 export const MAX_TASK_ATTEMPTS = 20;
+
+// --- Remote (LAN) access ----------------------------------------------------
+
+export interface SessionInfo {
+  remote: boolean;
+  host_name: string | null;
+  device: { name: string; created_at: number } | null;
+}
+
+export interface RemoteAddress {
+  iface: string;
+  ip: string;
+  kind: "wifi" | "ethernet" | "tailscale" | "other";
+}
+
+export interface RemoteDevice {
+  id: string;
+  name: string;
+  ip: string;
+  created_at: number;
+  last_seen: number;
+  active: boolean;
+  running: number;
+}
+
+export type RemoteState = "off" | "idle" | "active" | "no_code" | "blocked";
+
+export interface RemoteStatus {
+  available: boolean;
+  enabled: boolean;
+  state: RemoteState;
+  // blocked: firewall | port_in_use | no_network; off: too_many_attempts.
+  reason: string | null;
+  port: number;
+  require_code: boolean;
+  code: string | null;
+  addresses: RemoteAddress[];
+  local_name: string | null;
+  host_name: string;
+  devices: RemoteDevice[];
+  // Open LAN (no code): someone is using it, but there are no sessions to list.
+  anon_active: boolean;
+  anon_running: number;
+  failed_last_hour: number;
+  keep_awake: boolean;
+  awake_now: boolean;
+  firewall: "ok" | "blocked" | "unknown";
+}
+
+export interface RemoteConfigPatch {
+  enabled?: boolean;
+  port?: number;
+  require_code?: boolean;
+  keep_awake?: boolean;
+}
+
+export type RemoteLoginResult =
+  | { ok: true }
+  | { ok: false; error: "wrong_code"; remaining: number }
+  | { ok: false; error: "locked"; retryAfter: number }
+  | { ok: false; error: "network" };
+
+const jsonInit = (method: string, body?: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+export const remoteApi = {
+  async session(): Promise<SessionInfo> {
+    return handle(await fetch("/api/session", { cache: "no-store" }));
+  },
+  async hello(): Promise<{ host_name: string; require_code: boolean }> {
+    return handle(await fetch("/api/remote/hello", { cache: "no-store" }));
+  },
+  async login(code: string, name: string, remember: boolean): Promise<RemoteLoginResult> {
+    let res: Response;
+    try {
+      res = await fetch("/api/remote/login", jsonInit("POST", { code, name, remember }));
+    } catch {
+      return { ok: false, error: "network" };
+    }
+    if (res.ok) return { ok: true };
+    try {
+      const body = await res.json();
+      if (body.error === "wrong_code") {
+        return { ok: false, error: "wrong_code", remaining: Number(body.remaining) || 0 };
+      }
+      if (body.error === "locked") {
+        return { ok: false, error: "locked", retryAfter: Number(body.retry_after) || 60 };
+      }
+    } catch {
+      /* fall through */
+    }
+    return { ok: false, error: "network" };
+  },
+  async logout(): Promise<void> {
+    await handle(await fetch("/api/remote/logout", jsonInit("POST")));
+  },
+  // Host-only management calls (404 on the LAN listener).
+  async status(): Promise<RemoteStatus> {
+    return handle(await fetch("/api/remote/status", { cache: "no-store" }));
+  },
+  async configure(patch: RemoteConfigPatch): Promise<RemoteStatus> {
+    return handle(await fetch("/api/remote/config", jsonInit("PUT", patch)));
+  },
+  async regenerateCode(): Promise<RemoteStatus> {
+    return handle(await fetch("/api/remote/code/regenerate", jsonInit("POST")));
+  },
+  async signOutDevice(id: string): Promise<RemoteStatus> {
+    return handle(await fetch(`/api/remote/sessions/${id}`, { method: "DELETE" }));
+  },
+  async signOutAll(): Promise<RemoteStatus> {
+    return handle(await fetch("/api/remote/sessions", { method: "DELETE" }));
+  },
+};

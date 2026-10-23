@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import Login from "./pages/Login";
+import { RemoteProvider } from "./remote";
 import { I18nProvider } from "./i18n";
 import { ToastProvider } from "./components/Toast";
 import { ConfirmProvider } from "./components/ConfirmDialog";
@@ -11,7 +13,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <I18nProvider>
       <ToastProvider>
         <ConfirmProvider>
-          <App />
+          {/* /login is served on the LAN listener without a session. */}
+          {location.pathname === "/login" ? (
+            <Login />
+          ) : (
+            <RemoteProvider>
+              <App />
+            </RemoteProvider>
+          )}
         </ConfirmProvider>
       </ToastProvider>
     </I18nProvider>
