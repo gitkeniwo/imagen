@@ -2842,6 +2842,9 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     padding-top: env(safe-area-inset-top);
   }
   .viewer-window.phone .viewer-stage { flex: 1 1 0; min-height: 0; }
+  /* Own compositing layer: the sheet drag resizes the stage every frame; keep WebKit from leaving stale image edges. */
+  .viewer-window.phone .viewer-stage { contain: paint; isolation: isolate; transform: translateZ(0); }
+  .viewer-window.phone .zoom-layer img { border-radius: 0; }
   .viewer-window.phone .viewer-count { display: none; }
   .viewer-window.phone .zoom-hud .zoom-icon,
   .viewer-window.phone .zoom-hud .zoom-sep:last-of-type { display: none; }
