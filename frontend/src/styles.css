@@ -2592,7 +2592,11 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-island .history-toolbar .filter-row { margin-top: var(--space-2); }
   .phone-island .history-phone .phone-pager-row { padding-bottom: var(--space-2); }
 
-  /* Favorites/drafts open as subpages: no sticky head, keep the toolbar light. */
+  /* Favorites/drafts open as subpages: the head sits above the scroller, so the
+     sticky toolbar pins at 0 (not 44px, which left a see-through gap) and the
+     head must not paint a square background over the island's rounded border. */
+  .phone-island .phone-subhead { background: transparent; border-radius: 18px 18px 0 0; }
+  .phone-island .phone-subhead + .phone-island-scroll .history-toolbar { top: 0; }
   .phone-island .draft-toolbar { gap: var(--space-1_5); padding-bottom: var(--space-2); }
   .phone-island .draft-toolbar .searchbox {
     height: 40px;
