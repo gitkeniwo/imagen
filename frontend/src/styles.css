@@ -2762,9 +2762,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     font-size: var(--fs-lg);
     font-weight: 650;
     padding: 0 var(--space-4);
-    color: #fff;
   }
-  .phone-generate .icon { color: #fff; }
 
   /* Queue: single column; media 88px (shared hcard rules above). */
   .composer-phone .queue { margin-top: 0; }
@@ -3011,4 +3009,19 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-picker .phone-head { height: 44px; padding: 0; background: transparent; }
   .phone-picker .phone-logo, .phone-picker .phone-head h1 { display: none; }
   .phone-picker .phone-head .spacer, .phone-picker .phone-head > :last-child { margin-left: auto; }
+}
+
+/* ===== short screens (landscape phone): desktop two-pane, compressed ===== */
+/* Width stays ≥ 640px here, so this is the desktop UI; only spacing shrinks. */
+@media (min-width: 640px) and (max-height: 520px) {
+  .topbar { height: 48px; }
+  .side-panel { margin: var(--space-1) 0 var(--space-1) var(--space-1); }
+  .main-panel { padding: 0 var(--space-4) var(--space-8); }
+  .composer-input { padding: var(--space-3) var(--space-3) var(--space-1); gap: var(--space-2); }
+  .composer-prompt { min-height: 56px; }
+  .composer-params { padding: var(--space-2) var(--space-3); row-gap: var(--space-2); }
+  .composer-foot { padding: var(--space-2) var(--space-3); gap: var(--space-2) var(--space-4); }
+  .queue { margin-top: var(--space-3); }
+  .queue-grid.auto { grid-template-columns: minmax(0, 1fr); }
+  .viewer-overlay { padding: var(--space-2); }
 }
