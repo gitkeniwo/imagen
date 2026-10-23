@@ -1,4 +1,5 @@
 import {
+  Archive,
   ArrowRightFromLine,
   Bookmark,
   ChartColumn,
@@ -93,6 +94,7 @@ const ICONS = {
   queue: ListPlus,
   addToRefs: ImagePlus,
   saveDraft: StickyNote,
+  archive: Archive,
   moveToDrafts: FolderInput,
   edit: Pencil,
   editSettings: SlidersHorizontal,

@@ -10,6 +10,7 @@ import {
   TaskSpec,
 } from "../api";
 import { useI18n } from "../i18n";
+import { useConfirm } from "../components/ConfirmDialog";
 import ReferenceTray from "../components/ReferenceTray";
 import QueueList from "../components/QueueList";
 import LibraryPickerModal from "../components/LibraryPickerModal";
@@ -71,6 +72,7 @@ export default function Generate({
   phone?: boolean;
 }) {
   const { t } = useI18n();
+  const askConfirm = useConfirm();
   const { conn, remote } = useRemote();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(MODELS[0].id);
@@ -148,9 +150,13 @@ export default function Generate({
           <h1>{t("tab_generate")}</h1>
           {remote && <RemoteChip />}
           <IconButton
-            icon="saveDraft"
+            icon="archive"
             label={t("save_draft")}
-            onClick={() => onSaveDraft(currentTask())}
+            onClick={async () => {
+              if (await askConfirm({ message: t("save_draft_confirm"), confirmLabel: t("save_draft") })) {
+                onSaveDraft(currentTask());
+              }
+            }}
           />
         </header>
       )}
