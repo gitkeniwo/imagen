@@ -7,10 +7,11 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 from ..db import DATA_DIR, get_conn
 from ..models import VertexConfig
+from ..remote_gate import is_lan
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -67,7 +68,7 @@ def _recent_libraries(current: Path) -> list[dict]:
 
 
 @router.get("/library")
-def get_library():
+def get_library(request: Request):
     """Library location + summary for the Settings dialog.
 
     `desktop` is true only for the desktop entry point, which sets
@@ -82,6 +83,17 @@ def get_library():
             "SELECT COUNT(*) c FROM generations WHERE status NOT IN ('note', 'running')"
         ).fetchone()["c"]
     current = Path(DATA_DIR).resolve()
+    if is_lan(request.scope):
+        # Remote devices don't get to see (or switch) the Mac's library.
+        return {
+            "path": "",
+            "name": "",
+            "desktop": False,
+            "images": images["c"],
+            "bytes": images["b"],
+            "history": history,
+            "recent": [],
+        }
     return {
         "path": str(DATA_DIR),
         "name": current.name,
@@ -100,7 +112,9 @@ def get_vertex():
 
 
 @router.put("/vertex")
-def put_vertex(body: VertexConfig):
+def put_vertex(body: VertexConfig, request: Request):
+    if is_lan(request.scope):
+        raise HTTPException(status_code=403, detail="Vertex settings are managed on the Mac.")
     project = body.project.strip()
     location = (body.location or DEFAULT_LOCATION).strip() or DEFAULT_LOCATION
     with get_conn() as conn:

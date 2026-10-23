@@ -4,13 +4,16 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import remote
 from .db import init_storage
+from .remote_gate import RemoteGate, is_lan
 from .routes import drafts, generate, generations, images, settings, stats, tags
+from .routes import remote as remote_routes
 
 app = FastAPI(title="Imagen")
 
@@ -30,19 +33,34 @@ app.add_middleware(
 )
 
 
+# Outermost: decides trust per listener (loopback shell vs LAN). Desktop only.
+app.add_middleware(RemoteGate)
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_storage()
 
 
+if remote.is_desktop():
+    @app.on_event("startup")
+    async def _remote_startup() -> None:
+        await remote.startup(app)
+
+    @app.on_event("shutdown")
+    async def _remote_shutdown() -> None:
+        await remote.shutdown()
+
+
 @app.get("/api/health")
-def health():
+def health(request: Request):
     # `token` lets the desktop shell verify it is talking to *its* backend on
     # the shared, fixed port. Docker runs without the env var, so it stays None.
+    # LAN clients never see it.
     return {
         "ok": True,
         "app": "imagen",
-        "token": os.environ.get("IMAGEN_INSTANCE_TOKEN"),
+        "token": None if is_lan(request.scope) else os.environ.get("IMAGEN_INSTANCE_TOKEN"),
     }
 
 
@@ -53,6 +71,8 @@ app.include_router(generations.router)
 app.include_router(stats.router)
 app.include_router(tags.router)
 app.include_router(drafts.router)
+if remote.is_desktop():
+    app.include_router(remote_routes.router)
 
 # Serve the production build of the frontend if present.
 def _resolve_dist() -> Path:

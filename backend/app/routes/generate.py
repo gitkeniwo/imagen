@@ -4,12 +4,13 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from .. import gemini, storage, tagging
+from .. import gemini, remote, storage, tagging
 from ..db import get_conn
 from ..models import GenerateRequest
+from ..remote_gate import is_lan
 from .settings import read_vertex
 
 router = APIRouter(prefix="/api", tags=["generate"])
@@ -83,7 +84,7 @@ def _payload(
 
 
 @router.post("/generate")
-async def generate(body: GenerateRequest):
+async def generate(body: GenerateRequest, request: Request):
     """Run one generation and stream its result.
 
     Validation, the Vertex project check and input existence checks all happen
@@ -158,6 +159,10 @@ async def generate(body: GenerateRequest):
     # on disconnect — it must run to completion so the history row is honest.
     cid = body.clientTaskId
     disconnected = {"v": False}
+    # iPad Safari drops long connections when the tab goes to the background;
+    # that must not stop the retries. LAN requests only cancel explicitly.
+    lan = is_lan(request.scope)
+    owner = remote.session_started(request.scope["state"].get("remote_session")) if lan else None
 
     def on_event(ev: dict) -> None:
         if cid:
@@ -276,6 +281,8 @@ async def generate(body: GenerateRequest):
         try:
             return await _run_generation()
         finally:
+            if owner is not None:
+                remote.session_finished(owner)
             if cid:
                 INFLIGHT.discard(cid)
                 PROGRESS.pop(cid, None)
@@ -300,7 +307,8 @@ async def generate(body: GenerateRequest):
             # the disconnect here (request.is_disconnected() is unreliable once
             # the response has started) and let the work task stop cooperatively
             # at its next retry boundary. The task itself is left running.
-            disconnected["v"] = True
+            if not lan:
+                disconnected["v"] = True
             raise
 
         if task.cancelled():
