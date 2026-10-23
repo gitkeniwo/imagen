@@ -29,6 +29,13 @@ pub fn ui_path(app: &AppHandle) -> Option<PathBuf> {
         .map(|dir| dir.join(UI_FILE))
 }
 
+/// `remote.json` (LAN remote-access settings, owned by the backend) beside
+/// the desktop config, or `None` in data-dir test mode.
+pub fn remote_path(app: &AppHandle) -> Option<PathBuf> {
+    ui_path(app)
+        .and_then(|ui| ui.parent().map(|dir| dir.join("remote.json")))
+}
+
 /// The stored object when the file exists, parses, and has our version.
 pub fn read_object(path: &Path) -> Option<Map<String, Value>> {
     let data = fs::read(path).ok()?;

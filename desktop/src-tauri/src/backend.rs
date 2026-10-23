@@ -252,6 +252,11 @@ pub fn spawn(app: &AppHandle) -> Result<u32, String> {
     if let Some(ui) = crate::ui_store::ui_path(app) {
         cmd.env("IMAGEN_UI_PATH", ui);
     }
+    // The backend owns remote.json (LAN access settings); it lives with the
+    // desktop config, never inside the library.
+    if let Some(remote) = crate::ui_store::remote_path(app) {
+        cmd.env("IMAGEN_REMOTE_PATH", remote);
+    }
 
     let log = OpenOptions::new()
         .create(true)
