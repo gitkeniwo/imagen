@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, Generation, ImageRow, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
@@ -65,6 +65,25 @@ export default function ImageViewer({
   // Phone: bottom sheet-style info panel; collapsed shows a 3-line prompt.
   const phone = useIsPhone();
   const [expanded, setExpanded] = useState(false);
+  // Phone: user-dragged sheet height in px (null = content-sized, capped by CSS).
+  const [sheetH, setSheetH] = useState<number | null>(null);
+  const sideRef = useRef<HTMLElement>(null);
+  const dragRef = useRef<{ y: number; h: number; max: number } | null>(null);
+  const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const side = sideRef.current;
+    const win = side?.parentElement;
+    if (!side || !win) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { y: e.clientY, h: side.offsetHeight, max: win.clientHeight - 140 };
+  };
+  const onHandleMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    setSheetH(Math.round(Math.min(d.max, Math.max(120, d.h + d.y - e.clientY))));
+  };
+  const onHandleUp = () => {
+    dragRef.current = null;
+  };
 
   // Reset editable tags when navigating to another image.
   useEffect(() => {
@@ -270,7 +289,25 @@ export default function ImageViewer({
           )}
         </ZoomStage>
 
-        <aside className="viewer-side" aria-label={t("image_info")} hidden={panelHidden}>
+        <aside
+          ref={sideRef}
+          className="viewer-side"
+          aria-label={t("image_info")}
+          hidden={panelHidden}
+          style={phone && sheetH != null ? { height: sheetH, maxHeight: "none", flex: "0 0 auto" } : undefined}
+        >
+          {phone && (
+            <div
+              className="viewer-sheet-handle"
+              role="separator"
+              aria-orientation="horizontal"
+              onPointerDown={onHandleDown}
+              onPointerMove={onHandleMove}
+              onPointerUp={onHandleUp}
+              onPointerCancel={onHandleUp}
+              onDoubleClick={() => setSheetH(null)}
+            />
+          )}
           <div className="viewer-top">
             <div className="viewer-head">
               <h2 className="viewer-name">{current.filename}</h2>

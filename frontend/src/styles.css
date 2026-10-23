@@ -2842,12 +2842,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     padding-top: env(safe-area-inset-top);
   }
   .viewer-window.phone .viewer-stage { flex: 1 1 0; min-height: 0; }
-  .viewer-window.phone.expanded .viewer-stage { flex: 0 0 56px; }
-  .viewer-window.phone.expanded .zoom-layer { visibility: hidden !important; }
   .viewer-window.phone .viewer-count { display: none; }
-  .viewer-window.phone.expanded .viewer-nav,
-  .viewer-window.phone.expanded .zoom-hud,
-  .viewer-window.phone.expanded .zoom-mini { display: none; }
   .viewer-window.phone .zoom-hud .zoom-icon,
   .viewer-window.phone .zoom-hud .zoom-sep:last-of-type { display: none; }
   .viewer-window.phone .zoom-hud { bottom: 10px; }
@@ -2886,7 +2881,23 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
     overflow: hidden;
   }
-  .viewer-window.phone.expanded .viewer-side { flex: 1 1 auto; max-height: none; }
+  .viewer-sheet-handle {
+    flex: none;
+    height: 22px;
+    margin-top: calc(-1 * var(--space-4) + 4px);
+    cursor: ns-resize;
+    touch-action: none;
+    position: relative;
+  }
+  .viewer-sheet-handle::after {
+    content: "";
+    position: absolute;
+    left: 50%; top: 8px;
+    width: 40px; height: 5px;
+    margin-left: -20px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.28);
+  }
   .viewer-window.phone .viewer-top { display: contents; }
   .viewer-window.phone .viewer-head { order: 0; padding: 0 20px; }
   .viewer-window.phone .viewer-head > :not(.viewer-name) { display: none; }
@@ -2909,11 +2920,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .viewer-window.phone.expanded .viewer-prompt-text {
-    display: block;
-    max-height: 38vh;
-    overflow-y: auto;
-  }
+  .viewer-window.phone.expanded .viewer-prompt-text { display: block; }
   .viewer-window.phone .viewer-prompt-more {
     display: inline-flex;
     align-items: center;
@@ -2931,11 +2938,8 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .viewer-window.phone.expanded .viewer-prompt-more .icon { transform: rotate(180deg); }
   .viewer-window.phone .viewer-section-head .btn { color: #cbd5e1; }
   .viewer-window.phone .viewer-params { font-size: var(--fs-sm); }
-  .viewer-window.phone .viewer-section-edit { display: none; }
-  .viewer-window.phone.expanded .viewer-section-edit { display: flex; }
   .viewer-window.phone .viewer-note { background: var(--panel-2); color: var(--text); }
-  .viewer-window.phone .viewer-phone-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: var(--space-1) 0; }
-  .viewer-window.phone.expanded .viewer-phone-tags { display: none; }
+  .viewer-window.phone .viewer-phone-tags { display: none; flex-wrap: wrap; gap: 6px; padding: var(--space-1) 0; }
   .viewer-phone-tags span {
     height: 26px;
     padding: 0 10px;
