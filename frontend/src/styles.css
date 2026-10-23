@@ -2549,3 +2549,97 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     color: var(--ui-accent);
   }
 }
+
+/* ===== phone: history / favorites / drafts + shared hcard ===== */
+@media (max-width: 639.98px) {
+  /* The history island head and toolbar stick like the library ones. */
+  .phone-island .history-phone .phone-head {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    height: 44px;
+    margin: 0 0 var(--space-2);
+    padding: 0;
+    background: var(--sidebar-bg);
+  }
+  .phone-island .history-toolbar {
+    top: 44px;
+    z-index: 7;
+    background: var(--sidebar-bg);
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-1);
+  }
+  .phone-island .history-toolbar-row { gap: var(--space-1_5); }
+  .phone-island .history-toolbar-row .searchbox {
+    height: 40px;
+    border-radius: var(--radius-xl);
+    padding: 0 var(--space-3_5);
+  }
+  .phone-island .history-toolbar-row .searchbox input { font-size: 15px; }
+  .phone-island .history-toolbar-row .view-seg { flex: none; }
+  .phone-island .history-toolbar .filter-row { margin-top: var(--space-2); }
+  .phone-island .history-phone .phone-pager-row { padding-bottom: var(--space-2); }
+
+  /* Favorites/drafts open as subpages: no sticky head, keep the toolbar light. */
+  .phone-island .draft-toolbar { gap: var(--space-1_5); padding-bottom: var(--space-2); }
+  .phone-island .draft-toolbar .searchbox {
+    height: 40px;
+    border-radius: var(--radius-xl);
+    padding: 0 var(--space-3_5);
+  }
+  .phone-island .draft-toolbar .searchbox input { font-size: 15px; }
+  .phone-island .draft-toolbar .draft-new-button { width: 40px; height: 40px; flex: none; }
+
+  /* Cards: one per row, thumbnail on the left, like the queue rows. */
+  .phone-island .hlist,
+  .phone-island .draft-list { gap: var(--space-2); }
+  .phone-island .hlist.grid,
+  .phone-island .draft-list { grid-template-columns: minmax(0, 1fr); }
+
+  .phone-island .hcard.grid {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-2);
+    border-radius: 14px;
+  }
+  .phone-island .hcard.grid .hcard-media {
+    width: 88px;
+    height: 88px;
+    aspect-ratio: auto;
+    border-radius: var(--radius-lg);
+  }
+  .phone-island .hcard.grid .hcard-body {
+    padding: 0;
+    gap: var(--space-1);
+    min-height: 88px;
+    justify-content: center;
+  }
+  .phone-island .hcard.grid .hcard-prompt > p { -webkit-line-clamp: 2; }
+  .phone-island .hcard .hcard-meta { font-size: var(--fs-sm); }
+  .phone-island .hcard.grid .hcard-chips { height: 22px; }
+  .phone-island .hcard.grid .hcard-chips img,
+  .phone-island .hcard.grid .hcard-chips .deleted-tile { width: 22px; height: 22px; }
+  .phone-island .hcard.grid .hcard-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    padding-top: 0;
+  }
+  .phone-island .hcard.grid .hcard-tools {
+    margin-left: auto;
+    justify-content: flex-end;
+    gap: 0;
+  }
+  .phone-island .hcard-actions .btn-sm { min-height: 30px; padding-inline: var(--space-2); }
+  .phone-island .hcard-btn-label { display: none; }
+  .phone-island .hcard.list .hcard-media { width: 88px; }
+  .phone-island .hcard.list { gap: var(--space-3); padding: var(--space-2); border-radius: 14px; }
+  .phone-island .hcard.list .hcard-body { padding: 0; }
+  .phone-island .hcard .fav-note { height: 30px; font-size: var(--fs-base); }
+
+  /* Drafts reuse the generation card; single column is enough on the phone. */
+  .phone-island .draft-list .card { border-radius: 14px; }
+}
+

@@ -933,6 +933,7 @@ export default function App() {
                         onRerun={configured ? rerunGeneration : undefined}
                         onUseAsRef={addToTray}
                         compact
+                        phone
                         refreshKey={completedRefreshKey}
                         onOpenViewer={openViewer}
                         onChanged={bumpData}
@@ -940,6 +941,7 @@ export default function App() {
                     ) : morePage === "drafts" ? (
                       <Drafts
                         compact
+                        phone
                         onChanged={bumpCounts}
                         refreshKey={draftVersion}
                         canQueue={!!configured}
