@@ -1,3 +1,4 @@
+import { useRemote } from "../remote";
 import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ImageRow, imgThumbUrl } from "../api";
@@ -33,6 +34,7 @@ export default function ReferenceTray({
   // Shown at the right end of the label row (e.g. "Pick from library").
   action?: ReactNode;
 }) {
+  const { remote } = useRemote();
   const { t } = useI18n();
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -148,7 +150,7 @@ export default function ReferenceTray({
         <div className="field-head">
           <div className="field-title">
             <label>{t("tray_label")}</label>
-            <span className="field-hint">{t("tray_label_hint")}</span>
+            <span className="field-hint">{remote ? t("remote_ref_hint") : t("tray_label_hint")}</span>
           </div>
           {action}
         </div>

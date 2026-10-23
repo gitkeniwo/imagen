@@ -22,6 +22,8 @@ import Library from "./pages/Library";
 import History from "./pages/History";
 import Favorites from "./pages/Favorites";
 import SettingsModal from "./components/SettingsModal";
+import RemoteIndicator, { RemoteChip } from "./components/RemoteIndicator";
+import { useRemote } from "./remote";
 import AddHistoryModal from "./components/AddHistoryModal";
 import UsageDashboard from "./components/UsageDashboard";
 import ImageViewer from "./components/ImageViewer";
@@ -35,6 +37,7 @@ import Icon from "./components/ui/Icon";
 import { Button, IconButton } from "./components/ui/Button";
 import appIcon from "./assets/app-icon.png";
 import { isRefDrag } from "./imageDrag";
+import { uuid } from "./uuid";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
@@ -105,6 +108,8 @@ export default function App() {
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"library" | "remote">("library");
+  const { remote, conn, reportNetworkError } = useRemote();
   const [showAddHistory, setShowAddHistory] = useState(false);
   // Bumped by panels whose item totals change without a data refresh (drafts).
   const [countsVersion, setCountsVersion] = useState(0);
@@ -131,6 +136,14 @@ export default function App() {
     [],
   );
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
+
+  // Back from a dropped link: results the Mac finished meanwhile are already in
+  // History, so reload the panels.
+  const prevConn = useRef(conn);
+  useEffect(() => {
+    if (prevConn.current === "lost" && conn === "ok") bumpData();
+    prevConn.current = conn;
+  }, [conn, bumpData]);
   const consumePrefill = useCallback(() => setPrefill(null), []);
 
   const refreshConfig = () =>
@@ -287,7 +300,7 @@ export default function App() {
           ...task,
           skipIfPrecedingSucceeds:
             i === 0 ? task.skipIfPrecedingSucceeds : true,
-          id: crypto.randomUUID(),
+          id: uuid(),
           status: "pending",
           dispatchAt,
         }));
@@ -358,6 +371,8 @@ export default function App() {
     const running = queue.filter((t) => isActive(t.status)).length;
     const slots = concurrency - running;
     if (slots <= 0) return;
+    // Remote device with the Mac unreachable: hold the queue until it's back.
+    if (remote && conn === "lost") return;
 
     const nextTasks = queue
       .filter(
@@ -447,16 +462,25 @@ export default function App() {
           // leave still-pending opted-in tasks alone so a later success can
           // still skip them.
           startedRef.current.delete(task.id);
+          // fetch() rejects with a TypeError when the link drops. On a remote
+          // device the Mac may still be generating, so say so instead of failing.
+          const interrupted = remote && (err instanceof TypeError || err instanceof SyntaxError);
+          if (interrupted) reportNetworkError();
           setQueue((q) =>
             q.map((t) =>
               t.id === task.id
-                ? { ...t, status: "error" as const, message: (err as Error).message } as QueueTask
+                ? {
+                    ...t,
+                    status: "error" as const,
+                    interrupted,
+                    message: interrupted ? translate("remote_interrupted_msg") : (err as Error).message,
+                  } as QueueTask
                 : t,
             ),
           );
         });
     });
-  }, [queue, dispatchTick, concurrency]);
+  }, [queue, dispatchTick, concurrency, remote, conn, reportNetworkError]);
 
   const addToTray = useCallback(
     (img: ImageRow) =>
@@ -590,7 +614,7 @@ export default function App() {
   return (
     <>
       <div
-        className="app-shell"
+        className={`app-shell${remote ? " remote" : ""}`}
         ref={workspaceRef}
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
@@ -708,6 +732,16 @@ export default function App() {
         <div className="main-col">
           <header className="topbar">
             <div className="spacer" />
+            {remote ? (
+              <RemoteChip />
+            ) : (
+              <RemoteIndicator
+                onOpenSettings={() => {
+                  setSettingsSection("remote");
+                  setShowSettings(true);
+                }}
+              />
+            )}
             <Button
               className="topbar-btn"
               icon="add"
@@ -719,7 +753,7 @@ export default function App() {
             <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
               <Icon name="usage" /> {t("usage")}
             </button>
-            <button className="topbar-btn" onClick={() => setShowSettings(true)}>
+            <button className="topbar-btn" onClick={() => { setSettingsSection("library"); setShowSettings(true); }}>
               {configured ? (
                 <><Icon name="settings" /> {t("settings")}</>
               ) : (
@@ -760,6 +794,7 @@ export default function App() {
 
       {showSettings && (
         <SettingsModal
+          initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
           onSaved={refreshConfig}
           undoSeconds={undoSeconds}

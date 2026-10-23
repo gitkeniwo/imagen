@@ -4,13 +4,17 @@ import { useI18n } from "../i18n";
 import Icon, { type IconName } from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
+import RemoteSettings from "./RemoteSettings";
+import { useRemote } from "../remote";
 
-type Section = "library" | "vertex" | "prefs";
+type Section = "library" | "vertex" | "prefs" | "remote" | "device";
 
 const SECTIONS: { id: Section; icon: IconName; label: string }[] = [
   { id: "library", icon: "libraryFolder", label: "settings_section_library" },
   { id: "vertex", icon: "cloud", label: "settings_section_vertex" },
   { id: "prefs", icon: "preferences", label: "settings_section_prefs" },
+  { id: "remote", icon: "radio", label: "settings_section_remote" },
+  { id: "device", icon: "tablet", label: "settings_section_device" },
 ];
 
 // Library switching is done by the desktop shell. The page only fires fixed
@@ -31,14 +35,17 @@ export default function SettingsModal({
   onSaved,
   undoSeconds,
   setUndoSeconds,
+  initialSection = "library",
 }: {
+  initialSection?: Section;
   onClose: () => void;
   onSaved: () => void;
   undoSeconds: number;
   setUndoSeconds: (n: number) => void;
 }) {
   const { t, lang, setLang } = useI18n();
-  const [section, setSection] = useState<Section>("library");
+  const { remote, hostName, device, signOut } = useRemote();
+  const [section, setSection] = useState<Section>(initialSection);
   const [project, setProject] = useState("");
   const [location, setLocation] = useState("global");
   const [library, setLibrary] = useState<LibraryInfo | null>(null);
@@ -109,6 +116,11 @@ export default function SettingsModal({
     return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
 
+  // Remote devices get the device page instead of host-only management; the
+  // host window shows the remote-access page only when the backend supports it.
+  const sections = SECTIONS.filter((s) =>
+    remote ? s.id !== "remote" : s.id === "device" ? false : s.id !== "remote" || library?.desktop,
+  );
   const current = SECTIONS.find((s) => s.id === section)!;
 
   return (
@@ -116,7 +128,7 @@ export default function SettingsModal({
       <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
         <nav className="settings-nav" aria-label={t("settings_title")}>
           <h2>{t("settings_title")}</h2>
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button
               key={s.id}
               type="button"
@@ -136,7 +148,13 @@ export default function SettingsModal({
             <IconButton icon="close" size="md" label={t("close")} onClick={onClose} />
           </div>
 
-          {section === "library" && (
+          {section === "library" && remote && (
+            <div className="settings-body">
+              <div className="rm-callout lock"><Icon name="lock" size="sm" /><span>{t("remote_lib_lock")}</span></div>
+            </div>
+          )}
+
+          {section === "library" && !remote && (
             <div className="settings-body">
               <div className="settings-lib-card">
                 <span className="settings-lib-icon"><Icon name="libraryFolder" /></span>
@@ -260,7 +278,13 @@ export default function SettingsModal({
             </div>
           )}
 
-          {section === "vertex" && (
+          {section === "vertex" && remote && (
+            <div className="settings-body">
+              <div className="rm-callout lock"><Icon name="lock" size="sm" /><span>{t("remote_vertex_lock")}</span></div>
+            </div>
+          )}
+
+          {section === "vertex" && !remote && (
             <div className="settings-body">
               <p className="m-0 settings-lead">{t("settings_desc")}</p>
               <div className="settings-vertex-grid">
@@ -339,6 +363,34 @@ export default function SettingsModal({
                 </div>
               </div>
               <p className="muted small m-0">{t("settings_prefs_instant")}</p>
+              {remote && <p className="muted small m-0">{t("remote_prefs_note")}</p>}
+            </div>
+          )}
+
+          {section === "remote" && !remote && <RemoteSettings />}
+
+          {section === "device" && remote && (
+            <div className="settings-body">
+              <div className="rm-card">
+                <span className="rm-card-icon"><Icon name="tablet" /></span>
+                <div className="rm-card-text">
+                  <span className="rm-card-title">
+                    {device?.name ?? t("remote_device_this")}
+                    <span className="rm-chip ok"><span className="rm-dot" />{t("remote_connected")}</span>
+                  </span>
+                  <span className="muted small">{t("remote_on_host", { host: hostName })}</span>
+                  {device && (
+                    <span className="muted small">
+                      {t("remote_signed_in_line", { date: new Date(device.created_at * 1000).toLocaleDateString() })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <p className="muted small m-0">{t("remote_signed_in_d")}</p>
+              <p className="muted small m-0">{t("remote_queue_note")}</p>
+              <div className="settings-actions">
+                <Button icon="logout" onClick={() => void signOut()}>{t("remote_sign_out_this")}</Button>
+              </div>
             </div>
           )}
         </div>

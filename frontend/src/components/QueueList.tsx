@@ -249,7 +249,7 @@ const QueueItem = memo(function QueueItem({
   const meta = [task.model.replace("-image", "").replace("-preview", ""), task.aspectRatio, task.resolution]
     .filter(Boolean)
     .join(" · ");
-  const statusLabel = t(`status_${task.status}`);
+  const statusLabel = task.interrupted ? t("remote_interrupted") : t(`status_${task.status}`);
 
   // Same fixed-slot layout as History cards so a queue row lines up; the
   // time-critical undo / cancel control sits in the media slot.

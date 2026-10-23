@@ -14,6 +14,7 @@ import QueueList from "../components/QueueList";
 import LibraryPickerModal from "../components/LibraryPickerModal";
 import { AttemptsStepper, ComposerParams, Switch } from "../components/ComposerControls";
 import { Button } from "../components/ui/Button";
+import { useRemote } from "../remote";
 
 const ATTEMPTS_KEY = "imagen-task-attempts";
 
@@ -63,6 +64,7 @@ export default function Generate({
   maxConcurrency: number;
 }) {
   const { t } = useI18n();
+  const { conn } = useRemote();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(MODELS[0].id);
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -183,8 +185,8 @@ export default function Generate({
             disabled={!canSubmit}
             title={t("submit_shortcut_hint")}
           >
-            {attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
-            <kbd className="kbd">⌘↵</kbd>
+            {conn === "lost" ? t("remote_waiting") : attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
+            {conn !== "lost" && <kbd className="kbd">⌘↵</kbd>}
           </button>
         </div>
       </div>
