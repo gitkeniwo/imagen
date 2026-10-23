@@ -1976,6 +1976,19 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .rm-pop { box-shadow: var(--shadow-lg); }
 }
 
+/* Confirmation bubble: drops down from its trigger with an arrow at the right. */
+.confirm-bubble {
+  width: min(280px, calc(100vw - 24px)); padding: var(--space-3) var(--space-3_5);
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); transform-origin: calc(100% - 20px) -8px; animation: popIn 0.14s ease-out;
+}
+.confirm-bubble::before {
+  content: ""; position: absolute; top: -6px; right: 12px; width: 10px; height: 10px; background: var(--panel);
+  border-left: 1px solid var(--border); border-top: 1px solid var(--border); transform: rotate(45deg); border-radius: 3px 0 0 0;
+}
+.confirm-bubble p { margin: 0 0 var(--space-3); font-size: var(--fs-md); line-height: 1.5; color: var(--text); }
+.confirm-bubble-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+
 /* ===== phone (≤ 639.98px) =====
    Keep 639.98 in sync with PHONE_QUERY in useIsPhone.ts. Width only: a phone
    rotated sideways (≥ 640) gets the normal desktop two-pane layout. */

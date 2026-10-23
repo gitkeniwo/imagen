@@ -10,7 +10,7 @@ import {
   TaskSpec,
 } from "../api";
 import { useI18n } from "../i18n";
-import { useConfirm } from "../components/ConfirmDialog";
+import Popover from "../components/ui/Popover";
 import ReferenceTray from "../components/ReferenceTray";
 import QueueList from "../components/QueueList";
 import LibraryPickerModal from "../components/LibraryPickerModal";
@@ -72,7 +72,7 @@ export default function Generate({
   phone?: boolean;
 }) {
   const { t } = useI18n();
-  const askConfirm = useConfirm();
+  const [saveOpen, setSaveOpen] = useState(false);
   const { conn, remote } = useRemote();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(MODELS[0].id);
@@ -149,15 +149,39 @@ export default function Generate({
           <img className="phone-logo" src={appIcon} alt="" />
           <h1>{t("tab_generate")}</h1>
           {remote && <RemoteChip />}
-          <IconButton
-            icon="archive"
-            label={t("save_draft")}
-            onClick={async () => {
-              if (await askConfirm({ message: t("save_draft_confirm"), confirmLabel: t("save_draft") })) {
-                onSaveDraft(currentTask());
-              }
-            }}
-          />
+          <Popover
+            fixed
+            align="end"
+            open={saveOpen}
+            onClose={() => setSaveOpen(false)}
+            panelClassName="confirm-bubble"
+            panelProps={{ role: "dialog", "aria-label": t("save_draft") }}
+            trigger={
+              <IconButton
+                icon="archive"
+                label={t("save_draft")}
+                aria-expanded={saveOpen}
+                onClick={() => setSaveOpen((v) => !v)}
+              />
+            }
+          >
+            <p>{t("save_draft_confirm")}</p>
+            <div className="confirm-bubble-actions">
+              <Button size="sm" onClick={() => setSaveOpen(false)}>
+                {t("cancel")}
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  setSaveOpen(false);
+                  onSaveDraft(currentTask());
+                }}
+              >
+                {t("save_draft")}
+              </Button>
+            </div>
+          </Popover>
         </header>
       )}
       <div className={phone ? "phone-body composer-phone-body" : "panel composer"} ref={composerRef}>
