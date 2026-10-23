@@ -2011,10 +2011,10 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     border-radius: 0 0 18px 18px;
     -webkit-overflow-scrolling: touch;
   }
-  .phone-island .library-panel.compact,
+  :is(.phone-island, .phone-picker) .library-panel.compact,
   .phone-island .history-list.compact .history-panel { padding: 0; }
   .phone-island .history-toolbar,
-  .phone-island .library-sticky { background: transparent; }
+  :is(.phone-island, .phone-picker) .library-sticky { background: transparent; }
 
   /* Floating tab capsule: same track and raised selected pill as PanelTabs. */
   .phone-tabs {
@@ -2286,11 +2286,11 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   @keyframes sheet-fade { from { opacity: 0; } to { opacity: 1; } }
 
   /* Phone library/history action buttons: hide desktop-only hover chrome. */
-  .phone-island .lib-actions,
-  .phone-island .lib-tags { display: none; }
-  .phone-island .lib-source { width: 24px; height: 24px; }
-  .phone-island .lib-starred { width: 24px; height: 24px; }
-  .phone-island .library-grid.compact { gap: 4px; }
+  :is(.phone-island, .phone-picker) .lib-actions,
+  :is(.phone-island, .phone-picker) .lib-tags { display: none; }
+  :is(.phone-island, .phone-picker) .lib-source { width: 24px; height: 24px; }
+  :is(.phone-island, .phone-picker) .lib-starred { width: 24px; height: 24px; }
+  :is(.phone-island, .phone-picker) .library-grid.compact { gap: 4px; }
   .phone-island .card { border-radius: var(--radius-md); }
   .phone-island .card img { border-radius: 0; }
 }
@@ -2306,20 +2306,20 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     padding: 0;
     background: var(--sidebar-bg);
   }
-  .phone-island .library-sticky {
+  :is(.phone-island, .phone-picker) .library-sticky {
     top: 44px;
     margin: 0 0 var(--space-2);
     background: var(--sidebar-bg);
   }
-  .phone-island .library-toolbar { padding: 0 0 var(--space-2); }
-  .phone-island .library-toolbar .searchbox {
+  :is(.phone-island, .phone-picker) .library-toolbar { padding: 0 0 var(--space-2); }
+  :is(.phone-island, .phone-picker) .library-toolbar .searchbox {
     flex: 1 1 100%;
     height: 40px;
     border-radius: var(--radius-xl);
     padding: 0 var(--space-3_5);
     font-size: 15px;
   }
-  .phone-island .searchbox input { font-size: 15px; }
+  :is(.phone-island, .phone-picker) .searchbox input { font-size: 15px; }
 
   .phone-filter-row {
     flex-wrap: nowrap;
@@ -2980,4 +2980,35 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .usage-reason b { min-width: 20px; text-align: right; }
   .usage-model { min-width: 0; }
   .usage-model > span { min-width: 0; overflow-wrap: anywhere; }
+}
+
+/* ===== phone: dialogs go full screen above the tab capsule ===== */
+@media (max-width: 639.98px) {
+  .overlay { z-index: 75; }
+  .overlay-above-viewer { z-index: 110; }
+  .settings-modal,
+  .draft-editor-modal,
+  .import-modal {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    padding-top: max(var(--space-4), env(safe-area-inset-top));
+    padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  }
+  .settings-modal { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  .draft-editor-modal, .import-modal { overflow-y: auto; }
+  .modal-actions .btn, .modal-actions button { min-height: 44px; }
+  .manager-header { padding-top: max(var(--space-2), env(safe-area-inset-top)); }
+  .manager-body { padding: 0 var(--space-3) var(--space-8); }
+}
+
+/* Library picker on the phone: the compact phone library inside the full-screen dialog. */
+@media (max-width: 639.98px) {
+  .phone-picker { padding: 0 var(--space-3) var(--space-6); }
+  .phone-picker .phone-head { height: 44px; padding: 0; background: transparent; }
+  .phone-picker .phone-logo, .phone-picker .phone-head h1 { display: none; }
+  .phone-picker .phone-head .spacer, .phone-picker .phone-head > :last-child { margin-left: auto; }
 }
