@@ -2923,3 +2923,61 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .viewer-phone-actions button.prim { color: #a5b4fc; }
   .viewer-phone-actions button.is-starred { color: var(--warning); }
 }
+
+/* ===== phone: usage dashboard (single column, full screen) ===== */
+@media (max-width: 639.98px) {
+  .usage-overlay { padding-top: env(safe-area-inset-top); }
+  .usage-header {
+    flex-wrap: wrap;
+    min-height: 0;
+    padding: var(--space-3) var(--space-3) var(--space-2);
+    gap: var(--space-2) var(--space-3);
+  }
+  .usage-header .manager-title { flex: 1; min-width: 0; font-size: var(--fs-xl); }
+  .usage-header .manager-close { position: static; margin-left: auto; width: 40px; height: 40px; }
+  .usage-period {
+    position: static;
+    transform: none;
+    order: 3;
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1_5);
+  }
+  .usage-period .seg { width: 100%; }
+  .usage-period .seg > * { flex: 1; }
+  .usage-period > .muted { text-align: center; }
+
+  .usage-layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    overflow-y: auto;
+    padding: var(--space-3) var(--space-3) 24px;
+  }
+  .usage-main { display: contents; }
+  .usage-layout > *, .usage-main > * { flex: none; }
+  .usage-main > * { order: 2; }
+  .usage-main > .usage-kpis { order: 0; }
+  .usage-layout > .usage-cost { order: 1; }
+  .usage-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .usage-kpi, .usage-kpi:first-child {
+    padding: var(--space-3) var(--space-3_5);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .usage-kpi-value { font-size: 28px; }
+  .usage-cost {
+    overflow: visible;
+    padding: var(--space-3_5);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .usage-card-head { flex-wrap: wrap; gap: var(--space-1_5) var(--space-3); }
+  .usage-reason { align-items: flex-start; line-height: 1.45; }
+  .usage-reason > span { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  .usage-reason b { min-width: 20px; text-align: right; }
+  .usage-model { min-width: 0; }
+  .usage-model > span { min-width: 0; overflow-wrap: anywhere; }
+}
