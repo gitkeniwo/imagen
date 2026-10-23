@@ -243,8 +243,9 @@ export default function RemoteSettings() {
       )}
 
       <div className="rm-note">
-        <Icon name="info" size="sm" />
+        <Icon name="shield" size="sm" />
         <span>
+          <b>{t("remote_http_lead")}</b>
           {t("remote_http_pre")}
           <a
             href={TAILSCALE_URL}

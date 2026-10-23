@@ -128,7 +128,7 @@ export default function RemoteIndicator({ onOpenSettings }: { onOpenSettings: ()
           : s.state === "no_code" ? t("remote_no_code")
           : s.state === "off" ? null
           : s.state === "active" ? <>{t("remote_pill")}<span className="rm-count">{n}</span></>
-          : <>{t("remote_pill")}<span className="rm-dot" /></>}
+          : <>{t("remote_pill")}<span className="rm-dot live soft" /></>}
       </button>
 
       {open && (
@@ -253,7 +253,7 @@ export default function RemoteIndicator({ onOpenSettings }: { onOpenSettings: ()
 // iPad side: who this device is connected to, and whether the Mac is reachable.
 export function RemoteChip() {
   const { t } = useI18n();
-  const { hostName, device, conn, retryIn, retry, signOut } = useRemote();
+  const { hostName, device, conn, retry, signOut } = useRemote();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -270,15 +270,23 @@ export function RemoteChip() {
     <div className="rm-wrap" ref={wrap}>
       <button
         type="button"
-        className={`rm-remote-chip${lost ? " lost" : ""}`}
+        className={`rm-connpill${lost ? " lost" : ""}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => (lost ? retry() : setOpen((v) => !v))}
       >
-        <Icon name={lost ? "wifiOff" : "radio"} size="sm" />
-        {lost
-          ? retryIn > 0 ? t("remote_lost", { n: retryIn }) : t("remote_lost_now")
-          : t("remote_chip", { host: hostName })}
+        {lost ? (
+          <>
+            <span className="rm-dot warn" />
+            {t("remote_offline_retry")}
+          </>
+        ) : (
+          <>
+            <span className="rm-dot live" />
+            <Icon name="laptop" size="sm" />
+            {hostName}
+          </>
+        )}
       </button>
       {open && !lost && (
         <div className="rm-menu" role="menu">

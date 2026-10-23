@@ -1750,6 +1750,9 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
   opacity: 0; animation: rm-ping 1.8s ease-out infinite;
 }
 @keyframes rm-ping { 0% { transform: scale(0.5); opacity: 0.7; } 100% { transform: scale(1.6); opacity: 0; } }
+.rm-dot.soft::after { inset: -3px; border-width: 1.5px; animation: rm-ping-soft 2.6s ease-out infinite; }
+@keyframes rm-ping-soft { 0% { transform: scale(0.7); opacity: 0.4; } 100% { transform: scale(1.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .rm-dot.live::after { animation: none; } }
 .rm-chip {
   display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: var(--radius-full);
   font-size: var(--fs-xs); font-weight: 600; border: 1px solid transparent; white-space: nowrap;
@@ -1883,24 +1886,27 @@ button.settings-nav-item { white-space: nowrap; }
 .rm-port { display: flex; align-items: center; gap: var(--space-2); }
 .rm-port input { width: 110px; }
 .rm-note {
-  display: flex; gap: var(--space-2); align-items: flex-start; padding-top: 12px; border-top: 1px solid var(--divider);
-  color: var(--muted); font-size: var(--fs-sm); line-height: 1.55;
+  display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px;
+  background: var(--panel-2); color: var(--accent-2); font-size: 12px; line-height: 1.55;
 }
-.rm-note .icon { margin-top: 1px; flex: none; }
+.rm-note .icon { margin-top: 1px; flex: none; color: var(--warning); }
+.rm-note b { color: var(--text); font-weight: 600; }
 .rm-note a { font-weight: 500; color: var(--ui-accent); }
 button.btn.link-btn.rm-danger { color: var(--danger); }
 @media (max-width: 720px) { .rm-steps { grid-template-columns: 1fr; } }
 
 /* iPad: remote identity + connection state in the top bar */
-button.rm-remote-chip {
-  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px; border: 0;
-  border-radius: var(--radius-full); background: #1e1b4b; color: #e0e7ff; font-size: var(--fs-sm); font-weight: 600;
-  white-space: nowrap; box-shadow: none; margin-right: var(--space-1);
+.rm-topline { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; background: var(--ui-accent); pointer-events: none; }
+.rm-topline.lost { background: var(--warning); }
+.rm-dot.warn { background: var(--warning); }
+button.rm-connpill {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border: 1px solid var(--border);
+  border-radius: 999px; background: #fff; color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap;
+  box-shadow: none; margin-right: var(--space-1);
 }
-button.rm-remote-chip:hover:not(:disabled) { background: #272366; }
-button.rm-remote-chip.lost {
-  background: var(--badge-blocked-bg); color: var(--badge-blocked-text); box-shadow: inset 0 0 0 1px var(--badge-blocked-border);
-}
+button.rm-connpill:hover:not(:disabled) { background: var(--panel-2); }
+button.rm-connpill .icon { color: var(--muted); }
+button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var(--badge-blocked-border); color: var(--badge-blocked-text); }
 .rm-menu {
   position: absolute; top: calc(100% + 8px); right: 0; width: 280px; z-index: 30; background: var(--panel);
   border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 6px;
@@ -1966,8 +1972,8 @@ button.rm-remote-chip.lost {
 
 @media (prefers-color-scheme: dark) {
   .rm-count { color: var(--bg); }
-  button.rm-remote-chip { background: rgba(129, 140, 248, 0.2); color: #e0e7ff; box-shadow: inset 0 0 0 1px var(--ui-accent-line); }
-  button.rm-remote-chip:hover:not(:disabled) { background: rgba(129, 140, 248, 0.3); }
-  button.rm-remote-chip.lost { background: var(--badge-blocked-bg); color: var(--badge-blocked-text); box-shadow: inset 0 0 0 1px var(--badge-blocked-border); }
+  button.rm-connpill { background: var(--panel); }
+  button.rm-connpill:hover:not(:disabled) { background: var(--panel-2); }
+  button.rm-connpill.lost, button.rm-connpill.lost:hover:not(:disabled) { background: var(--badge-blocked-bg); }
   .rm-pop { box-shadow: var(--shadow-lg); }
 }

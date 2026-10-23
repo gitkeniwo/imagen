@@ -729,6 +729,7 @@ export default function App() {
           />
         </aside>
 
+        {remote && <div className={`rm-topline${conn === "lost" ? " lost" : ""}`} aria-hidden="true" />}
         <div className="main-col">
           <header className="topbar">
             <div className="spacer" />
