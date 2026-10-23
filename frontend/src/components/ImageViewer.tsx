@@ -209,8 +209,8 @@ export default function ImageViewer({
   const moreMenu = (
     <Menu
       items={[
-        // Full screen on the phone hides the action bar; its actions live here.
-        ...(phone && panelHidden
+        // Full screen hides the action bar; its actions live here.
+        ...(panelHidden
           ? [
               ...(onReuse && gen ? [{ icon: "reuse" as const, label: t("reuse"), onSelect: () => onReuse(gen) }] : []),
               { icon: "addToRefs" as const, label: t("phone_use_as_ref"), onSelect: () => onAddToTray(current) },
@@ -264,7 +264,7 @@ export default function ImageViewer({
           onTogglePanel={() => setPanelHidden((h) => !h)}
           onZoomedChange={onZoomedChange}
         >
-          {phone && (
+          {(phone || panelHidden) && (
             <div className="viewer-phone-top">
               <IconButton variant="overlay" size="md" icon="close" label={t("close")} onClick={onClose} />
               {multi && <span className="viewer-phone-count">{idx + 1} / {items.length}</span>}

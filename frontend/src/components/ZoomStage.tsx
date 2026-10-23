@@ -3,7 +3,6 @@ import { ImageRow, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
-import { useIsPhone } from "../useIsPhone";
 
 // Zoomable image stage for the viewer. Zoom stays clipped inside the stage,
 // never over the inspector.
@@ -42,7 +41,6 @@ export default function ZoomStage({
   children?: ReactNode;
 }) {
   const { t } = useI18n();
-  const phone = useIsPhone();
   const stageRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ s: 1, x: 0, y: 0 });
@@ -329,7 +327,7 @@ export default function ZoomStage({
           title={`${panelHidden ? t("show_panel") : t("hide_panel")} (I)`}
           onClick={onTogglePanel}
         >
-          <Icon name={phone ? (panelHidden ? "fullscreenExit" : "fullscreen") : "togglePanel"} size="sm" />
+          <Icon name={panelHidden ? "fullscreenExit" : "fullscreen"} size="sm" />
         </button>
       </div>
     </div>

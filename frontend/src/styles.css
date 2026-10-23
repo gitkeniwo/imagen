@@ -918,6 +918,15 @@ body.resizing-sidebar .side-panel {
   position: absolute; border: 1.5px solid #fff; border-radius: 2px;
   box-shadow: 0 0 0 999px rgba(11, 15, 23, 0.45);
 }
+/* Full screen on desktop: the info panel is gone, so close / count / more live in a top bar. */
+.viewer-window.panel-hidden:not(.phone) .viewer-phone-top {
+  position: absolute; left: 0; right: 0; top: 0; height: 56px; padding: 0 var(--space-3);
+  display: flex; align-items: center; justify-content: space-between; z-index: 3; color: #fff;
+}
+.viewer-window.panel-hidden:not(.phone) .viewer-phone-top .icon-btn { color: #fff; }
+.viewer-window.panel-hidden:not(.phone) .viewer-count { display: none; }
+.viewer-phone-count { font-size: var(--fs-base); font-weight: 600; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.viewer-phone-menu { display: inline-flex; }
 .zoom-hud {
   position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
   display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px;
