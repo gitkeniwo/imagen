@@ -38,6 +38,12 @@ const LOCAL: RemoteValue = {
   reportNetworkError: () => {},
 };
 
+// Dev-only: `?fakeRemote=<host name>` pretends this page is a LAN device so the
+// remote UI can be checked against a local dev server. Stripped from prod builds.
+const FAKE_REMOTE: string | null = import.meta.env.DEV
+  ? new URLSearchParams(location.search).get("fakeRemote")
+  : null;
+
 const RemoteContext = createContext<RemoteValue>(LOCAL);
 
 export function useRemote() {
@@ -53,6 +59,11 @@ export function RemoteProvider({ children }: { children: ReactNode }) {
   const probing = useRef(false);
 
   useEffect(() => {
+    if (FAKE_REMOTE !== null) {
+      setInfo({ remote: true, host_name: FAKE_REMOTE || "Whirling-In-Rags", device: null });
+      setLoaded(true);
+      return;
+    }
     // Not reachable (older backend, Docker, dev) means plain local mode.
     remoteApi
       .session()
@@ -64,7 +75,7 @@ export function RemoteProvider({ children }: { children: ReactNode }) {
   const remote = !!info?.remote;
 
   const probe = useCallback(async () => {
-    if (probing.current) return;
+    if (probing.current || FAKE_REMOTE !== null) return;
     probing.current = true;
     try {
       const next = await remoteApi.session();
