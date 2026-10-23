@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   api,
@@ -212,6 +212,19 @@ export default function AddHistoryModal({
       setSaving(false);
     }
   };
+
+  // Cmd/Ctrl+Enter saves, mirroring the generate composer. Ignored while the
+  // library picker is open, so browsing it doesn't accidentally submit.
+  useEffect(() => {
+    if (picker) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== "Enter") return;
+      e.preventDefault();
+      if (!saving) void save();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picker, saving, save]);
 
   return createPortal(
     <div
@@ -436,8 +449,14 @@ export default function AddHistoryModal({
             )}
           </div>
           <Button onClick={onClose}>{t("cancel")}</Button>
-          <Button variant="primary" onClick={save} disabled={saving}>
+          <Button
+            variant="primary"
+            onClick={save}
+            disabled={saving}
+            title={t("submit_shortcut_hint")}
+          >
             {saving ? t("saving") : t("save")}
+            <kbd className="kbd">⌘↵</kbd>
           </Button>
         </div>
       </div>
