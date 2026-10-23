@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, type PointerEvent, useEffect, useRef, useState } from "react";
 import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
@@ -8,8 +8,12 @@ import SearchBox from "../components/SearchBox";
 import TagFilterRow from "../components/TagFilterRow";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useRemote } from "../remote";
+import { RemoteChip } from "../components/RemoteIndicator";
 import Icon from "../components/ui/Icon";
+import Sheet from "../components/ui/Sheet";
 import { Button, IconButton } from "../components/ui/Button";
+import appIcon from "../assets/app-icon.png";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 
@@ -55,6 +59,7 @@ export default function Library({
   const { t } = useI18n();
   const toast = useToast();
   const askConfirm = useConfirm();
+  const { remote } = useRemote();
   const [images, setImages] = useState<ImageRow[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [source, setSource] = useState<string>("");
@@ -72,10 +77,20 @@ export default function Library({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [batchMode, setBatchMode] = useState<"add" | "remove" | null>(null);
   const [draft, setDraft] = useState("");
+  // Phone only: tag batch actions live in a bottom sheet.
+  const [batchSheet, setBatchSheet] = useState(false);
+  // Long-press → multi-select on the phone. Timers live for the whole grid.
+  const pressTimer = useRef<number | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const longPressed = useRef(false);
+  // Phone thumbnails offer 2/3/4 columns; a saved desktop width of 1 or 5 is
+  // clamped here (the stored key stays the same on both layouts).
+  const phoneColumns = Math.min(4, Math.max(2, columns));
+  const effectiveColumns = phone ? phoneColumns : columns;
   // Compact grid columns are fixed, so the page must hold whole rows; the full
   // grid uses auto-fill and stays on a fixed page size.
   const pageSize = compact
-    ? pageSizedToColumns(COMPACT_PAGE_SIZE, columns)
+    ? pageSizedToColumns(COMPACT_PAGE_SIZE, effectiveColumns)
     : FULL_PAGE_SIZE;
 
   const load = () => {
@@ -177,8 +192,51 @@ export default function Library({
     setSelected((s) => new Set([...s, ...images.map((img) => img.id)]));
 
   const onCardClick = (img: ImageRow) => {
+    // A long press already switched to selection; swallow the click it emits.
+    if (longPressed.current) {
+      longPressed.current = false;
+      return;
+    }
     if (selectMode) toggleSelect(img.id);
     else onOpenViewer(img, images);
+  };
+
+  const endLongPress = () => {
+    if (pressTimer.current !== null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    pressStart.current = null;
+  };
+
+  const startLongPress = (e: PointerEvent, img: ImageRow) => {
+    if (!phone || selectMode || e.pointerType === "mouse") return;
+    pressStart.current = { x: e.clientX, y: e.clientY };
+    pressTimer.current = window.setTimeout(() => {
+      pressTimer.current = null;
+      longPressed.current = true;
+      setSelectMode(true);
+      setSelected(new Set([img.id]));
+    }, 450);
+  };
+
+  const moveLongPress = (e: PointerEvent) => {
+    const start = pressStart.current;
+    if (!start) return;
+    if (Math.abs(e.clientX - start.x) > 8 || Math.abs(e.clientY - start.y) > 8) {
+      endLongPress();
+    }
+  };
+
+  const stopSelect = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+    setBatchMode(null);
+    setBatchSheet(false);
+  };
+
+  const useSelectedAsRefs = () => {
+    for (const img of images) if (selected.has(img.id)) addToTray(img);
   };
 
   const applyBatch = async (tagId: number) => {
@@ -231,8 +289,105 @@ export default function Library({
     </div>
   ) : null;
 
+  const phonePager = (
+    <div className="phone-pager-row">
+      <div className="phone-pg">
+        {hasPages && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("prev_page")}
+            disabled={page === 0 || loading}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            <Icon name="prev" size="sm" />
+          </button>
+        )}
+        <span>
+          {hasPages
+            ? t("phone_page_status", { page: page + 1, pages: pageCount })
+            : t("phone_total_images", { n: total })}
+        </span>
+        {hasPages && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("next_page")}
+            disabled={page >= pageCount - 1 || loading}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            <Icon name="next" size="sm" />
+          </button>
+        )}
+      </div>
+      {hasPages && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
+      <div className="phone-size" role="group" aria-label={t("columns_per_row")}>
+        {[2, 3, 4].map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={phoneColumns === n ? "on" : ""}
+            aria-pressed={phoneColumns === n}
+            aria-label={t("phone_columns_n", { n })}
+            onClick={() => {
+              setColumns(n);
+              setPage(0);
+            }}
+          >
+            <i
+              style={{
+                gridTemplateColumns: `repeat(${n}, 1fr)`,
+                gridTemplateRows: `repeat(${n}, 1fr)`,
+              }}
+            >
+              {Array.from({ length: n * n }, (_, i) => (
+                <b key={i} />
+              ))}
+            </i>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
-    <div className={`panel library-panel${compact ? " compact" : ""}`}>
+    <div className={`panel library-panel${compact ? " compact" : ""}${phone ? " phone-panel-inner" : ""}`}>
+      {phone && (
+        selectMode ? (
+          <div className="phone-head phone-selhead">
+            <button type="button" className="phone-textbtn" onClick={stopSelect}>
+              {t("cancel")}
+            </button>
+            <b>{t("selected_n", { n: selected.size })}</b>
+            <button
+              type="button"
+              className="phone-textbtn"
+              disabled={images.length === 0 || allSelected}
+              onClick={selectAllOnPage}
+            >
+              {t("select_all")}
+            </button>
+          </div>
+        ) : (
+          <div className="phone-head">
+            <img className="phone-logo" src={appIcon} alt="" />
+            <h1>
+              {t("tab_library")} <span>{total}</span>
+            </h1>
+            {remote && <RemoteChip />}
+            <IconButton
+              icon="selectMode"
+              label={t("select_mode")}
+              onClick={() => {
+                setSelectMode(true);
+                setSelected(new Set());
+                setBatchMode(null);
+              }}
+            />
+          </div>
+        )
+      )}
+
       <div className="library-sticky">
         <div className="library-toolbar">
           <SearchBox
@@ -243,31 +398,33 @@ export default function Library({
             }}
             placeholder={t("search_placeholder_library")}
           />
-          <ViewPopover>
-            {compact ? (
-              <PopoverSection label={t("columns_per_row")}>
-                <Segmented
-                  dense
-                  value={columns}
-                  onChange={(n) => {
-                    setColumns(n);
-                    setPage(0);
-                  }}
-                  options={GRID_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
-                />
-              </PopoverSection>
-            ) : (
-              <PopoverSection label={t("thumb_size_label")}>
-                <Segmented
-                  dense
-                  value={thumbSize}
-                  onChange={setThumbSize}
-                  options={THUMB_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))}
-                />
-              </PopoverSection>
-            )}
-          </ViewPopover>
-          {!selectMode && (
+          {!phone && (
+            <ViewPopover>
+              {compact ? (
+                <PopoverSection label={t("columns_per_row")}>
+                  <Segmented
+                    dense
+                    value={columns}
+                    onChange={(n) => {
+                      setColumns(n);
+                      setPage(0);
+                    }}
+                    options={GRID_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
+                  />
+                </PopoverSection>
+              ) : (
+                <PopoverSection label={t("thumb_size_label")}>
+                  <Segmented
+                    dense
+                    value={thumbSize}
+                    onChange={setThumbSize}
+                    options={THUMB_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))}
+                  />
+                </PopoverSection>
+              )}
+            </ViewPopover>
+          )}
+          {!phone && !selectMode && (
             <Button
               className="select-toggle"
               icon="selectMode"
@@ -284,8 +441,9 @@ export default function Library({
           )}
         </div>
 
-        {/* Filters stay on screen: one click each, no popover. */}
-        <div className="filter-row">
+        {/* Filters stay on screen: one click each, no popover. On the phone the
+            source chips drop their words (tooltips keep them). */}
+        <div className={`filter-row${phone ? " phone-filter-row" : ""}`}>
           <Segmented
             value={source}
             onChange={(val) => {
@@ -294,10 +452,10 @@ export default function Library({
             }}
             options={[
               { value: "", label: t("filter_all") },
-              { value: "upload", label: t("filter_upload"), icon: "uploaded" },
-              { value: "generated", label: t("filter_output"), icon: "output", title: t("filter_output_hint") },
-              { value: "app", label: t("filter_in_app"), icon: "generated" },
-              { value: "imported", label: t("filter_imported"), icon: "imported" },
+              { value: "upload", label: t("filter_upload"), icon: "uploaded", iconOnly: phone },
+              { value: "generated", label: t("filter_output"), icon: "output", title: t("filter_output_hint"), iconOnly: phone },
+              { value: "app", label: t("filter_in_app"), icon: "generated", iconOnly: phone },
+              { value: "imported", label: t("filter_imported"), icon: "imported", iconOnly: phone },
             ]}
           />
           <Button
@@ -319,14 +477,16 @@ export default function Library({
         <TagFilterRow
           tags={tags}
           value={tagFilter}
+          phone={phone}
+          total={total}
           onChange={(id) => {
             setTagFilter(id);
             setPage(0);
           }}
         />
 
-        {/* Batch tagging bar (only in select mode with a selection) */}
-        {selectMode && (
+        {/* Batch tagging bar (desktop; on the phone it lives in a sheet). */}
+        {!phone && selectMode && (
           <div className="batch-bar">
             <div className="batch-bar-row">
               <span className="batch-count">{t("selected_n", { n: selected.size })}</span>
@@ -399,7 +559,7 @@ export default function Library({
             </div>
           </div>
         )}
-        {selectMode && batchMode && selected.size > 0 && (
+        {!phone && selectMode && batchMode && selected.size > 0 && (
           <div className="batch-tags">
             <div className="batch-section">
               <span className="batch-section-title">{t("apply_to_selected")}</span>
@@ -441,7 +601,7 @@ export default function Library({
           </div>
         )}
 
-        {pager}
+        {phone ? phonePager : pager}
       </div>
 
       {loading ? (
@@ -464,10 +624,12 @@ export default function Library({
         )
       ) : (
         <div
-          className={`grid library-grid${compact ? " compact" : " full"}`}
+          className={`grid library-grid${compact ? " compact" : " full"}${phone ? ` phone-grid phone-cols-${phoneColumns}` : ""}${
+            phone && phoneColumns === 4 ? " cols-4" : ""
+          }`}
           style={
             (compact
-              ? { "--library-columns": columns }
+              ? { "--library-columns": effectiveColumns }
               : { "--thumb-min": THUMB_MIN[thumbSize] }) as Record<
               string,
               string | number
@@ -482,7 +644,12 @@ export default function Library({
                   added === img.id ? " just-added" : ""
                 }`}
                 key={img.id}
-                {...(selectMode ? {} : imageDragProps(img))}
+                {...(!phone && !selectMode ? imageDragProps(img) : {})}
+                onPointerDown={phone ? (e) => startLongPress(e, img) : undefined}
+                onPointerMove={phone ? moveLongPress : undefined}
+                onPointerUp={phone ? endLongPress : undefined}
+                onPointerCancel={phone ? endLongPress : undefined}
+                onPointerLeave={phone ? endLongPress : undefined}
               >
                 <img
                   src={imgThumbUrl(img.id)}
@@ -547,7 +714,123 @@ export default function Library({
           })}
         </div>
       )}
-      {pager}
+
+      {!phone && pager}
+
+      {phone && selectMode && (
+        <nav className="phone-selbar" aria-label={t("apply_to_selected")}>
+          <button
+            type="button"
+            disabled={selected.size === 0}
+            onClick={useSelectedAsRefs}
+          >
+            <Icon name="addToRefs" />
+            <span>{t("phone_use_as_ref")}</span>
+          </button>
+          <button
+            type="button"
+            disabled={selected.size === 0}
+            onClick={() => {
+              setBatchMode("add");
+              setBatchSheet(true);
+            }}
+          >
+            <Icon name="tag" />
+            <span>{t("tags_label")}</span>
+          </button>
+          <button
+            type="button"
+            disabled={selected.size === 0}
+            onClick={downloadSelected}
+          >
+            <Icon name="download" />
+            <span>{t("batch_download")}</span>
+          </button>
+        </nav>
+      )}
+
+      {phone && batchSheet && (
+        <Sheet
+          title={t("phone_batch_tags")}
+          onClose={() => setBatchSheet(false)}
+          footer={
+            <button
+              type="button"
+              className="btn primary"
+              style={{ flex: 1 }}
+              onClick={() => setBatchSheet(false)}
+            >
+              {t("done")}
+            </button>
+          }
+        >
+          <div className="sheet-field">
+            <span className="lab">
+              {t("apply_to_selected")} · {t("selected_n", { n: selected.size })}
+            </span>
+            <div className="phone-batch-mode">
+              <button
+                type="button"
+                className={batchMode === "add" ? "on" : ""}
+                onClick={() => setBatchMode("add")}
+              >
+                <Icon name="add" size="sm" />
+                {t("batch_add_tag")}
+              </button>
+              <button
+                type="button"
+                className={batchMode === "remove" ? "on" : ""}
+                onClick={() => setBatchMode("remove")}
+              >
+                <Icon name="remove" size="sm" />
+                {t("batch_remove_tag")}
+              </button>
+            </div>
+          </div>
+          <div className="sheet-tag-wrap">
+            {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                className="tag-chip"
+                onClick={() => {
+                  applyBatch(tag.id);
+                  setBatchSheet(false);
+                }}
+              >
+                <Icon name={batchMode === "remove" ? "remove" : "add"} size="sm" /> {tag.name}
+                <span className="tag-count">{tag.count}</span>
+              </button>
+            ))}
+          </div>
+          {batchMode === "add" && (
+            <div className="sheet-field">
+              <span className="lab">{t("create_new_tag")}</span>
+              <div className="tag-create">
+                <input
+                  value={draft}
+                  placeholder={t("new_tag_placeholder")}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      createAndApply().then(() => setBatchSheet(false));
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => createAndApply().then(() => setBatchSheet(false))}
+                  disabled={!draft.trim()}
+                >
+                  {t("create")}
+                </button>
+              </div>
+            </div>
+          )}
+        </Sheet>
+      )}
     </div>
   );
 }
