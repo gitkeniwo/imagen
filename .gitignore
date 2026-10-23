@@ -43,6 +43,15 @@ pnpm-debug.log*
 .codex/
 .agents/
 
+# Agent instructions (kept local, never published)
+/CLAUDE.md
+/AGENTS.md
+
+# Local planning notes and design drafts (kept local, never published)
+/docs/plans/
+/docs/design/
+/docs/*-plan.md
+
 # Misc
 .DS_Store
 Thumbs.db
