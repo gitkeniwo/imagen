@@ -76,10 +76,15 @@ export default function AddHistoryModal({
     existing ? toLocalInputValue(existing.created_at) : "",
   );
   const [inputImages, setInputImages] = useState<ImageRow[]>(src?.inputs ?? []);
+  // Duplicating logs a new output, so the source image and note start empty
+  // instead of being carried over. Tags are kept: a replacement output usually
+  // shares the same tags, so re-picking them each time is just busywork.
   const [outputImages, setOutputImages] = useState<ImageRow[]>(
-    src?.outputImage ? [src.outputImage] : [],
+    duplicate ? [] : src?.outputImage ? [src.outputImage] : [],
   );
-  const [outputNote, setOutputNote] = useState(src?.outputImage?.note ?? "");
+  const [outputNote, setOutputNote] = useState(
+    duplicate ? "" : src?.outputImage?.note ?? "",
+  );
   const [outputTagIds, setOutputTagIds] = useState<number[]>(
     (src?.outputImage?.tags ?? []).map((tg) => tg.id),
   );
