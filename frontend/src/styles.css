@@ -1981,7 +1981,11 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
    rotated sideways (≥ 640) gets the normal desktop two-pane layout. */
 @media (max-width: 639.98px) {
   html, body, #root { height: 100%; }
+  /* Same colour as the shell so the iOS status bar / bottom toolbar tint matches. */
+  html, body { background: var(--bg); }
   body { overscroll-behavior-y: none; }
+  /* The island's connection chip already shows state; the 3px top line is iPad-only. */
+  .rm-topline { display: none; }
 
   .app-shell.phone-shell {
     display: flex;
