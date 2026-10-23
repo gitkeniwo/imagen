@@ -3051,7 +3051,9 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
   }
   .settings-modal { padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
-  .draft-editor-modal, .import-modal { overflow-y: auto; }
+  .draft-editor-modal, .import-modal { overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }
+  .import-body { overflow-x: hidden; }
+  .import-pair > * { min-width: 0; }
   .modal-actions .btn, .modal-actions button { min-height: 44px; }
   .manager-header { padding-top: max(var(--space-2), env(safe-area-inset-top)); }
   .manager-body { padding: 0 var(--space-3) var(--space-8); }
