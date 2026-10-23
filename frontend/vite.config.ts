@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8000",
+      "/api": process.env.IMAGEN_API ?? "http://localhost:8000",
     },
   },
 });
