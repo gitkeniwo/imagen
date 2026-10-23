@@ -5,6 +5,7 @@ import {
   MAX_TASK_ATTEMPTS,
   MODELS,
   normalizeModelId,
+  OUTPUT_FORMATS,
   QueueTask,
   TaskSpec,
 } from "../api";
@@ -13,7 +14,11 @@ import ReferenceTray from "../components/ReferenceTray";
 import QueueList from "../components/QueueList";
 import LibraryPickerModal from "../components/LibraryPickerModal";
 import { AttemptsStepper, ComposerParams, Switch } from "../components/ComposerControls";
-import { Button } from "../components/ui/Button";
+import { Button, IconButton } from "../components/ui/Button";
+import Icon from "../components/ui/Icon";
+import Sheet from "../components/ui/Sheet";
+import { RemoteChip } from "../components/RemoteIndicator";
+import appIcon from "../assets/app-icon.png";
 import { useRemote } from "../remote";
 
 const ATTEMPTS_KEY = "imagen-task-attempts";
@@ -66,7 +71,7 @@ export default function Generate({
   phone?: boolean;
 }) {
   const { t } = useI18n();
-  const { conn } = useRemote();
+  const { conn, remote } = useRemote();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(MODELS[0].id);
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -75,6 +80,7 @@ export default function Generate({
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [skipIfPrecedingSucceeds, setSkipIfPrecedingSucceeds] = useState(false);
   const [pickingRefs, setPickingRefs] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
   // "Try up to N times": one submit enqueues N copies of the task as a retry
   // group (copies 2..N are auto-skip, so the first success cancels the rest).
@@ -103,6 +109,14 @@ export default function Generate({
   const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
 
+  // Phone summary line: "Pro · 1K · JPG · 1:1" (resolution only for Pro).
+  const modelShort = (MODELS.find((m) => m.id === model)?.label ?? model)
+    .replace(/\s*\(.*\)$/, "");
+  const formatLabel = OUTPUT_FORMATS.find((f) => f.id === format)?.label ?? format;
+  const optionsSummary = [modelShort, isPro ? resolution : null, formatLabel, aspectRatio]
+    .filter(Boolean)
+    .join(" · ");
+
   const currentTask = (): TaskSpec => ({
     prompt,
     model,
@@ -127,11 +141,24 @@ export default function Generate({
   );
 
   return (
-    <div className={phone ? "composer-phone" : undefined}>
-      <div className="panel composer" ref={composerRef}>
-        <div className="composer-input">
+    <div className={phone ? "composer-phone phone-page" : undefined}>
+      {phone && (
+        <header className="phone-head">
+          <img className="phone-logo" src={appIcon} alt="" />
+          <h1>{t("tab_generate")}</h1>
+          {remote && <RemoteChip />}
+          <IconButton
+            icon="saveDraft"
+            label={t("save_draft")}
+            onClick={() => onSaveDraft(currentTask())}
+          />
+        </header>
+      )}
+      <div className={phone ? "phone-body composer-phone-body" : "panel composer"} ref={composerRef}>
+        <div className={phone ? "composer-phone-card" : "composer-input"}>
           <ReferenceTray
             compact
+            phone={phone}
             dropTarget={composerRef}
             tray={tray}
             onAdd={addManyToTray}
@@ -154,44 +181,135 @@ export default function Generate({
             }}
             placeholder={t("prompt_placeholder")}
           />
+          {phone && (
+            <div className="composer-phone-optrow">
+              <button
+                type="button"
+                className="composer-phone-optbtn"
+                aria-haspopup="dialog"
+                aria-expanded={optionsOpen}
+                onClick={() => setOptionsOpen(true)}
+              >
+                <Icon name="editSettings" size="sm" />
+                <span>{optionsSummary}</span>
+                <Icon name="chevronDown" size="sm" />
+              </button>
+            </div>
+          )}
         </div>
-        <ComposerParams
-          model={model}
-          setModel={setModel}
-          aspectRatio={aspectRatio}
-          setAspectRatio={setAspectRatio}
-          resolution={resolution}
-          setResolution={setResolution}
-          format={format}
-          setFormat={setFormat}
-          tagIds={tagIds}
-          setTagIds={setTagIds}
-        />
-        <div className="composer-foot">
-          <AttemptsStepper attempts={attempts} setAttempts={setAttempts} />
-          <Switch
-            checked={skipIfPrecedingSucceeds}
-            onChange={setSkipIfPrecedingSucceeds}
-            label={t("skip_switch")}
-            title={t("skip_if_preceding_succeeds_title")}
+        {!phone && (
+          <>
+            <ComposerParams
+              model={model}
+              setModel={setModel}
+              aspectRatio={aspectRatio}
+              setAspectRatio={setAspectRatio}
+              resolution={resolution}
+              setResolution={setResolution}
+              format={format}
+              setFormat={setFormat}
+              tagIds={tagIds}
+              setTagIds={setTagIds}
+            />
+            <div className="composer-foot">
+              <AttemptsStepper attempts={attempts} setAttempts={setAttempts} />
+              <Switch
+                checked={skipIfPrecedingSucceeds}
+                onChange={setSkipIfPrecedingSucceeds}
+                label={t("skip_switch")}
+                title={t("skip_if_preceding_succeeds_title")}
+              />
+              <div className="spacer" />
+              {!keyConfigured && <span className="muted small">{t("need_key_inline").replace(/^ · /, "")}</span>}
+              <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
+                {t("save_draft")}
+              </Button>
+              <button
+                type="button"
+                className="primary composer-generate"
+                onClick={submit}
+                disabled={!canSubmit}
+                title={t("submit_shortcut_hint")}
+              >
+                {conn === "lost" ? t("remote_waiting") : attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
+                {conn !== "lost" && <kbd className="kbd">⌘↵</kbd>}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phone && (
+          <QueueList
+            phone
+            queue={queue}
+            onRemove={removeTask}
+            onAbort={abortTask}
+            onClearDone={clearDone}
+            onUseAsRef={useAsRef}
+            onReuse={onReuseTask}
+            onReuseGenerate={onReuseGenerateTask}
+            onSaveDraft={onSaveQueueTaskAsDraft}
+            onSetMarker={onSetTaskMarker}
+            onOpenViewer={onOpenViewer}
+            concurrency={concurrency}
+            setConcurrency={setConcurrency}
+            maxConcurrency={maxConcurrency}
           />
-          <div className="spacer" />
-          {!keyConfigured && <span className="muted small">{t("need_key_inline").replace(/^ · /, "")}</span>}
-          <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
-            {t("save_draft")}
-          </Button>
-          <button
-            type="button"
-            className="primary composer-generate"
-            onClick={submit}
-            disabled={!canSubmit}
-            title={t("submit_shortcut_hint")}
-          >
-            {conn === "lost" ? t("remote_waiting") : attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
-            {conn !== "lost" && <kbd className="kbd">⌘↵</kbd>}
-          </button>
-        </div>
+        )}
       </div>
+
+      {phone && (
+        <>
+          <div className="phone-dock">
+            {!keyConfigured && <div className="phone-dock-note">{t("no_key_warning")}</div>}
+            <AttemptsStepper attempts={attempts} setAttempts={setAttempts} />
+            <button
+              type="button"
+              className="primary composer-generate phone-generate"
+              onClick={submit}
+              disabled={!canSubmit}
+              title={t("submit_shortcut_hint")}
+            >
+              <Icon name="generated" size="sm" />
+              {conn === "lost" ? t("remote_waiting") : attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
+            </button>
+          </div>
+          {optionsOpen && (
+            <Sheet
+              title={t("phone_options")}
+              onClose={() => setOptionsOpen(false)}
+              footer={
+                <Button
+                  variant="primary"
+                  className="phone-sheet-done"
+                  onClick={() => setOptionsOpen(false)}
+                >
+                  {t("done")}
+                </Button>
+              }
+            >
+              <ComposerParams
+                model={model}
+                setModel={setModel}
+                aspectRatio={aspectRatio}
+                setAspectRatio={setAspectRatio}
+                resolution={resolution}
+                setResolution={setResolution}
+                format={format}
+                setFormat={setFormat}
+                tagIds={tagIds}
+                setTagIds={setTagIds}
+              />
+              <Switch
+                checked={skipIfPrecedingSucceeds}
+                onChange={setSkipIfPrecedingSucceeds}
+                label={t("skip_switch")}
+                title={t("skip_if_preceding_succeeds_title")}
+              />
+            </Sheet>
+          )}
+        </>
+      )}
 
       {pickingRefs && (
         <LibraryPickerModal
@@ -201,21 +319,23 @@ export default function Generate({
         />
       )}
 
-      <QueueList
-        queue={queue}
-        onRemove={removeTask}
-        onAbort={abortTask}
-        onClearDone={clearDone}
-        onUseAsRef={useAsRef}
-        onReuse={onReuseTask}
-        onReuseGenerate={onReuseGenerateTask}
-        onSaveDraft={onSaveQueueTaskAsDraft}
-        onSetMarker={onSetTaskMarker}
-        onOpenViewer={onOpenViewer}
-        concurrency={concurrency}
-        setConcurrency={setConcurrency}
-        maxConcurrency={maxConcurrency}
-      />
+      {!phone && (
+        <QueueList
+          queue={queue}
+          onRemove={removeTask}
+          onAbort={abortTask}
+          onClearDone={clearDone}
+          onUseAsRef={useAsRef}
+          onReuse={onReuseTask}
+          onReuseGenerate={onReuseGenerateTask}
+          onSaveDraft={onSaveQueueTaskAsDraft}
+          onSetMarker={onSetTaskMarker}
+          onOpenViewer={onOpenViewer}
+          concurrency={concurrency}
+          setConcurrency={setConcurrency}
+          maxConcurrency={maxConcurrency}
+        />
+      )}
     </div>
   );
 }

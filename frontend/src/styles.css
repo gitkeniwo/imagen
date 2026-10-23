@@ -2596,44 +2596,44 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-island .hlist.grid,
   .phone-island .draft-list { grid-template-columns: minmax(0, 1fr); }
 
-  .phone-island .hcard.grid {
+  :is(.phone-island, .composer-phone) .hcard.grid {
     flex-direction: row;
     align-items: flex-start;
     gap: var(--space-3);
     padding: var(--space-2);
     border-radius: 14px;
   }
-  .phone-island .hcard.grid .hcard-media {
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-media {
     width: 88px;
     height: 88px;
     aspect-ratio: auto;
     border-radius: var(--radius-lg);
   }
-  .phone-island .hcard.grid .hcard-body {
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-body {
     padding: 0;
     gap: var(--space-1);
     min-height: 88px;
     justify-content: center;
   }
-  .phone-island .hcard.grid .hcard-prompt > p { -webkit-line-clamp: 2; }
-  .phone-island .hcard .hcard-meta { font-size: var(--fs-sm); }
-  .phone-island .hcard.grid .hcard-chips { height: 22px; }
-  .phone-island .hcard.grid .hcard-chips img,
-  .phone-island .hcard.grid .hcard-chips .deleted-tile { width: 22px; height: 22px; }
-  .phone-island .hcard.grid .hcard-actions {
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-prompt > p { -webkit-line-clamp: 2; }
+  :is(.phone-island, .composer-phone) .hcard .hcard-meta { font-size: var(--fs-sm); }
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-chips { height: 22px; }
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-chips img,
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-chips .deleted-tile { width: 22px; height: 22px; }
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1);
     padding-top: 0;
   }
-  .phone-island .hcard.grid .hcard-tools {
+  :is(.phone-island, .composer-phone) .hcard.grid .hcard-tools {
     margin-left: auto;
     justify-content: flex-end;
     gap: 0;
   }
-  .phone-island .hcard-actions .btn-sm { min-height: 30px; padding-inline: var(--space-2); }
-  .phone-island .hcard-btn-label { display: none; }
+  :is(.phone-island, .composer-phone) .hcard-actions .btn-sm { min-height: 30px; padding-inline: var(--space-2); }
+  :is(.phone-island, .composer-phone) .hcard-btn-label { display: none; }
   .phone-island .hcard.list .hcard-media { width: 88px; }
   .phone-island .hcard.list { gap: var(--space-3); padding: var(--space-2); border-radius: 14px; }
   .phone-island .hcard.list .hcard-body { padding: 0; }
@@ -2643,3 +2643,138 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-island .draft-list .card { border-radius: 14px; }
 }
 
+/* ===== phone: generate page (composer card, options, dock, queue) ===== */
+@media (max-width: 639.98px) {
+  .composer-phone-body { padding-bottom: var(--space-3); gap: var(--space-4); }
+  .composer-phone-card {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3_5);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+  .composer-phone .composer-prompt {
+    min-height: 120px;
+    font-size: 17px;
+    resize: none;
+  }
+
+  /* Reference strip: one scrolling row of 72px tiles ending in "+ Add". */
+  .tray.tray-phone {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: var(--space-2_5);
+    padding-bottom: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tray.tray-phone::-webkit-scrollbar { display: none; }
+  .tray-phone .chip { flex: none; width: 72px; height: 72px; border-radius: 14px; }
+  .tray-phone .chip .x { width: 24px; height: 24px; top: 3px; right: 3px; }
+  .tray-phone .chip .x .icon { width: 14px; height: 14px; }
+  .tray-phone .menu-wrap, .tray-phone .popover-wrap { flex: none; }
+  .tray-add {
+    flex: none;
+    width: 72px;
+    height: 72px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0;
+    border: 1px dashed var(--hover-border);
+    border-radius: 14px;
+    background: var(--dropzone-bg);
+    box-shadow: none;
+    color: var(--muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .tray-add .icon { width: 20px; height: 20px; }
+
+  /* Options summary button: "Pro · 1K · JPG · 1:1 ▾". */
+  .composer-phone-optrow { border-top: 1px solid var(--divider); padding-top: var(--space-3); }
+  .composer-phone-optbtn {
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--panel-2);
+    box-shadow: none;
+    color: var(--text);
+    font-size: var(--fs-base);
+    font-weight: 600;
+    text-align: left;
+  }
+  .composer-phone-optbtn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .composer-phone-optbtn .icon { flex: none; color: var(--muted); }
+
+  /* Options sheet: stack the grid, 5-column aspect buttons >= 56px tall. */
+  .sheet .composer-params {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: 0;
+    border: 0;
+  }
+  .sheet .composer-params .param-label,
+  .sheet .composer-params .param-label-output { display: flex; min-height: 0; margin-top: var(--space-2); }
+  .sheet .param-output { flex-wrap: wrap; gap: var(--space-2_5); }
+  .sheet .aspect-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-2); }
+  .sheet .aspect-btn { min-height: 56px; width: auto; justify-content: center; }
+  .phone-sheet-done { width: 100%; }
+
+  /* Fixed action dock above the floating tab capsule. */
+  .phone-dock {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2_5);
+    margin: 0 var(--space-4) calc(86px + env(safe-area-inset-bottom));
+    padding: var(--space-2_5);
+    background: color-mix(in srgb, var(--sidebar-bg) 88%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px) saturate(1.6);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  }
+  .phone-dock-note { flex: 1 1 100%; font-size: var(--fs-sm); color: var(--warning); }
+  .phone-generate {
+    flex: 1;
+    min-width: 0;
+    height: 50px;
+    justify-content: center;
+    border-radius: 14px;
+    font-size: var(--fs-lg);
+    font-weight: 650;
+    padding: 0 var(--space-4);
+    color: #fff;
+  }
+  .phone-generate .icon { color: #fff; }
+
+  /* Queue: single column; media 88px (shared hcard rules above). */
+  .composer-phone .queue { margin-top: 0; }
+  .composer-phone .queue-head { flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2_5); }
+  .composer-phone .queue-grid { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .composer-phone .hcard-status.q-live { padding: var(--space-1); gap: var(--space-1); }
+  .composer-phone .hcard-status { font-size: var(--fs-xs); padding: var(--space-1); overflow: hidden; }
+  .composer-phone .hcard-status-label { font-size: var(--fs-sm); }
+  .composer-phone .hcard-status-reason { display: none; }
+  .composer-phone .hcard-status.q-live span:not(.hcard-status-label) { display: none; }
+  .composer-phone .q-undo, .composer-phone .q-cancel { min-height: 32px; font-size: var(--fs-xs); padding: 0 var(--space-2); }
+}
+@media (max-width: 639.98px) and (prefers-color-scheme: dark) {
+  .phone-dock { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+}
