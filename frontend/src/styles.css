@@ -2111,6 +2111,8 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-head .rm-wrap { flex: 0 1 auto; min-width: 0; }
   .phone-head button.rm-connpill { max-width: 100%; overflow: hidden; margin-right: 0; padding: 0 10px; }
   .phone-head button.rm-connpill .icon:not(:first-child) { display: none; }
+  .phone-head .rm-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .phone-head h1 > span { flex: none; }
   .phone-subhead { flex: none; gap: var(--space-1); padding: 0 var(--space-1); }
   .phone-subhead h1 { font-size: var(--fs-lg); }
   .phone-logo { width: 26px; height: 26px; border-radius: 7px; display: block; flex: none; }

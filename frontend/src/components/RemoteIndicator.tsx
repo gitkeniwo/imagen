@@ -284,7 +284,7 @@ export function RemoteChip() {
           <>
             <span className="rm-dot live" />
             <Icon name="laptop" size="sm" />
-            {hostName}
+            <span className="rm-host">{hostName}</span>
           </>
         )}
       </button>
