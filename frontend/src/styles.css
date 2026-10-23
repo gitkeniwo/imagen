@@ -770,15 +770,11 @@ body.resizing-sidebar .side-panel {
 }
 @keyframes shimmer { 100% { transform: translateX(100%); } }
 
-@media (max-width: 920px) {
-  .app-shell { display: block; height: auto; overflow: visible; }
-  .main-col { height: auto; overflow: visible; }
-  .main-panel { padding: 0 var(--space-3_5) var(--space-12); }
-  .resize-handle { display: none; }
-  .side-panel { margin: var(--space-2); }
-  .side-scroll { max-height: 48vh; }
-  .library-grid.compact { grid-template-columns: repeat(var(--library-columns, 2), minmax(0, 1fr)); }
-}
+/*
+ * 640–920px (tablet split view / narrow desktop window) keeps the two panes
+ * side by side. The phone layout starts at 639.98px (see the block at the end
+ * of this file); nothing stacks vertically in between any more.
+ */
 
 @media (max-width: 520px) {
   .seg { overflow-x: auto; }
@@ -1976,4 +1972,323 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   button.rm-connpill:hover:not(:disabled) { background: var(--panel-2); }
   button.rm-connpill.lost, button.rm-connpill.lost:hover:not(:disabled) { background: var(--badge-blocked-bg); }
   .rm-pop { box-shadow: var(--shadow-lg); }
+}
+
+/* ===== phone (≤ 639.98px) =====
+   Keep 639.98 in sync with PHONE_QUERY in useIsPhone.ts. Width only: a phone
+   rotated sideways (≥ 640) gets the normal desktop two-pane layout. */
+@media (max-width: 639.98px) {
+  html, body, #root { height: 100%; }
+  body { overscroll-behavior-y: none; }
+
+  .app-shell.phone-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .phone-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .phone-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .phone-panel[hidden] { display: none; }
+
+  /* Library / History / More subpages: the desktop sidebar island, inset. */
+  .phone-island {
+    flex: 1;
+    min-height: 0;
+    margin: var(--space-2) var(--space-2) 0;
+    border-radius: 18px;
+  }
+  .phone-island-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 var(--space-3) 96px;
+    border-radius: 0 0 18px 18px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .phone-island .library-panel.compact,
+  .phone-island .history-list.compact .history-panel { padding: 0; }
+  .phone-island .history-toolbar,
+  .phone-island .library-sticky { background: transparent; }
+
+  /* Floating tab capsule: same track and raised selected pill as PanelTabs. */
+  .phone-tabs {
+    position: fixed;
+    left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 60;
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+    background: color-mix(in srgb, var(--sidebar-bg) 82%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+    border-radius: 22px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14), 0 1px 2px rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(18px) saturate(1.6);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  }
+  @media (prefers-color-scheme: dark) {
+    .phone-tabs {
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+    }
+  }
+  .phone-tab {
+    position: relative;
+    width: 74px;
+    height: 50px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: 0;
+    border-radius: 18px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    padding: 0;
+  }
+  .phone-tab:hover:not(:disabled) { background: transparent; color: var(--text); }
+  .phone-tab .icon { width: 20px; height: 20px; }
+  .phone-tab.on { background: var(--seg-on-bg); color: var(--text); box-shadow: var(--seg-on-shadow); }
+  .phone-tab.on .icon { color: var(--ui-accent); }
+  .phone-tab.on:hover:not(:disabled) { background: var(--seg-on-bg); }
+  .phone-badge {
+    position: absolute;
+    top: 3px;
+    left: calc(50% + 6px);
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--ui-accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--bg);
+  }
+
+  /* Page shell (Create / More): fixed head, scrolling body, floating dock. */
+  .phone-page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .phone-head {
+    flex: none;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2_5);
+    padding: 0 var(--space-4);
+    background: var(--bg);
+  }
+  .phone-head h1 {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+  .phone-head h1 span { font-size: var(--fs-base); font-weight: 600; color: var(--muted); }
+  .phone-head .rm-wrap { flex: none; }
+  .phone-subhead { flex: none; gap: var(--space-1); padding: 0 var(--space-1); }
+  .phone-subhead h1 { font-size: var(--fs-lg); }
+  .phone-logo { width: 26px; height: 26px; border-radius: 7px; display: block; flex: none; }
+  .phone-island .phone-head { height: 44px; padding: 0; background: transparent; margin-bottom: var(--space-2); }
+  .phone-island .phone-head h1 { font-size: var(--fs-lg); }
+
+  .phone-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 var(--space-4) 96px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3_5);
+  }
+  .phone-body-wide { gap: var(--space-4); }
+
+  /* List rows (More). */
+  .phone-list {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .phone-li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 52px;
+    padding: 0 var(--space-3_5);
+    border: 0;
+    border-top: 1px solid var(--divider);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .phone-li:first-child { border-top: 0; }
+  .phone-li:hover:not(:disabled) { background: var(--panel-2); }
+  .phone-li-icon {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 9px;
+    background: var(--panel-2);
+    color: var(--accent-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .phone-li-icon.warn { color: var(--warning); }
+  .phone-li-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .phone-li-text span { font-size: var(--fs-sm); color: var(--muted); }
+  .phone-li-value { color: var(--muted); font-size: var(--fs-base); font-variant-numeric: tabular-nums; }
+  .phone-li-chev { color: var(--muted-2); flex: none; }
+  .phone-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2_5);
+    padding: var(--space-3) var(--space-3_5);
+    border: 1px solid var(--badge-running-border);
+    border-radius: var(--radius-lg);
+    background: var(--badge-running-bg);
+    color: var(--badge-running-text);
+    font-size: var(--fs-md);
+    line-height: 1.55;
+  }
+  .phone-callout .icon { flex: none; margin-top: 2px; }
+
+  /* Bottom sheet (options, tags, batch tagging). */
+  .sheet-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: var(--overlay-bg);
+    animation: sheet-fade 0.16s ease-out;
+  }
+  .sheet {
+    position: fixed;
+    z-index: 71;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: min(86vh, 700px);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--panel);
+    border-radius: 22px 22px 0 0;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    animation: sheet-up 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .sheet-grab {
+    width: 40px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--hover-border);
+    margin: 8px auto 2px;
+    flex: none;
+  }
+  .sheet-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 6px 8px 6px 20px;
+  }
+  .sheet-head b { font-size: 17px; font-weight: 650; }
+  .sheet-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .sheet-foot {
+    flex: none;
+    display: flex;
+    gap: 10px;
+    padding: 12px 20px 20px;
+    border-top: 1px solid var(--divider);
+  }
+  .sheet-foot .btn { height: 50px; border-radius: 14px; font-size: 15px; }
+  .sheet-field { display: flex; flex-direction: column; gap: var(--space-2); }
+  .sheet-field > .lab {
+    font-size: var(--fs-md);
+    font-weight: 600;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+  .sheet-field > .lab span { font-weight: 500; }
+  .sheet .composer-params {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 0;
+    border-top: 0;
+  }
+  .sheet .composer-params > .param-label,
+  .sheet .composer-params .param-label-model,
+  .sheet .composer-params .param-label-output { display: block; min-height: 0; }
+  .sheet .composer-params > .param-label-output { display: none; }
+  .sheet .param-model, .sheet .param-output { width: 100%; }
+  .sheet .aspect-row { width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-2); }
+  .sheet .aspect-btn { min-height: 56px; }
+  .sheet .composer-params > .tag-picker { width: 100%; }
+  .sheet-tags-search {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 44px;
+    padding: 0 var(--space-3_5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--panel);
+  }
+  .sheet-tags-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 15px;
+  }
+  .sheet-tags-search input:focus { outline: none; box-shadow: none; }
+  .sheet-tag-wrap { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .sheet-tag-wrap .tag-chip { min-height: 34px; border-radius: var(--radius-full); padding: 0 var(--space-3); font-size: var(--fs-base); }
+
+  @keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes sheet-fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Phone library/history action buttons: hide desktop-only hover chrome. */
+  .phone-island .lib-actions,
+  .phone-island .lib-tags { display: none; }
+  .phone-island .lib-source { width: 24px; height: 24px; }
+  .phone-island .lib-starred { width: 24px; height: 24px; }
+  .phone-island .library-grid.compact { gap: 4px; }
+  .phone-island .card { border-radius: var(--radius-md); }
+  .phone-island .card img { border-radius: 0; }
 }

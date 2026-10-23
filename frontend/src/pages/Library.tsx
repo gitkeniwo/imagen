@@ -38,12 +38,19 @@ export default function Library({
   compact = false,
   refreshKey = 0,
   onChanged,
+  phone = false,
+  onSelectModeChange,
 }: {
   addToTray: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   compact?: boolean;
   refreshKey?: number;
   onChanged?: () => void;
+  // Phone layout: full-width island with its own title row and floating
+  // selection capsule. Reuses the same data and card logic as desktop.
+  phone?: boolean;
+  // Lets the phone shell hide the tab bar while a selection is active.
+  onSelectModeChange?: (on: boolean) => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -106,6 +113,12 @@ export default function Library({
   useEffect(() => {
     localStorage.setItem(THUMB_SIZE_KEY, thumbSize);
   }, [thumbSize]);
+
+  useEffect(() => {
+    if (!phone) return;
+    onSelectModeChange?.(selectMode);
+    return () => onSelectModeChange?.(false);
+  }, [phone, selectMode, onSelectModeChange]);
 
   const hasActiveFilters =
     !!query || starredOnly || !!source || tagFilter !== null;

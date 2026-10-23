@@ -35,6 +35,7 @@ export default function History({
   compact = false,
   refreshKey = 0,
   live = false,
+  phone = false,
 }: {
   onReuse: (g: Generation) => void;
   onRerun?: (g: Generation) => void;
@@ -43,6 +44,7 @@ export default function History({
   compact?: boolean;
   refreshKey?: number;
   live?: boolean;
+  phone?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -177,7 +179,7 @@ export default function History({
   };
 
   return (
-    <div>
+    <div className={phone ? "history-phone" : undefined}>
       <div className="history-toolbar">
         <div className="history-toolbar-row">
           <SearchBox

@@ -40,6 +40,7 @@ export default function Generate({
   concurrency,
   setConcurrency,
   maxConcurrency,
+  phone = false,
 }: {
   tray: ImageRow[];
   prefill: Prefill | null;
@@ -62,6 +63,7 @@ export default function Generate({
   concurrency: number;
   setConcurrency: (n: number) => void;
   maxConcurrency: number;
+  phone?: boolean;
 }) {
   const { t } = useI18n();
   const { conn } = useRemote();
@@ -125,7 +127,7 @@ export default function Generate({
   );
 
   return (
-    <div>
+    <div className={phone ? "composer-phone" : undefined}>
       <div className="panel composer" ref={composerRef}>
         <div className="composer-input">
           <ReferenceTray
