@@ -2463,7 +2463,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     display: flex;
     align-items: center;
     gap: var(--space-1_5);
-    padding-bottom: var(--space-1_5);
+    padding-bottom: var(--space-1);
     font-size: var(--fs-md);
     color: var(--muted);
   }
@@ -2471,7 +2471,8 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-pg span { min-width: 54px; text-align: center; font-weight: 600; color: var(--accent-2); }
   .phone-pg-btn {
     width: 32px;
-    height: 28px;
+    height: 26px;
+    min-height: 0;
     padding: 0;
     display: inline-flex;
     align-items: center;
@@ -2496,6 +2497,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-size button {
     width: 34px;
     height: 24px;
+    min-height: 0;
     padding: 0;
     border: 0;
     border-radius: 8px;
