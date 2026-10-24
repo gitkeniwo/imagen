@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   api,
+  desktopApi,
   DraftBody,
   ImageRow,
   Generation,
@@ -121,7 +122,7 @@ function initialUndoSeconds() {
 }
 
 export default function App() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const toast = useToast();
   const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>("library");
   const [managerOpen, setManagerOpen] = useState(false);
@@ -177,6 +178,56 @@ export default function App() {
     prevConn.current = conn;
   }, [conn, bumpData]);
   const consumePrefill = useCallback(() => setPrefill(null), []);
+
+  // --- Desktop shell bridge -------------------------------------------------
+  // The host window reports its in-memory queue so the menubar icon, the
+  // popover and the ⌘Q guard know whether anything is still running. Remote
+  // pages and older backends (404) skip this silently.
+  const [isDesktopHost, setIsDesktopHost] = useState(false);
+  useEffect(() => {
+    if (remote) return;
+    api.getLibrary()
+      .then((info) => setIsDesktopHost(info.desktop))
+      .catch(() => {});
+  }, [remote]);
+
+  const queuedCount = queue.filter((task) => task.status === "pending").length;
+  const runningCount = queue.filter(
+    (task) => task.status === "running" || task.status === "cancelling",
+  ).length;
+  // Latest values for the heartbeat interval, which must not re-arm on change.
+  const clientState = useRef({ queued: 0, running: 0, lang });
+  clientState.current = { queued: queuedCount, running: runningCount, lang };
+
+  useEffect(() => {
+    if (!isDesktopHost) return;
+    // Debounced: enqueueing a batch changes the counts once, not N times.
+    const id = window.setTimeout(() => {
+      desktopApi.reportClient(clientState.current).catch(() => {});
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [isDesktopHost, queuedCount, runningCount, lang]);
+
+  useEffect(() => {
+    if (!isDesktopHost) return;
+    const report = () => desktopApi.reportClient(clientState.current).catch(() => {});
+    report();
+    // The backend treats a report older than 20 s as "no local queue".
+    const id = window.setInterval(report, 10_000);
+    return () => window.clearInterval(id);
+  }, [isDesktopHost]);
+
+  // Shell deep link: the menubar popover asks for a specific Settings section.
+  useEffect(() => {
+    const onOpenSettings = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (detail !== "library" && detail !== "remote") return;
+      setSettingsSection(detail);
+      setShowSettings(true);
+    };
+    window.addEventListener("imagen:open-settings", onOpenSettings);
+    return () => window.removeEventListener("imagen:open-settings", onOpenSettings);
+  }, []);
 
   const refreshConfig = () =>
     api.getVertex().then((r) => setConfigured(r.configured));

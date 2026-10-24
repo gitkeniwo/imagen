@@ -636,6 +636,22 @@ const jsonInit = (method: string, body?: unknown): RequestInit => ({
   body: body === undefined ? undefined : JSON.stringify(body),
 });
 
+// --- Desktop shell bridge ---------------------------------------------------
+
+export interface DesktopClientState {
+  queued: number;
+  running: number;
+  lang: "zh" | "en";
+}
+
+export const desktopApi = {
+  // Host window only: report the in-memory queue so the menubar icon and the
+  // quit guard can count pending work. 404 on LAN/older backends — ignore.
+  async reportClient(state: DesktopClientState): Promise<{ ok: boolean }> {
+    return handle(await fetch("/api/desktop/client", jsonInit("PUT", state)));
+  },
+};
+
 export const remoteApi = {
   async session(): Promise<SessionInfo> {
     return handle(await fetch("/api/session", { cache: "no-store" }));
