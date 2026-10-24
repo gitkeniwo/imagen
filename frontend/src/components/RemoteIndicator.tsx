@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { remoteApi, type RemoteStatus } from "../api";
 import { copyText } from "../clipboard";
 import { useI18n } from "../i18n";
@@ -26,6 +26,34 @@ export function useRemoteStatus(intervalMs = 5000) {
     return () => window.clearInterval(id);
   }, [refresh, intervalMs]);
   return { status, setStatus, refresh };
+}
+
+// The top bar sits in a scrolling column that clips overflow, so a popup wider
+// than the space left of its button gets cut off by the sidebar island. Keep it
+// inside that column: shift/shrink it and re-aim the arrow at the button.
+function useFitPopup(open: boolean, wrap: { current: HTMLDivElement | null }, width: number, outset: number) {
+  const pop = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const el = pop.current;
+      const w = wrap.current;
+      if (!el || !w) return;
+      const col = (w.closest(".main-col") ?? document.documentElement).getBoundingClientRect();
+      const wr = w.getBoundingClientRect();
+      const m = 8;
+      const pw = Math.min(width, col.width - 2 * m);
+      const edge = Math.max(Math.min(wr.right + outset, col.right - m), col.left + m + pw);
+      const center = (wr.left + wr.right) / 2;
+      el.style.setProperty("--rm-w", `${pw}px`);
+      el.style.setProperty("--rm-right", `${wr.right - edge}px`);
+      el.style.setProperty("--rm-arrow", `${Math.max(16, Math.min(edge - center - 8, pw - 32))}px`);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open, wrap, width, outset]);
+  return pop;
 }
 
 export function deviceIcon(name: string): IconName {
@@ -65,6 +93,7 @@ export default function RemoteIndicator({ onOpenSettings }: { onOpenSettings: ()
   const [show, setShow] = useState(false);
   const { status, setStatus, refresh } = useRemoteStatus(open ? 2000 : 5000);
   const wrap = useRef<HTMLDivElement>(null);
+  const pop = useFitPopup(open, wrap, 400, 64);
 
   useEffect(() => {
     if (!open) return;
@@ -132,7 +161,7 @@ export default function RemoteIndicator({ onOpenSettings }: { onOpenSettings: ()
       </button>
 
       {open && (
-        <div className="rm-pop" role="dialog" aria-label={t("remote_title")}>
+        <div className="rm-pop" ref={pop} role="dialog" aria-label={t("remote_title")}>
           <div className="rm-pop-head">
             <div className="rm-pop-title">
               <b>{t("remote_title")}</b>
@@ -256,6 +285,7 @@ export function RemoteChip() {
   const { hostName, device, conn, retry, signOut } = useRemote();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const menu = useFitPopup(open, wrap, 280, 0);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
@@ -289,7 +319,7 @@ export function RemoteChip() {
         )}
       </button>
       {open && !lost && (
-        <div className="rm-menu" role="menu">
+        <div className="rm-menu" ref={menu} role="menu">
           <div className="rm-menu-item">
             <span>{t("remote_menu_address")}</span>
             <b>{location.host}</b>
