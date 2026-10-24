@@ -1669,7 +1669,7 @@ dependencies = [
 
 [[package]]
 name = "imagen"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "objc2",
  "objc2-app-kit",
