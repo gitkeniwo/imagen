@@ -2470,8 +2470,8 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-pg { display: inline-flex; align-items: center; gap: 2px; }
   .phone-pg span { min-width: 54px; text-align: center; font-weight: 600; color: var(--accent-2); }
   .phone-pg-btn {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 28px;
     padding: 0;
     display: inline-flex;
     align-items: center;
@@ -2489,13 +2489,13 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     margin-left: auto;
     display: inline-flex;
     gap: 2px;
-    padding: 3px;
+    padding: 2px;
     background: var(--sidebar-track);
     border-radius: var(--radius-lg);
   }
   .phone-size button {
     width: 34px;
-    height: 30px;
+    height: 24px;
     padding: 0;
     border: 0;
     border-radius: 8px;
