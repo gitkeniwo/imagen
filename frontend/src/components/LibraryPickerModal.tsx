@@ -4,6 +4,7 @@ import { ImageRow } from "../api";
 import { useI18n } from "../i18n";
 import Library from "../pages/Library";
 import { IconButton } from "./ui/Button";
+import { useIsPhone } from "../useIsPhone";
 
 // Full-screen Library browser for picking existing images into a form that
 // isn't wired to the app-level tray (e.g. AddHistoryModal's local state).
@@ -19,6 +20,7 @@ export default function LibraryPickerModal({
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const phone = useIsPhone();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -46,8 +48,9 @@ export default function LibraryPickerModal({
           onClick={onClose}
         />
       </div>
-      <div className="manager-body">
-        <Library addToTray={handlePick} onOpenViewer={() => {}} />
+      <div className={`manager-body${phone ? " phone-picker" : ""}`}>
+        <Library addToTray={handlePick} // Phone tiles have no per-tile add button: a tap picks the image.
+          onOpenViewer={phone ? handlePick : () => {}} compact={phone} phone={phone} />
       </div>
     </div>,
     document.body,

@@ -264,6 +264,7 @@ export default function ZoomStage({
       onDoubleClick={onDoubleClick}
     >
       <div
+        key={image.id}
         className="zoom-layer"
         style={{
           width: iw,
@@ -327,7 +328,7 @@ export default function ZoomStage({
           title={`${panelHidden ? t("show_panel") : t("hide_panel")} (I)`}
           onClick={onTogglePanel}
         >
-          <Icon name="togglePanel" size="sm" />
+          <Icon name={panelHidden ? "fullscreenExit" : "fullscreen"} size="sm" />
         </button>
       </div>
     </div>

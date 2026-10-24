@@ -92,6 +92,7 @@ export default function QueueList({
   concurrency,
   setConcurrency,
   maxConcurrency,
+  phone = false,
 }: {
   queue: QueueTask[];
   onRemove: (id: string) => void;
@@ -106,6 +107,7 @@ export default function QueueList({
   concurrency: number;
   setConcurrency: (n: number) => void;
   maxConcurrency: number;
+  phone?: boolean;
 }) {
   const { t } = useI18n();
   const [columns, setColumns] = useState(initialQueueColumns);
@@ -134,20 +136,22 @@ export default function QueueList({
         <span className="muted small">{queue.length}</span>
         <div className="spacer" />
         <ConcurrencyControl value={concurrency} onChange={setConcurrency} max={maxConcurrency} />
-        <ViewPopover>
-          <PopoverSection label={t("columns_per_row")}>
-            <Segmented
-              dense
-              className="density-seg"
-              value={columns}
-              onChange={setColumns}
-              options={QUEUE_COLUMN_OPTIONS.map((n) => ({
-                value: n,
-                label: n === 0 ? t("columns_auto") : String(n),
-              }))}
-            />
-          </PopoverSection>
-        </ViewPopover>
+        {!phone && (
+          <ViewPopover>
+            <PopoverSection label={t("columns_per_row")}>
+              <Segmented
+                dense
+                className="density-seg"
+                value={columns}
+                onChange={setColumns}
+                options={QUEUE_COLUMN_OPTIONS.map((n) => ({
+                  value: n,
+                  label: n === 0 ? t("columns_auto") : String(n),
+                }))}
+              />
+            </PopoverSection>
+          </ViewPopover>
+        )}
         {hasDone && (
           <Button onClick={() => onClearDone()}>{t("clear_done")}</Button>
         )}
@@ -170,6 +174,7 @@ export default function QueueList({
             onSetMarker={onSetMarker}
             onDefaultMarkerColor={setDefaultMarkerColor}
             onOpenViewer={onOpenViewer}
+            phone={phone}
           />
         ))}
       </div>
@@ -190,6 +195,7 @@ const QueueItem = memo(function QueueItem({
   onSetMarker,
   onDefaultMarkerColor,
   onOpenViewer,
+  phone,
 }: {
   task: QueueTask;
   onRemove: (id: string) => void;
@@ -201,6 +207,7 @@ const QueueItem = memo(function QueueItem({
   onSetMarker: (id: string, color: MarkerColor | null) => void;
   onDefaultMarkerColor: (color: MarkerColor) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  phone: boolean;
 }) {
   const { t, reason } = useI18n();
   const toast = useToast();
@@ -264,6 +271,17 @@ const QueueItem = memo(function QueueItem({
     { icon: "download", label: t("download"), onClick: () => output && downloadImage(output), disabled: !output },
     { icon: "saveDraft", label: t("save_copy_to_drafts"), onClick: () => onSaveDraft(task, false) },
   ];
+
+  const markerFooter = (close: () => void) => (
+    <MarkerSwatches
+      value={task.markerColor}
+      onPick={(color) => {
+        if (color) onDefaultMarkerColor(color);
+        onSetMarker(task.id, color);
+        close();
+      }}
+    />
+  );
 
   return (
     <article className="hcard grid">
@@ -334,35 +352,48 @@ const QueueItem = memo(function QueueItem({
             <span className="hcard-btn-label">{t("rerun_short")}</span>
           </Button>
           <div className="hcard-tools">
-            {tools.map((tool) => (
-              <IconButton
-                key={tool.icon}
-                icon={tool.icon}
-                label={tool.label}
-                disabled={tool.disabled}
-                onClick={tool.onClick}
+            {phone ? (
+              <Menu
+                items={[
+                  ...tools.map((tool) => ({
+                    icon: tool.icon,
+                    label: tool.label,
+                    disabled: tool.disabled,
+                    onSelect: tool.onClick,
+                  })),
+                  task.status === "pending"
+                    ? { icon: "moveToDrafts" as const, label: t("move_to_drafts"), onSelect: () => onSaveDraft(task, true) }
+                    : { icon: "delete" as const, label: t("remove_task"), danger: true, disabled: active, onSelect: () => onRemove(task.id) },
+                ]}
+                footer={markerFooter}
+                renderTrigger={({ open, toggle }) => (
+                  <IconButton icon="more" label={t("more_actions")} aria-expanded={open} onClick={toggle} />
+                )}
               />
-            ))}
-            <Menu
-              items={[]}
-              footer={(close) => (
-                <MarkerSwatches
-                  value={task.markerColor}
-                  onPick={(color) => {
-                    if (color) onDefaultMarkerColor(color);
-                    onSetMarker(task.id, color);
-                    close();
-                  }}
-                />
-              )}
-              renderTrigger={({ open, toggle }) => (
-                <IconButton icon="marker" label={t("choose_marker_color")} aria-expanded={open} onClick={toggle} />
-              )}
-            />
-            {task.status === "pending" ? (
-              <IconButton icon="moveToDrafts" label={t("move_to_drafts")} onClick={() => onSaveDraft(task, true)} />
             ) : (
-              <IconButton icon="delete" label={t("remove_task")} disabled={active} onClick={() => onRemove(task.id)} />
+              <>
+                {tools.map((tool) => (
+                  <IconButton
+                    key={tool.icon}
+                    icon={tool.icon}
+                    label={tool.label}
+                    disabled={tool.disabled}
+                    onClick={tool.onClick}
+                  />
+                ))}
+                <Menu
+                  items={[]}
+                  footer={markerFooter}
+                  renderTrigger={({ open, toggle }) => (
+                    <IconButton icon="marker" label={t("choose_marker_color")} aria-expanded={open} onClick={toggle} />
+                  )}
+                />
+                {task.status === "pending" ? (
+                  <IconButton icon="moveToDrafts" label={t("move_to_drafts")} onClick={() => onSaveDraft(task, true)} />
+                ) : (
+                  <IconButton icon="delete" label={t("remove_task")} disabled={active} onClick={() => onRemove(task.id)} />
+                )}
+              </>
             )}
           </div>
         </div>

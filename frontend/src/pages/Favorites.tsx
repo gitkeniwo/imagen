@@ -5,6 +5,7 @@ import AddHistoryModal from "../components/AddHistoryModal";
 import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
+import Icon from "../components/ui/Icon";
 import HistoryItem from "../components/HistoryItem";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
@@ -31,6 +32,7 @@ export default function Favorites({
   compact = false,
   refreshKey = 0,
   onChanged,
+  phone = false,
 }: {
   onReuse: (g: Generation) => void;
   onRerun?: (g: Generation) => void;
@@ -39,6 +41,7 @@ export default function Favorites({
   compact?: boolean;
   refreshKey?: number;
   onChanged?: () => void;
+  phone?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -54,7 +57,7 @@ export default function Favorites({
   const [loadError, setLoadError] = useState<string | null>(null);
   const pageSize = pageSizedToColumns(
     compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
-    columns,
+    phone ? 1 : columns,
   );
 
   const load = () => {
@@ -135,6 +138,41 @@ export default function Favorites({
     </div>
   ) : null;
 
+  const phonePager = (
+    <div className="phone-pager-row">
+      <div className="phone-pg">
+        {hasPages && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("prev_page")}
+            disabled={page === 0 || loading}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            <Icon name="prev" size="sm" />
+          </button>
+        )}
+        <span>
+          {hasPages
+            ? t("phone_page_status", { page: page + 1, pages: pageCount })
+            : t("phone_total_images", { n: total })}
+        </span>
+        {hasPages && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("next_page")}
+            disabled={page >= pageCount - 1 || loading}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            <Icon name="next" size="sm" />
+          </button>
+        )}
+      </div>
+      {hasPages && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
+    </div>
+  );
+
   return (
     <div>
       <div className="history-toolbar">
@@ -147,25 +185,27 @@ export default function Favorites({
             }}
             placeholder={t("search_placeholder_history")}
           />
-          <ViewPopover>
-            <PopoverSection label={t("columns_per_row")}>
-              <Segmented
-                dense
-                value={columns}
-                onChange={(n) => {
-                  setColumns(n);
-                  setPage(0);
-                }}
-                options={(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => ({
-                  value: n,
-                  label: String(n),
-                }))}
-              />
-            </PopoverSection>
-          </ViewPopover>
+          {!phone && (
+            <ViewPopover>
+              <PopoverSection label={t("columns_per_row")}>
+                <Segmented
+                  dense
+                  value={columns}
+                  onChange={(n) => {
+                    setColumns(n);
+                    setPage(0);
+                  }}
+                  options={(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => ({
+                    value: n,
+                    label: String(n),
+                  }))}
+                />
+              </PopoverSection>
+            </ViewPopover>
+          )}
         </div>
       </div>
-      {pager}
+      {phone ? phonePager : pager}
 
       {loading ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
@@ -237,7 +277,7 @@ export default function Favorites({
         </div>
       )}
 
-      {pager}
+      {!phone && pager}
 
       {editingGen && (
         <AddHistoryModal

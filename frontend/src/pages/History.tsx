@@ -6,6 +6,10 @@ import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import TagFilterRow from "../components/TagFilterRow";
 import { useToast } from "../components/Toast";
+import { useRemote } from "../remote";
+import { RemoteChip } from "../components/RemoteIndicator";
+import Icon from "../components/ui/Icon";
+import appIcon from "../assets/app-icon.png";
 import HistoryItem, { type HistoryLayout } from "../components/HistoryItem";
 import { Button } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
@@ -35,6 +39,7 @@ export default function History({
   compact = false,
   refreshKey = 0,
   live = false,
+  phone = false,
 }: {
   onReuse: (g: Generation) => void;
   onRerun?: (g: Generation) => void;
@@ -43,9 +48,11 @@ export default function History({
   compact?: boolean;
   refreshKey?: number;
   live?: boolean;
+  phone?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const { remote } = useRemote();
   const [gens, setGens] = useState<Generation[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | null>(null);
@@ -61,10 +68,11 @@ export default function History({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Enter grid rows per page, never a ragged last row; list view has one item
-  // per row, so it keeps the plain target size.
+  // per row, so it keeps the plain target size. The phone grid is two columns.
+  const effectiveColumns = phone ? 2 : columns;
   const pageSize = pageSizedToColumns(
     compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
-    layout === "list" ? 1 : columns,
+    layout === "list" ? 1 : effectiveColumns,
   );
 
   const load = (quiet = false) => {
@@ -154,6 +162,43 @@ export default function History({
     </div>
   ) : null;
 
+  // Phone keeps a single compact pager above the list (the bottom copy is
+  // hidden), matching the library island's ‹ 1/3 › + total row.
+  const phonePager = (
+    <div className="phone-pager-row">
+      <div className="phone-pg">
+        {hasPages && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("prev_page")}
+            disabled={page === 0 || loading}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            <Icon name="prev" size="sm" />
+          </button>
+        )}
+        <span>
+          {hasPages
+            ? t("phone_page_status", { page: page + 1, pages: pageCount })
+            : t("phone_total_images", { n: total })}
+        </span>
+        {hasPages && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("next_page")}
+            disabled={page >= pageCount - 1 || loading}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            <Icon name="next" size="sm" />
+          </button>
+        )}
+      </div>
+      {hasPages && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
+    </div>
+  );
+
   const tagBar = (
     <TagFilterRow
       tags={tags}
@@ -177,7 +222,16 @@ export default function History({
   };
 
   return (
-    <div>
+    <div className={phone ? "history-phone" : undefined}>
+      {phone && (
+        <div className="phone-head">
+          <img className="phone-logo" src={appIcon} alt="" />
+          <h1>
+            {t("tab_history")} <span>{total}</span>
+          </h1>
+          {remote && <RemoteChip />}
+        </div>
+      )}
       <div className="history-toolbar">
         <div className="history-toolbar-row">
           <SearchBox
@@ -188,7 +242,7 @@ export default function History({
             }}
             placeholder={t("search_placeholder_history")}
           />
-          {layout === "grid" && (
+          {layout === "grid" && !phone && (
           <ViewPopover>
             <PopoverSection label={t("columns_per_row")}>
               <Segmented
@@ -216,7 +270,7 @@ export default function History({
             ]}
           />
         </div>
-        <div className="filter-row">
+        <div className={`filter-row${phone ? " phone-filter-row" : ""}`}>
           <Segmented
             value={kindFilter ?? "all"}
             onChange={(v) => {
@@ -225,8 +279,8 @@ export default function History({
             }}
             options={[
               { value: "all", label: t("filter_all") },
-              { value: "vertex", label: t("hist_filter_vertex"), icon: "generated" },
-              { value: "manual", label: t("hist_filter_manual"), icon: "imported" },
+              { value: "vertex", label: t("hist_filter_vertex"), icon: "generated", iconOnly: phone, title: t("hist_filter_vertex") },
+              { value: "manual", label: t("hist_filter_manual"), icon: "imported", iconOnly: phone, title: t("hist_filter_manual") },
             ]}
           />
           <Button
@@ -245,7 +299,7 @@ export default function History({
         </div>
         {tagBar}
       </div>
-      {pager}
+      {phone ? phonePager : pager}
 
       {loading ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
@@ -281,8 +335,8 @@ export default function History({
         </div>
       ) : (
         <div
-          className={`history-list hlist ${layout}${compact ? " compact" : ""}`}
-          style={layout === "grid" ? ({ "--history-columns": columns } as CSSProperties) : undefined}
+          className={`history-list hlist ${layout}${compact ? " compact" : ""}${phone && layout === "grid" ? " phone-cols2" : ""}`}
+          style={layout === "grid" ? ({ "--history-columns": effectiveColumns } as CSSProperties) : undefined}
         >
           {gens.map((g) => {
             const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
@@ -309,7 +363,7 @@ export default function History({
         </div>
       )}
 
-      {pager}
+      {!phone && pager}
 
       {editingGen && (
         <AddHistoryModal

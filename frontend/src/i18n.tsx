@@ -110,6 +110,7 @@ const zh: Dict = {
   search_placeholder_library: "搜索文件名 / 标签…",
   search_placeholder_history: "搜索提示词…",
   clear_search: "清除搜索",
+  search: "搜索",
   remove_ref: "移除参考图",
   no_results: "没有匹配的结果",
   clear_filters: "清除筛选",
@@ -326,6 +327,7 @@ const zh: Dict = {
   edit_draft: "编辑草稿",
   save_draft: "保存草稿",
   save_draft_hint: "将当前提示词、图片和参数保存到草稿箱",
+  save_draft_confirm: "把当前的提示词、参考图和参数存入草稿箱？",
   draft_saved: "已保存到草稿箱",
   draft_editor_desc: "草稿不会调用 Vertex；输入图会用于将来的生成，输出图仅作为附件保存。",
   drafts_empty: "草稿箱是空的。可以保存当前编辑内容，或者从队列移入任务。",
@@ -523,6 +525,28 @@ const zh: Dict = {
   login_locked: "这台设备输错次数过多。请在 {time} 后重试。",
   login_network: "连不上 Mac。请确认在同一网络下。",
   login_foot: "在 Mac 上：顶栏的「远程」图标，或 设置 › 远程访问。",
+
+  // phone layout
+  tab_more: "更多",
+  phone_sections: "分区",
+  phone_running_n: "{n} 个任务进行中",
+  phone_add_to_home:
+    "在 Safari 的分享菜单里选择「添加到主屏幕」，即可全屏运行 Imagen，不显示浏览器工具栏。",
+  phone_back: "返回",
+  phone_options: "生成参数",
+  phone_tags_title: "标签",
+  phone_find_tag: "查找标签…",
+  phone_show_n: "显示 {n} 张",
+  phone_clear: "清除",
+  phone_use_as_ref: "用作参考",
+  phone_add: "添加",
+  phone_show_full_prompt: "显示完整 Prompt",
+  phone_show_less_prompt: "收起 Prompt",
+  phone_columns_n: "{n} 列",
+  phone_total_images: "{n} 张",
+  phone_page_status: "{page} / {pages}",
+  phone_batch_tags: "批量标签",
+  phone_more_title: "更多",
 };
 
 const en: Dict = {
@@ -631,6 +655,7 @@ const en: Dict = {
   search_placeholder_library: "Search filename / tag…",
   search_placeholder_history: "Search prompt…",
   clear_search: "Clear search",
+  search: "Search",
   remove_ref: "Remove reference image",
   no_results: "No matching results",
   clear_filters: "Clear filters",
@@ -848,6 +873,7 @@ const en: Dict = {
   edit_draft: "Edit draft",
   save_draft: "Save draft",
   save_draft_hint: "Save the current prompt, images and settings to Drafts",
+  save_draft_confirm: "Save the current prompt, reference images and settings to Drafts?",
   draft_saved: "Saved to Drafts",
   draft_editor_desc: "Drafts never call Vertex. Inputs are used for future generation; outputs are attachments only.",
   drafts_empty: "No drafts yet. Save the composer or move a queued task here.",
@@ -1044,6 +1070,28 @@ const en: Dict = {
   login_locked: "Too many wrong tries from this device. Try again in {time}.",
   login_network: "Can’t reach the Mac. Check that you’re on the same network.",
   login_foot: "On the Mac: the Remote icon in the top bar, or Settings › Remote access.",
+
+  // phone layout
+  tab_more: "More",
+  phone_sections: "Sections",
+  phone_running_n: "{n} tasks in progress",
+  phone_add_to_home:
+    "Choose Add to Home Screen in Safari’s Share menu to run Imagen full screen, without the browser bar.",
+  phone_back: "Back",
+  phone_options: "Generation options",
+  phone_tags_title: "Tags",
+  phone_find_tag: "Find a tag…",
+  phone_show_n: "Show {n} images",
+  phone_clear: "Clear",
+  phone_use_as_ref: "Use as ref",
+  phone_add: "Add",
+  phone_show_full_prompt: "Show full prompt",
+  phone_show_less_prompt: "Show less",
+  phone_columns_n: "{n} columns",
+  phone_total_images: "{n} images",
+  phone_page_status: "{page} / {pages}",
+  phone_batch_tags: "Batch tags",
+  phone_more_title: "More",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };

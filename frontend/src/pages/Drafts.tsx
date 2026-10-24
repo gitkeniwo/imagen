@@ -8,6 +8,7 @@ import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import GenerationCard from "../components/GenerationCard";
 import type { MenuItem } from "../components/ui/Menu";
+import Icon from "../components/ui/Icon";
 import { IconButton } from "../components/ui/Button";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import Segmented from "../components/ui/Segmented";
@@ -31,6 +32,7 @@ export default function Drafts({
   onQueue,
   onOpenViewer,
   onChanged,
+  phone = false,
 }: {
   compact?: boolean;
   refreshKey?: number;
@@ -39,6 +41,7 @@ export default function Drafts({
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   // Called after a draft is created or removed, so counts elsewhere refresh.
   onChanged?: () => void;
+  phone?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -54,7 +57,7 @@ export default function Drafts({
   const [columns, setColumns] = useState(initialDraftColumns);
   const pageSize = pageSizedToColumns(
     compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
-    columns,
+    phone ? 1 : columns,
   );
 
   const load = () => {
@@ -138,6 +141,41 @@ export default function Drafts({
     </div>
   ) : null;
 
+  const phonePager = (
+    <div className="phone-pager-row">
+      <div className="phone-pg">
+        {total > pageSize && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("prev_page")}
+            disabled={page === 0 || loading}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            <Icon name="prev" size="sm" />
+          </button>
+        )}
+        <span>
+          {total > pageSize
+            ? t("phone_page_status", { page: page + 1, pages: pageCount })
+            : t("phone_total_images", { n: total })}
+        </span>
+        {total > pageSize && (
+          <button
+            type="button"
+            className="phone-pg-btn"
+            aria-label={t("next_page")}
+            disabled={page >= pageCount - 1 || loading}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            <Icon name="next" size="sm" />
+          </button>
+        )}
+      </div>
+      {total > pageSize && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
+    </div>
+  );
+
   return (
     <div className="drafts-page">
       <div className="draft-toolbar">
@@ -154,21 +192,23 @@ export default function Drafts({
           label={t("new_draft")}
           onClick={() => setCreating(true)}
         />
-        <ViewPopover>
-          <PopoverSection label={t("columns_per_row")}>
-            <Segmented
-              dense
-              value={columns}
-              onChange={(n) => {
-                setColumns(n);
-                setPage(0);
-              }}
-              options={DRAFT_COLUMN_OPTIONS.map((value) => ({ value, label: String(value) }))}
-            />
-          </PopoverSection>
-        </ViewPopover>
+        {!phone && (
+          <ViewPopover>
+            <PopoverSection label={t("columns_per_row")}>
+              <Segmented
+                dense
+                value={columns}
+                onChange={(n) => {
+                  setColumns(n);
+                  setPage(0);
+                }}
+                options={DRAFT_COLUMN_OPTIONS.map((value) => ({ value, label: String(value) }))}
+              />
+            </PopoverSection>
+          </ViewPopover>
+        )}
       </div>
-      {pager}
+      {phone ? phonePager : pager}
 
       {loading ? (
         <div className="panel muted"><span className="spinner" /> {t("loading")}</div>
@@ -255,7 +295,7 @@ export default function Drafts({
           })}
         </div>
       )}
-      {pager}
+      {!phone && pager}
 
       {creating && (
         <DraftEditorModal

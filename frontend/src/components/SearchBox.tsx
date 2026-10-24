@@ -14,10 +14,12 @@ export default function SearchBox({
   value,
   onChange,
   placeholder,
+  autoFocus,
 }: {
   value: string;
   onChange: (q: string) => void;
   placeholder?: string;
+  autoFocus?: boolean;
 }) {
   const { t } = useI18n();
   const [text, setText] = useState(value);
@@ -47,6 +49,7 @@ export default function SearchBox({
       <Icon name="search" size="sm" className="searchbox-icon" />
       <input
         value={text}
+        autoFocus={autoFocus}
         placeholder={placeholder}
         onChange={(e) => emit(e.target.value)}
         onKeyDown={(e) => {

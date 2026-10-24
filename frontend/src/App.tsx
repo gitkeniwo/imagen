@@ -30,6 +30,10 @@ import ImageViewer from "./components/ImageViewer";
 import HoverPeek from "./components/HoverPeek";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 import Drafts from "./pages/Drafts";
+import Bin from "./pages/Bin";
+import PhoneTabBar, { type PhoneTab } from "./components/PhoneTabBar";
+import MoreMenu, { type MorePage } from "./components/MoreMenu";
+import { useIsPhone } from "./useIsPhone";
 import PanelTabs from "./components/ui/PanelTabs";
 import { usePanelCounts } from "./usePanelCounts";
 import { useToast } from "./components/Toast";
@@ -63,19 +67,40 @@ const MAX_CONCURRENCY = 5;
 const UNDO_SECONDS_KEY = "imagen-undo-send-seconds";
 const DEFAULT_UNDO_SECONDS = 5;
 const SIDEBAR_WIDTH_KEY = "imagen-sidebar-width";
+const PHONE_TAB_KEY = "imagen-phone-tab";
 const DEFAULT_SIDEBAR_WIDTH = 340;
 const MIN_SIDEBAR_WIDTH = 260;
 const SIDEBAR_MAX_RATIO = 0.7;
+
+// 640–920px (tablet split view, narrow desktop windows): start narrower so the
+// main column keeps usable width. Only the unset default is affected; a width
+// the user dragged and saved is used as-is.
+function defaultSidebarWidth() {
+  if (window.innerWidth < 920) {
+    return Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(DEFAULT_SIDEBAR_WIDTH, Math.round(window.innerWidth * 0.45)),
+    );
+  }
+  return DEFAULT_SIDEBAR_WIDTH;
+}
 
 function initialSidebarWidth() {
   // Number(null) is 0, so an unset key must be caught before coercion or the
   // default is silently replaced by the clamp floor.
   const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-  if (raw === null) return DEFAULT_SIDEBAR_WIDTH;
+  if (raw === null) return defaultSidebarWidth();
   const saved = Number(raw);
   return Number.isFinite(saved) && saved > 0
     ? Math.max(MIN_SIDEBAR_WIDTH, saved)
-    : DEFAULT_SIDEBAR_WIDTH;
+    : defaultSidebarWidth();
+}
+
+function initialPhoneTab(): PhoneTab {
+  const saved = localStorage.getItem(PHONE_TAB_KEY);
+  return saved === "create" || saved === "history" || saved === "more"
+    ? saved
+    : "library";
 }
 
 function initialConcurrency() {
@@ -125,6 +150,12 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const isPhone = useIsPhone();
+  const [phoneTab, setPhoneTab] = useState<PhoneTab>(initialPhoneTab);
+  const [morePage, setMorePage] = useState<MorePage | null>(null);
+  // Library's select mode is internal; the phone shell hides the tab bar while
+  // it is on so Library can show the floating selection capsule instead.
+  const [phoneSelecting, setPhoneSelecting] = useState(false);
   // Image viewer (lightbox) + a bump counter to refresh data after tag edits.
   const [viewer, setViewer] = useState<{ image: ImageRow; list: ImageRow[] } | null>(
     null,
@@ -221,6 +252,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    localStorage.setItem(PHONE_TAB_KEY, phoneTab);
+  }, [phoneTab]);
+
+  const changePhoneTab = useCallback((tab: PhoneTab) => {
+    setPhoneTab(tab);
+    // Leaving "more" returns its next visit to the list, not the last subpage.
+    if (tab !== "more") setMorePage(null);
+  }, []);
 
   // Clamp sidebar width on mount and window resize so it never exceeds 70%.
   useLayoutEffect(() => {
@@ -611,8 +652,16 @@ export default function App() {
     `${completedRefreshKey}:${draftVersion}:${countsVersion}:${sidebarPanel}`,
   );
 
+  const phoneActiveCount = queue.filter(
+    (task) =>
+      task.status === "pending" ||
+      task.status === "running" ||
+      task.status === "cancelling",
+  ).length;
+
   return (
     <>
+      {!isPhone && (
       <div
         className={`app-shell${remote ? " remote" : ""}`}
         ref={workspaceRef}
@@ -792,6 +841,145 @@ export default function App() {
           </main>
         </div>
       </div>
+      )}
+
+      {isPhone && (
+        <div className={`app-shell phone-shell${remote ? " remote" : ""}`}>
+          {remote && (
+            <div className={`rm-topline${conn === "lost" ? " lost" : ""}`} aria-hidden="true" />
+          )}
+          <div className="phone-stage">
+            <div className="phone-panel" hidden={phoneTab !== "library"}>
+              <section className="side-panel phone-island">
+                <div className="side-scroll phone-island-scroll">
+                  <Library
+                    addToTray={addToTray}
+                    compact
+                    phone
+                    onSelectModeChange={setPhoneSelecting}
+                    refreshKey={completedRefreshKey}
+                    onOpenViewer={openViewer}
+                    onChanged={bumpData}
+                  />
+                </div>
+              </section>
+            </div>
+
+            <div className="phone-panel" hidden={phoneTab !== "history"}>
+              <section className="side-panel phone-island">
+                <div className="side-scroll phone-island-scroll">
+                  <History
+                    onReuse={reuse}
+                    onRerun={configured ? rerunGeneration : undefined}
+                    onUseAsRef={addToTray}
+                    compact
+                    phone
+                    refreshKey={completedRefreshKey}
+                    onOpenViewer={openViewer}
+                    live={runningKey !== ""}
+                  />
+                </div>
+              </section>
+            </div>
+
+            <div className="phone-panel" hidden={phoneTab !== "create"}>
+              <Generate
+                tray={tray}
+                prefill={prefill}
+                consumePrefill={consumePrefill}
+                addManyToTray={addManyToTray}
+                removeFromTray={removeFromTray}
+                moveInTray={moveInTray}
+                keyConfigured={!!configured}
+                queue={queue}
+                enqueue={enqueue}
+                onSaveDraft={saveTaskAsDraft}
+                removeTask={removeTask}
+                abortTask={abortTask}
+                clearDone={clearDone}
+                onReuseTask={reuseTask}
+                onReuseGenerateTask={reuseGenerateTask}
+                onSaveQueueTaskAsDraft={saveQueueTaskAsDraft}
+                onSetTaskMarker={setTaskMarker}
+                onOpenViewer={openViewer}
+                concurrency={concurrency}
+                setConcurrency={setConcurrency}
+                maxConcurrency={MAX_CONCURRENCY}
+                phone
+              />
+            </div>
+
+            <div className="phone-panel" hidden={phoneTab !== "more"}>
+              {morePage ? (
+                <section className="side-panel phone-island">
+                  <header className="phone-head phone-subhead">
+                    <IconButton
+                      icon="prev"
+                      label={t("phone_back")}
+                      onClick={() => setMorePage(null)}
+                    />
+                    <h1>
+                      {morePage === "favorites"
+                        ? t("tab_favorites")
+                        : morePage === "drafts"
+                          ? t("tab_drafts")
+                          : t("tab_bin")}
+                    </h1>
+                  </header>
+                  <div className="side-scroll phone-island-scroll">
+                    {morePage === "favorites" ? (
+                      <Favorites
+                        onReuse={reuse}
+                        onRerun={configured ? rerunGeneration : undefined}
+                        onUseAsRef={addToTray}
+                        compact
+                        phone
+                        refreshKey={completedRefreshKey}
+                        onOpenViewer={openViewer}
+                        onChanged={bumpData}
+                      />
+                    ) : morePage === "drafts" ? (
+                      <Drafts
+                        compact
+                        phone
+                        onChanged={bumpCounts}
+                        refreshKey={draftVersion}
+                        canQueue={!!configured}
+                        onQueue={enqueue}
+                        onOpenViewer={openViewer}
+                      />
+                    ) : (
+                      <Bin
+                        onOpenViewer={openViewer}
+                        refreshKey={completedRefreshKey}
+                        onChanged={bumpData}
+                      />
+                    )}
+                  </div>
+                </section>
+              ) : (
+                <MoreMenu
+                  counts={counts}
+                  onOpenPage={setMorePage}
+                  onOpenUsage={() => setDashboardOpen(true)}
+                  onOpenSettings={() => {
+                    setSettingsSection("library");
+                    setShowSettings(true);
+                  }}
+                />
+              )}
+            </div>
+          </div>
+
+          {!phoneSelecting && (
+            <PhoneTabBar
+              value={phoneTab}
+              onChange={changePhoneTab}
+              badge={phoneActiveCount}
+            />
+          )}
+        </div>
+      )}
 
       {showSettings && (
         <SettingsModal

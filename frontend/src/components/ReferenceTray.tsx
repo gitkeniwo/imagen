@@ -7,6 +7,7 @@ import Icon from "./ui/Icon";
 import { peekProps } from "./HoverPeek";
 import { isRefDrag, readImageDrag } from "../imageDrag";
 import { Button, IconButton } from "./ui/Button";
+import Menu from "./ui/Menu";
 
 export default function ReferenceTray({
   tray,
@@ -18,6 +19,7 @@ export default function ReferenceTray({
   onPickLibrary,
   onOpen,
   action,
+  phone = false,
 }: {
   tray: ImageRow[];
   onAdd: (imgs: ImageRow[]) => void;
@@ -33,6 +35,8 @@ export default function ReferenceTray({
   onOpen?: (img: ImageRow) => void;
   // Shown at the right end of the label row (e.g. "Pick from library").
   action?: ReactNode;
+  // Phone: 72px tiles and one "+ Add" menu instead of two text buttons.
+  phone?: boolean;
 }) {
   const { remote } = useRemote();
   const { t } = useI18n();
@@ -156,7 +160,7 @@ export default function ReferenceTray({
         </div>
       )}
       <div
-        className={`tray dropzone-wrap${compact ? " tray-compact" : ""}${drag ? " drag" : ""}`}
+        className={`tray dropzone-wrap${compact ? " tray-compact" : ""}${phone ? " tray-phone" : ""}${drag ? " drag" : ""}`}
         onDragOver={(e) => {
           if (!isRefDrag(e.dataTransfer)) return;
           e.preventDefault();
@@ -207,23 +211,56 @@ export default function ReferenceTray({
           </div>
         ))}
         {compact ? (
-          <div className="tray-actions">
-            <Button
-              size="sm"
-              icon="upload"
-              title={t("tray_drop_hint")}
-              disabled={busy}
-              onClick={() => fileInput.current?.click()}
-            >
-              {busy ? <span className="spinner" /> : t("upload_short")}
-            </Button>
-            {onPickLibrary && (
-              <Button size="sm" icon="pickFromLibrary" onClick={onPickLibrary}>
-                {t("pick_from_library")}
+          phone ? (
+            <Menu
+              align="start"
+              items={[
+                {
+                  icon: "upload",
+                  label: t("upload_short"),
+                  onSelect: () => fileInput.current?.click(),
+                },
+                ...(onPickLibrary
+                  ? [{
+                      icon: "pickFromLibrary" as const,
+                      label: t("pick_from_library"),
+                      onSelect: onPickLibrary,
+                    }]
+                  : []),
+              ]}
+              renderTrigger={({ open, toggle }) => (
+                <button
+                  type="button"
+                  className="tray-add"
+                  aria-label={t("phone_add")}
+                  aria-expanded={open}
+                  disabled={busy}
+                  onClick={toggle}
+                >
+                  {busy ? <span className="spinner" /> : <Icon name="add" />}
+                  <span>{t("phone_add")}</span>
+                </button>
+              )}
+            />
+          ) : (
+            <div className="tray-actions">
+              <Button
+                size="sm"
+                icon="upload"
+                title={t("tray_drop_hint")}
+                disabled={busy}
+                onClick={() => fileInput.current?.click()}
+              >
+                {busy ? <span className="spinner" /> : t("upload_short")}
               </Button>
-            )}
-            {tray.length === 0 && <span className="muted small">{t("tray_compact_hint")}</span>}
-          </div>
+              {onPickLibrary && (
+                <Button size="sm" icon="pickFromLibrary" onClick={onPickLibrary}>
+                  {t("pick_from_library")}
+                </Button>
+              )}
+              {tray.length === 0 && <span className="muted small">{t("tray_compact_hint")}</span>}
+            </div>
+          )
         ) : (
           <div
             className={`dropzone${drag ? " drag" : ""}`}
