@@ -264,6 +264,7 @@ export default function ZoomStage({
       onDoubleClick={onDoubleClick}
     >
       <div
+        key={image.id}
         className="zoom-layer"
         style={{
           width: iw,
