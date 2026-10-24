@@ -9,6 +9,7 @@ import Drafts from "../pages/Drafts";
 import PanelTabs from "./ui/PanelTabs";
 import type { PanelCounts } from "../usePanelCounts";
 import { IconButton } from "./ui/Button";
+import { useBackLayer } from "../backStack";
 
 export type ManagerPanel = "library" | "history" | "favorites" | "drafts" | "bin";
 
@@ -48,6 +49,7 @@ export default function FullscreenManager({
 }) {
   const { t } = useI18n();
   const [panel, setPanel] = useState<ManagerPanel>(initialPanel);
+  useBackLayer(true, onClose);
 
   // Esc closes; lock background scroll while open.
   useEffect(() => {

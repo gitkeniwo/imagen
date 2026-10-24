@@ -6,6 +6,7 @@ import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
 import RemoteSettings from "./RemoteSettings";
 import { useRemote } from "../remote";
+import { useBackLayer } from "../backStack";
 
 type Section = "library" | "vertex" | "prefs" | "remote" | "device";
 
@@ -58,6 +59,7 @@ export default function SettingsModal({
   // validates it and asks for confirmation in a native dialog.
   const [typing, setTyping] = useState(false);
   const [typedPath, setTypedPath] = useState("");
+  useBackLayer(true, onClose);
 
   useEffect(() => {
     api.getVertex().then((v) => {

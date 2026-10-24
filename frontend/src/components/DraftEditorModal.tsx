@@ -17,6 +17,7 @@ import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
 import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
+import { useBackLayer } from "../backStack";
 
 export default function DraftEditorModal({
   existing,
@@ -54,6 +55,8 @@ export default function DraftEditorModal({
   const [outputBusy, setOutputBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Back rejects while the save is in flight, like the disabled Cancel button.
+  useBackLayer(true, () => (saving ? false : onClose()));
 
   const addUnique = (setter: React.Dispatch<React.SetStateAction<ImageRow[]>>, img: ImageRow) =>
     setter((prev) => (prev.some((item) => item.id === img.id) ? prev : [...prev, img]));

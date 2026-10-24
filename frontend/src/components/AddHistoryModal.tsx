@@ -19,6 +19,7 @@ import { isRefDrag, readImageDrag } from "../imageDrag";
 import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
+import { useBackLayer } from "../backStack";
 
 // Drafts have their own editor (DraftEditorModal); this form only logs results.
 type Kind = "vertex" | "manual";
@@ -93,6 +94,7 @@ export default function AddHistoryModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [picker, setPicker] = useState<"input" | "output" | null>(null);
+  useBackLayer(true, onClose);
 
   const isCreate = !existing;
 

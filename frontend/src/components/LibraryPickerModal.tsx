@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import Library from "../pages/Library";
 import { IconButton } from "./ui/Button";
 import { useIsPhone } from "../useIsPhone";
+import { useBackLayer } from "../backStack";
 
 // Full-screen Library browser for picking existing images into a form that
 // isn't wired to the app-level tray (e.g. AddHistoryModal's local state).
@@ -21,6 +22,7 @@ export default function LibraryPickerModal({
 }) {
   const { t } = useI18n();
   const phone = useIsPhone();
+  useBackLayer(true, onClose);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
