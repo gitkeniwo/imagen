@@ -34,6 +34,9 @@ from app import desktop as desktop_entry  # noqa: E402
 REPORT_NAME = "test-report.log"
 _ABORT_OBSERVATIONS: list[dict] = []
 _STATE_LOCK = threading.Lock()
+# Per-request overrides used by check_remote.sh to exercise each outcome
+# without restarting the process (None = fall back to the env var).
+_FAKE: dict[str, float | str | None] = {"delay": None, "outcome": None}
 _LOG_PATH: Path | None = None
 
 
@@ -72,8 +75,13 @@ def install_fake_generate() -> None:
         on_event=None,
         should_abort=None,
     ):
-        delay = float(os.environ.get("FAKE_DELAY_S") or "0")
-        outcome = (os.environ.get("FAKE_OUTCOME") or "success").strip().lower()
+        with _STATE_LOCK:
+            delay_override = _FAKE["delay"]
+            outcome_override = _FAKE["outcome"]
+        delay = float(delay_override if delay_override is not None
+                      else (os.environ.get("FAKE_DELAY_S") or "0"))
+        outcome = str(outcome_override if outcome_override is not None
+                      else (os.environ.get("FAKE_OUTCOME") or "success")).strip().lower()
         tid = f"fake-{os.getpid()}-{threading.get_ident()}"
         start = time.monotonic()
         if on_event:
@@ -293,6 +301,16 @@ def install_test_routes(app) -> None:
             "first_abort": next((o for o in obs if o["should_abort"]), None),
             "last": obs[-3:],
         }
+
+    @test_api.put("/__test/fake-config")
+    async def _fake_config(payload: dict):
+        with _STATE_LOCK:
+            if "delay" in payload:
+                _FAKE["delay"] = float(payload["delay"])
+            if "outcome" in payload:
+                value = payload["outcome"]
+                _FAKE["outcome"] = None if value is None else str(value)
+        return {"ok": True, "config": dict(_FAKE)}
 
     @test_api.post("/__test/fake-reset")
     async def _fake_reset():

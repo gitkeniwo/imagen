@@ -13,6 +13,7 @@ from . import remote
 from .db import init_storage
 from .remote_gate import RemoteGate, is_lan
 from .routes import drafts, generate, generations, images, settings, stats, tags
+from .routes import desktop as desktop_routes
 from .routes import remote as remote_routes
 
 app = FastAPI(title="Imagen")
@@ -73,6 +74,7 @@ app.include_router(tags.router)
 app.include_router(drafts.router)
 if remote.is_desktop():
     app.include_router(remote_routes.router)
+    app.include_router(desktop_routes.router)
 
 # Serve the production build of the frontend if present.
 def _resolve_dist() -> Path:

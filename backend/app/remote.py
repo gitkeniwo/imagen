@@ -72,6 +72,10 @@ _global_failures = 0
 _disabled_reason: str | None = None
 _last_activity = 0.0
 _running: dict[str, int] = {}
+# Every /api/generate request currently being processed, loopback or LAN.
+# Independent of `_running`, which only tracks LAN sessions. Read by the
+# desktop shell through /api/desktop/activity (menubar icon + quit guard).
+_generating_total = 0
 
 
 def is_desktop() -> bool:
@@ -257,6 +261,25 @@ def session_finished(key: str) -> None:
             _running[key] = left
         else:
             _running.pop(key, None)
+
+
+def generation_started() -> None:
+    """A /api/generate request passed validation and is about to run."""
+    global _generating_total
+    with _lock:
+        _generating_total += 1
+
+
+def generation_finished() -> None:
+    global _generating_total
+    with _lock:
+        if _generating_total > 0:
+            _generating_total -= 1
+
+
+def generating_total() -> int:
+    with _lock:
+        return _generating_total
 
 
 # --- login + rate limiting --------------------------------------------------
