@@ -34,6 +34,7 @@ import Bin from "./pages/Bin";
 import PhoneTabBar, { type PhoneTab } from "./components/PhoneTabBar";
 import MoreMenu, { type MorePage } from "./components/MoreMenu";
 import { useIsPhone } from "./useIsPhone";
+import { useBackLayer } from "./backStack";
 import PanelTabs from "./components/ui/PanelTabs";
 import { usePanelCounts } from "./usePanelCounts";
 import { useToast } from "./components/Toast";
@@ -262,6 +263,10 @@ export default function App() {
     // Leaving "more" returns its next visit to the list, not the last subpage.
     if (tab !== "more") setMorePage(null);
   }, []);
+
+  // Phone "more" subpages are a layer of their own; leaving the tab closes it
+  // (above) and the hook then drops the matching history entry.
+  useBackLayer(morePage !== null, () => setMorePage(null));
 
   // Clamp sidebar width on mount and window resize so it never exceeds 70%.
   useLayoutEffect(() => {

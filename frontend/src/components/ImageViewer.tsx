@@ -12,6 +12,7 @@ import { downloadImage } from "./GenerationCard";
 import { peekProps } from "./HoverPeek";
 import ZoomStage from "./ZoomStage";
 import { useIsPhone } from "../useIsPhone";
+import { useBackLayer } from "../backStack";
 
 // Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
 // and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
@@ -38,6 +39,7 @@ export default function ImageViewer({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  useBackLayer(true, onClose);
   const items = list.length ? list : [image];
   const [idx, setIdx] = useState(
     Math.max(0, items.findIndex((i) => i.id === image.id)),

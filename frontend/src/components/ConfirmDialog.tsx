@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useI18n } from "../i18n";
+import { useBackLayer } from "../backStack";
 import "./confirm-dialog.css";
 
 export interface ConfirmOptions {
@@ -70,6 +71,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       requestRef.current = null;
     };
   }, []);
+
+  // Back cancels the dialog, exactly like Escape or the backdrop.
+  useBackLayer(request !== null, () => close(false));
 
   useEffect(() => {
     if (!request) return;

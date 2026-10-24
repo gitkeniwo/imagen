@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
 import { IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
+import { useBackLayer } from "../backStack";
 
 // Full-screen usage dashboard (mirrors FullscreenManager's overlay shell).
 // A single period selector (day/week/month/year/all) scopes the WHOLE panel —
@@ -93,6 +94,7 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [period, setPeriod] = useState<StatPeriod>("all");
   const [hover, setHover] = useState<number | null>(null);
+  useBackLayer(true, onClose);
 
   useEffect(() => {
     const { currency, prices } = loadPrices();
