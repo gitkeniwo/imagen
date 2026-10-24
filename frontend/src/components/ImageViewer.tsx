@@ -274,6 +274,25 @@ export default function ImageViewer({
           {multi && (
             <>
               <span className="viewer-count">{idx + 1} / {items.length}</span>
+              {/* Phone: the outer fifths of the stage switch images while not zoomed. */}
+              {phone && !zoomed && (
+                <>
+                  <button
+                    type="button"
+                    className="viewer-zone prev"
+                    aria-label={t("prev_image")}
+                    disabled={idx === 0}
+                    onClick={prev}
+                  />
+                  <button
+                    type="button"
+                    className="viewer-zone next"
+                    aria-label={t("next_image")}
+                    disabled={idx === items.length - 1}
+                    onClick={next}
+                  />
+                </>
+              )}
               <IconButton
                 className="viewer-nav prev"
                 variant="overlay"
@@ -281,7 +300,7 @@ export default function ImageViewer({
                 icon="prev"
                 label={t("prev_image")}
                 disabled={idx === 0}
-                hidden={zoomed}
+                hidden={zoomed || phone}
                 onClick={prev}
               />
               <IconButton
@@ -291,7 +310,7 @@ export default function ImageViewer({
                 icon="next"
                 label={t("next_image")}
                 disabled={idx === items.length - 1}
-                hidden={zoomed}
+                hidden={zoomed || phone}
                 onClick={next}
               />
             </>
