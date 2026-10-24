@@ -249,7 +249,20 @@ fn main() {
 
     builder = builder.plugin(tauri_plugin_dialog::init());
     if !test_mode {
-        builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+        // Never restore visibility: quitting from background mode (main window
+        // hidden) must not make the next launch start with no window. The
+        // menubar/HUD windows are created once and positioned by the shell, so
+        // they are kept out of the state file entirely.
+        builder = builder.plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .with_denylist(&[popover::LABEL, quit::HUD_LABEL])
+                .build(),
+        );
     }
 
     let app = builder

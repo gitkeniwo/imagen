@@ -26,8 +26,10 @@ pub const TRAY_OPEN_ID: &str = "tray-open";
 pub const TRAY_REMOTE_ID: &str = "tray-remote";
 pub const TRAY_QUIT_ID: &str = "tray-quit";
 
-const POLL_OPEN: Duration = Duration::from_secs(2);
-const POLL_CLOSED: Duration = Duration::from_secs(5);
+// Local loopback requests are cheap; a 2 s ceiling keeps the icon in step when
+// the user flips remote access in the main window.
+const POLL_OPEN: Duration = Duration::from_secs(1);
+const POLL_CLOSED: Duration = Duration::from_secs(2);
 const PULSE_EVERY: Duration = Duration::from_millis(700);
 const TICK: Duration = Duration::from_millis(120);
 

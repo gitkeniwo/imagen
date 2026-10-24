@@ -32,9 +32,53 @@ const FADE_OUT: Duration = Duration::from_millis(220);
 
 /// True while the HUD is up (also suppresses key-repeat re-entry).
 static HUD_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Set by the local NSEvent monitor when Q or ⌘ is released. This is the
+/// permission-free detector: CGEventSourceKeyState reads 0 without Input
+/// Monitoring on recent macOS versions.
+static HOLD_RELEASED: AtomicBool = AtomicBool::new(false);
 /// Last HUD text. The page reads it when it becomes visible, so a dropped
 /// event can never leave an empty (but blurred) HUD on screen.
 static HUD_PAYLOAD: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+
+/// Watch key-up/flags changes for this app so a ⌘Q release is seen even though
+/// the menu owns the key equivalent. The monitor returns the event unchanged,
+/// so normal handling is untouched.
+#[cfg(target_os = "macos")]
+fn install_release_monitor() {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSEventType};
+    use std::ptr::NonNull;
+
+    if RELEASE_MONITOR_INSTALLED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let handler = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
+        let event_ref = unsafe { event.as_ref() };
+        let kind = event_ref.r#type().0;
+        let released = (kind == NSEventType::KeyUp.0 && event_ref.keyCode() == 0x0C)
+            || (kind == NSEventType::FlagsChanged.0
+                && !event_ref
+                    .modifierFlags()
+                    .contains(NSEventModifierFlags::Command));
+        if released {
+            HOLD_RELEASED.store(true, Ordering::SeqCst);
+        }
+        event.as_ptr()
+    });
+    let mask = NSEventMask::KeyUp | NSEventMask::FlagsChanged;
+    unsafe {
+        if let Some(monitor) = NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &handler)
+        {
+            // AppKit retains the monitor and its block; leak our handles so the
+            // monitor stays installed for the process lifetime.
+            std::mem::forget(monitor);
+            std::mem::forget(handler);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+static RELEASE_MONITOR_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 /// Create the HUD hidden; `request` only positions, fills and shows it.
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
@@ -64,6 +108,10 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     .build()?;
 
     let _ = window.set_ignore_cursor_events(true);
+    // Belt and braces: a restored/leftover window must never linger on screen.
+    let _ = window.hide();
+    #[cfg(target_os = "macos")]
+    install_release_monitor();
 
     #[cfg(target_os = "macos")]
     {
@@ -84,12 +132,23 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
 pub fn request(app: &AppHandle, via_keyboard: bool) {
     let running = tray::running_total(app);
     if !via_keyboard || running == 0 {
+        crate::backend::log_line(
+            app,
+            &format!("quit requested via_keyboard={via_keyboard} running={running}"),
+        );
         app.exit(0);
         return;
     }
+    // Key repeat re-enters this handler; only the first request of a hold counts.
     if HUD_ACTIVE.swap(true, Ordering::SeqCst) {
         return;
     }
+    // Reset before showing the HUD, so an early key-up is not lost.
+    HOLD_RELEASED.store(false, Ordering::SeqCst);
+    crate::backend::log_line(
+        app,
+        &format!("quit requested via_keyboard={via_keyboard} running={running}"),
+    );
     if !show_hud(app, running) {
         HUD_ACTIVE.store(false, Ordering::SeqCst);
         return;
@@ -165,10 +224,24 @@ fn hide_hud(app: &AppHandle) {
 
 fn hold_guard(app: AppHandle) {
     let start = Instant::now();
-    // macOS delivers the menu key equivalent on key-down; poll the hardware
-    // state until either ⌘ or Q is released or the hold time is reached.
-    while chord_held() {
+    // The menu fires on key-down. If the hardware key-state API is readable it
+    // is authoritative; otherwise the NSEvent monitor's release flag decides.
+    let use_hardware_state = chord_held();
+    loop {
+        if HOLD_RELEASED.load(Ordering::SeqCst) {
+            break;
+        }
+        if use_hardware_state && !chord_held() {
+            break;
+        }
         if start.elapsed() >= HOLD {
+            crate::backend::log_line(
+                &app,
+                &format!(
+                    "quit hold completed after {} ms (hardware_state={use_hardware_state})",
+                    start.elapsed().as_millis()
+                ),
+            );
             if let Some(window) = app.get_webview_window(HUD_LABEL) {
                 let _ = window.hide();
             }
@@ -177,6 +250,13 @@ fn hold_guard(app: AppHandle) {
         }
         thread::sleep(Duration::from_millis(50));
     }
+    crate::backend::log_line(
+        &app,
+        &format!(
+            "quit hold released after {} ms (hardware_state={use_hardware_state})",
+            start.elapsed().as_millis()
+        ),
+    );
     thread::sleep(LINGER);
     hide_hud(&app);
 }

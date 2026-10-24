@@ -66,6 +66,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             backend::log_line(app, &format!("menubar vibrancy failed: {err}"));
         }
     }
+    // Initialise hidden; only a tray click or a debug hook may show it.
+    let _ = window.hide();
     Ok(())
 }
 

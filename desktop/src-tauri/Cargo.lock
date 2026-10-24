@@ -1690,6 +1690,7 @@ dependencies = [
 name = "imagen"
 version = "0.2.6"
 dependencies = [
+ "block2",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
