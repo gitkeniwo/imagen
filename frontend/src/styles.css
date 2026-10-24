@@ -622,6 +622,7 @@ body.resizing-sidebar .side-panel {
 }
 .library-sticky .pager { margin-top: 0; padding: var(--space-1_5) var(--space-3) var(--space-2); }
 .library-source-seg { flex: 0 0 auto; }
+.library-toolbar[hidden] { display: none; }
 .library-toolbar .searchbox { flex: 1 1 140px; min-width: 120px; }
 .star-filter { flex: 0 0 auto; cursor: pointer; padding: var(--space-1) var(--space-3); }
 .star-filter.on { background: var(--warning); border-color: var(--warning); color: #fff; }
@@ -2375,7 +2376,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     border-radius: var(--radius-xl);
   }
   .phone-filter-row .seg button {
-    min-height: 34px;
+    min-height: 28px;
     min-width: 40px;
     padding: 0 var(--space-2);
     border-radius: 9px;
@@ -2399,6 +2400,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     border-color: var(--ui-accent-line);
   }
   .phone-filter-row .filter-label { display: none; }
+  .phone-filter-row .phone-search-toggle { margin-left: auto; }
 
   .phone-tagrow {
     display: flex;

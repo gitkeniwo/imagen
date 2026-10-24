@@ -63,6 +63,8 @@ export default function Library({
   const [images, setImages] = useState<ImageRow[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [source, setSource] = useState<string>("");
+  // Phone: the search field stays folded until asked for (or while a query is active).
+  const [searchOpen, setSearchOpen] = useState(false);
   const [tagFilter, setTagFilter] = useState<number | null>(null);
   const [starredOnly, setStarredOnly] = useState(false);
   const [query, setQuery] = useState("");
@@ -389,8 +391,9 @@ export default function Library({
       )}
 
       <div className="library-sticky">
-        <div className="library-toolbar">
+        <div className="library-toolbar" hidden={phone && !searchOpen && !query}>
           <SearchBox
+            autoFocus={phone && searchOpen && !query}
             value={query}
             onChange={(q) => {
               setQuery(q);
@@ -471,6 +474,22 @@ export default function Library({
           >
             <span className="filter-label">{t("filter_starred_only")}</span>
           </Button>
+          {phone && (
+            <Button
+              className={`skip-toggle phone-search-toggle${searchOpen || query ? " on" : ""}`}
+              icon="search"
+              title={t("search")}
+              aria-label={t("search")}
+              aria-pressed={searchOpen || !!query}
+              onClick={() => {
+                if (searchOpen || query) {
+                  setSearchOpen(false);
+                  setQuery("");
+                  setPage(0);
+                } else setSearchOpen(true);
+              }}
+            />
+          )}
         </div>
 
         {/* Tag filter bar (collection-style) */}
