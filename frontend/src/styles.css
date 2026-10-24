@@ -900,6 +900,9 @@ body.resizing-sidebar .side-panel {
   box-shadow: 0 24px 64px rgba(2, 6, 23, 0.45);
 }
 .viewer-window.panel-hidden { grid-template-columns: minmax(0, 1fr); }
+/* Desktop full screen: the black window fills the whole app window, edge to edge. */
+.viewer-overlay:has(.viewer-window.panel-hidden:not(.phone)) { padding: 0; background: #0b0f17; }
+.viewer-window.panel-hidden:not(.phone) { max-width: none; border-radius: 0; box-shadow: none; }
 .viewer-side[hidden], .viewer-nav[hidden] { display: none; }
 .viewer-stage {
   position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #0b0f17;
