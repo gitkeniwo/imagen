@@ -5,6 +5,9 @@
 mod backend;
 mod download;
 mod library;
+mod popover;
+mod quit;
+mod tray;
 mod ui_store;
 mod zoom;
 
@@ -15,6 +18,51 @@ use tauri::{
     AppHandle, Manager, RunEvent, Theme, TitleBarStyle, WebviewUrl, WebviewWindowBuilder,
     WindowEvent, Wry,
 };
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
+
+/// Bring Imagen to the front, as a regular app again. Every entry point shares
+/// this: ⌘D, the popover, the tray menu, Reopen, single-instance, and the
+/// "Remote access settings…" action.
+pub fn show_main(app: &AppHandle) {
+    // From Accessory the Dock icon and the app menu come back first; then the
+    // window is shown and focused. set_focus alone sometimes leaves the app
+    // inactive, so NSApplication::activate is called afterwards.
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(ActivationPolicy::Regular);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    #[cfg(target_os = "macos")]
+    activate_app();
+    popover::hide(app);
+}
+
+/// Monitor containing a point in *physical* pixels (the space tray rects and
+/// cursor positions use). `AppHandle::monitor_from_point` takes logical points,
+/// so it is not used here.
+pub fn monitor_at(app: &AppHandle, x: f64, y: f64) -> Option<tauri::Monitor> {
+    let monitors = app.available_monitors().ok()?;
+    monitors.into_iter().find(|monitor| {
+        let pos = monitor.position();
+        let size = monitor.size();
+        x >= pos.x as f64
+            && x < pos.x as f64 + size.width as f64
+            && y >= pos.y as f64
+            && y < pos.y as f64 + size.height as f64
+    })
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn activate_app() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+    if let Some(mtm) = MainThreadMarker::new() {
+        NSApplication::sharedApplication(mtm).activate();
+    }
+}
 
 /// The title bar is transparent, so it shows the window's background color.
 /// Match the frontend's page background (`--main-bg`) so the title row and
@@ -102,7 +150,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::show_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, None)?,
+            // Not PredefinedMenuItem::quit: that terminates directly and would
+            // skip the hold-to-quit guard.
+            &MenuItem::with_id(
+                app,
+                quit::QUIT_MENU_ID,
+                "退出 Imagen",
+                true,
+                Some("CmdOrCtrl+Q"),
+            )?,
         ],
     )?;
     let edit_menu = Submenu::with_items(
@@ -187,13 +243,7 @@ fn main() {
     // Tauri requires the single-instance plugin to be registered first.
     if !test_mode {
         builder = builder.plugin(tauri_plugin_single_instance::init(
-            |app, _argv, _cwd| {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            },
+            |app, _argv, _cwd| show_main(app),
         ));
     }
 
@@ -207,13 +257,50 @@ fn main() {
         // WKWebView, and Imagen adds the library-location command.
         .menu(build_menu)
         .on_menu_event(|app, event| {
+            if tray::handle_menu_event(app, &event) {
+                return;
+            }
+            if event.id() == quit::QUIT_MENU_ID {
+                quit::request(app, quit::menu_event_is_keyboard());
+                return;
+            }
             if !zoom::handle_menu_event(app, &event) {
                 library::handle_menu_event(app, event);
             }
         })
         .on_window_event(|window, event| match event {
-            WindowEvent::CloseRequested { .. } => window.app_handle().exit(0),
-            WindowEvent::ThemeChanged(theme) => {
+            // Closing the main window goes to the background: the WebView and
+            // the local queue keep running, the Dock icon goes away.
+            WindowEvent::CloseRequested { api, .. } => {
+                match window.label() {
+                    "main" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        popover::hide(window.app_handle());
+                        #[cfg(target_os = "macos")]
+                        let _ = window
+                            .app_handle()
+                            .set_activation_policy(ActivationPolicy::Accessory);
+                    }
+                    // The aux windows are created once and reused; a stray ⌘W
+                    // must hide them, never destroy them.
+                    "menubar" => {
+                        api.prevent_close();
+                        popover::hide(window.app_handle());
+                    }
+                    "quit-hud" => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    _ => {}
+                }
+            }
+            WindowEvent::Focused(false) => {
+                if window.label() == popover::LABEL {
+                    popover::hide(window.app_handle());
+                }
+            }
+            WindowEvent::ThemeChanged(theme) if window.label() == "main" => {
                 let _ = window.set_background_color(Some(title_bar_color(*theme)));
             }
             _ => {}
@@ -226,7 +313,22 @@ fn main() {
             return_to_current,
             list_recent_libraries,
             open_recent_library,
-            open_library_path
+            open_library_path,
+            popover::menubar_state,
+            popover::menubar_resize,
+            popover::menubar_close,
+            popover::menubar_open_main,
+            popover::menubar_open_settings,
+            popover::menubar_set_remote,
+            popover::menubar_require_code,
+            popover::menubar_copy,
+            popover::menubar_dismiss_no_code,
+            popover::menubar_restart_backend,
+            popover::menubar_show_logs,
+            popover::menubar_open_firewall,
+            popover::menubar_recheck,
+            popover::menubar_quit,
+            quit::quit_hud_state
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -278,11 +380,44 @@ fn main() {
                 })
                 .title_bar_style(TitleBarStyle::Transparent)
                 .hidden_title(true)
+                // A hidden window must keep timers (queue processor, progress
+                // polling) running, otherwise background mode would stall.
+                .background_throttling(
+                    tauri::utils::config::BackgroundThrottlingPolicy::Disabled,
+                )
                 .build()?;
             let theme = window.theme().unwrap_or(Theme::Light);
             let _ = window.set_background_color(Some(title_bar_color(theme)));
 
             zoom::install_plus_alias(&handle);
+
+            // Menubar popover and quit HUD are created hidden, so opening them
+            // is just show + focus (no white flash).
+            if let Err(err) = popover::create(&handle) {
+                backend::log_line(&handle, &format!("menubar window failed: {err}"));
+            }
+            if let Err(err) = quit::create(&handle) {
+                backend::log_line(&handle, &format!("quit-hud window failed: {err}"));
+            }
+            if let Err(err) = tray::init(&handle) {
+                backend::log_line(&handle, &format!("tray icon failed: {err}"));
+            }
+
+            // Debug-only hooks for verifying the popover/HUD without clicking
+            // the menu bar (the plan's manual checks).
+            #[cfg(debug_assertions)]
+            {
+                let dev = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    if std::env::var("IMAGEN_DEV_POPOVER").ok().as_deref() == Some("1") {
+                        tray::debug_show_popover(&dev);
+                    }
+                    if std::env::var("IMAGEN_DEV_HUD").ok().as_deref() == Some("1") {
+                        quit::debug_show_hud(&dev);
+                    }
+                });
+            }
 
             if has_library {
                 if let Err(e) = backend::spawn(&handle) {
@@ -304,9 +439,14 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to build the Imagen app");
 
-    app.run(|app_handle, event| {
-        if let RunEvent::Exit = event {
+    app.run(|app_handle, event| match event {
+        RunEvent::Exit => {
+            // Remove the icon before the process dies, so nothing lingers in
+            // the menu bar while the backend shuts down.
+            tray::destroy(app_handle);
             backend::shutdown(app_handle);
         }
+        RunEvent::Reopen { .. } => show_main(app_handle),
+        _ => {}
     });
 }

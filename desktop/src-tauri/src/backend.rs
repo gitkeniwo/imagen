@@ -281,6 +281,7 @@ pub fn spawn(app: &AppHandle) -> Result<u32, String> {
     state.healthy.store(false, Ordering::SeqCst);
     state.generation.fetch_add(1, Ordering::SeqCst);
 
+    crate::tray::refresh_now(app);
     log_line(
         app,
         &format!(
@@ -300,7 +301,18 @@ fn child_status(app: &AppHandle) -> Option<ExitStatus> {
     guard.as_mut().and_then(|c| c.try_wait().ok().flatten())
 }
 
-fn http_health(port: u16) -> Option<Value> {
+/// One minimal HTTP/1.1 JSON request against the loopback backend.
+///
+/// No client library on purpose: the shell only ever talks to its own child on
+/// 127.0.0.1, so a few lines over a raw TcpStream are enough. Returns the
+/// status code plus the parsed JSON body, or None when the socket or the body
+/// is not usable (backend down, timeout, non-JSON error page).
+pub fn http_json(
+    port: u16,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+) -> Option<(u16, Value)> {
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().ok()?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
     stream
@@ -309,18 +321,39 @@ fn http_health(port: u16) -> Option<Value> {
     stream
         .set_write_timeout(Some(Duration::from_secs(2)))
         .ok()?;
-    write!(
-        stream,
-        "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
-    )
-    .ok()?;
+    let payload = body.map(|value| value.to_string()).unwrap_or_default();
+    let mut request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n"
+    );
+    if body.is_some() {
+        let _ = write!(
+            request,
+            "Content-Type: application/json\r\nContent-Length: {}\r\n",
+            payload.len()
+        );
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes()).ok()?;
+    if !payload.is_empty() {
+        stream.write_all(payload.as_bytes()).ok()?;
+    }
     let mut raw = String::new();
     stream.read_to_string(&mut raw).ok()?;
-    if !raw.starts_with("HTTP/1.1 200") {
-        return None;
-    }
-    let body = raw.split_once("\r\n\r\n")?.1;
-    serde_json::from_str(body).ok()
+    let (head, rest) = raw.split_once("\r\n\r\n")?;
+    let status = head
+        .lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u16>()
+        .ok()?;
+    let value = serde_json::from_str(rest).ok()?;
+    Some((status, value))
+}
+
+fn http_health(port: u16) -> Option<Value> {
+    let (status, body) = http_json(port, "GET", "/api/health", None)?;
+    (status == 200).then_some(body)
 }
 
 pub fn navigate_to_app(app: &AppHandle) {
@@ -470,6 +503,7 @@ pub fn wait_until_healthy(app: AppHandle) {
                     library::record_recent(&app, path);
                 }
                 library::maybe_auto_change(&app);
+                crate::tray::refresh_now(&app);
                 spawn_monitor(app.clone());
                 return;
             }
@@ -625,11 +659,69 @@ fn stop_child(app: &AppHandle, expected: bool) {
     }
     *guard = None;
     state.healthy.store(false, Ordering::SeqCst);
+    crate::tray::refresh_now(app);
 }
 
 
 pub fn is_healthy(app: &AppHandle) -> bool {
     app.state::<BackendState>().healthy.load(Ordering::SeqCst)
+}
+
+/// Port the child listens on (loopback).
+pub fn port(app: &AppHandle) -> u16 {
+    app.state::<BackendState>()
+        .config
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .port
+}
+
+pub fn has_library(app: &AppHandle) -> bool {
+    app.state::<BackendState>()
+        .config
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .library
+        .is_some()
+}
+
+pub fn test_mode(app: &AppHandle) -> bool {
+    app.state::<BackendState>()
+        .config
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .test_mode
+}
+
+pub fn log_dir(app: &AppHandle) -> PathBuf {
+    app.state::<BackendState>()
+        .config
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .log_dir
+        .clone()
+}
+
+/// True while the child process still exists (it may not be healthy yet).
+pub fn child_running(app: &AppHandle) -> bool {
+    let state = app.state::<BackendState>();
+    let mut guard = state.child.lock().unwrap_or_else(|p| p.into_inner());
+    match guard.as_mut() {
+        Some(child) => matches!(child.try_wait(), Ok(None)),
+        None => false,
+    }
+}
+
+/// Shell view of the backend: `starting` (child up, health not yet confirmed),
+/// `healthy`, or `stopped` (exited / never started).
+pub fn shell_status(app: &AppHandle) -> &'static str {
+    if is_healthy(app) {
+        "healthy"
+    } else if child_running(app) {
+        "starting"
+    } else {
+        "stopped"
+    }
 }
 
 /// Gracefully stop the current child before a library change. The config is

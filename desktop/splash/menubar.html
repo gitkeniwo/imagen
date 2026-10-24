@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imagen</title>
+  <style>
+    /* Colours follow docs/design/menubar/MenuCombined.dc.html. The popover
+       window carries real vibrancy, so the pop fill is more transparent than
+       the design mock (which simulated blur without a real material). */
+    :root {
+      color-scheme: light dark;
+      --pop: rgba(246, 246, 248, 0.55);
+      --pop-border: rgba(0, 0, 0, 0.14);
+      --pop-hi: rgba(255, 255, 255, 0.7);
+      --text: #0b0f19;
+      --muted: #4b5464;
+      --line: rgba(0, 0, 0, 0.09);
+      --well: rgba(0, 0, 0, 0.05);
+      --chipbg: rgba(0, 0, 0, 0.06);
+      --hover: rgba(0, 0, 0, 0.06);
+      --tile: rgba(255, 255, 255, 0.3);
+      --tile-border: rgba(255, 255, 255, 0.55);
+      --tile-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.7), 0 0.5px 1px rgba(0, 0, 0, 0.06);
+      --accent: #4f46e5;
+      --accent-fg: #ffffff;
+      --ok: #16a34a;
+      --ok-text: #15803d;
+      --run-text: #1d4ed8;
+      --run-bg: rgba(37, 99, 235, 0.1);
+      --ring: #e9eaee;
+      --btn: rgba(255, 255, 255, 0.7);
+      --btn-border: rgba(0, 0, 0, 0.12);
+      --warn: #d97706;
+      --danger: #dc2626;
+      --link: #4338ca;
+      --note: rgba(15, 23, 42, 0.05);
+      --note-text: #334155;
+      --switch-off: #c7ccd4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --pop: rgba(10, 31, 30, 0.55);
+        --pop-border: rgba(160, 230, 220, 0.16);
+        --pop-hi: rgba(160, 230, 220, 0.12);
+        --text: #eef5f4;
+        --muted: #9fbab6;
+        --line: rgba(160, 230, 220, 0.1);
+        --well: rgba(160, 230, 220, 0.07);
+        --chipbg: rgba(160, 230, 220, 0.09);
+        --hover: rgba(160, 230, 220, 0.09);
+        --tile: rgba(160, 230, 220, 0.06);
+        --tile-border: rgba(160, 230, 220, 0.12);
+        --tile-shadow: inset 0 0.5px 0 rgba(160, 230, 220, 0.1);
+        --accent: #e8b931;
+        --accent-fg: #1a1405;
+        --ok: #4ade80;
+        --ok-text: #86efac;
+        --run-text: #f5c542;
+        --run-bg: rgba(232, 185, 49, 0.14);
+        --ring: #0f2524;
+        --btn: rgba(160, 230, 220, 0.1);
+        --btn-border: rgba(160, 230, 220, 0.1);
+        --warn: #f5a524;
+        --danger: #f87171;
+        --link: #f5c542;
+        --note: rgba(160, 230, 220, 0.07);
+        --note-text: #c9d9d6;
+        --switch-off: #3d5653;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; background: transparent; overflow: hidden;
+      overscroll-behavior: none; height: 100%;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      font-size: 13px; color: var(--text); cursor: default;
+      -webkit-user-select: none; user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; color: inherit; cursor: default; }
+    .pop {
+      width: 100%; overflow: hidden;
+      border-radius: 12px;
+      background: var(--pop);
+      border: 0.5px solid var(--pop-border);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32), inset 0 0.5px 0 var(--pop-hi);
+    }
+    .head { display: flex; align-items: center; gap: 12px; padding: 14px 14px 12px; }
+    .chip {
+      width: 32px; height: 32px; border-radius: 8px; background: var(--chipbg);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .head-text { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
+    .head-title { font-size: 14px; font-weight: 600; }
+    .sub {
+      display: flex; align-items: center; gap: 6px; color: var(--muted);
+      font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--ok); }
+    .dot.warn { background: var(--warn); }
+    .dot.danger { background: var(--danger); }
+    .switch {
+      width: 38px; height: 22px; border-radius: 999px; border: none; padding: 0;
+      background: var(--switch-off); position: relative; flex-shrink: 0;
+      transition: background 120ms linear;
+    }
+    .switch.on { background: var(--accent); }
+    .switch .knob {
+      position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+      border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+      transition: transform 120ms ease;
+    }
+    .switch.on .knob { transform: translateX(16px); }
+    .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0 12px 12px; }
+    .tile {
+      background: var(--tile); border: 0.5px solid var(--tile-border);
+      box-shadow: var(--tile-shadow); border-radius: 8px; padding: 6px 9px;
+      display: flex; align-items: baseline; gap: 5px;
+    }
+    .tile .n { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tile .n.ok { color: var(--ok-text); }
+    .tile .n.run { color: var(--run-text); }
+    .tile .l { font-size: 11.5px; color: var(--muted); }
+
+    .sec { border-top: 0.5px solid var(--line); }
+    .sec-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 8px 14px 4px;
+    }
+    .label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
+    .hint { font-size: 11px; color: var(--muted); }
+    .rows { padding: 0 5px 6px; display: flex; flex-direction: column; }
+    .row {
+      display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 9px;
+      border: none; border-radius: 6px; background: transparent; text-align: left;
+      color: var(--text); font-size: 13px; width: 100%;
+    }
+    .row:hover { background: var(--hover); }
+    .row.hot { background: var(--hover); }
+    .row .grow { flex-grow: 1; min-width: 0; }
+    .mono {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      -webkit-user-select: text; user-select: text;
+    }
+    .row .mono.minor { font-size: 12px; color: var(--muted); }
+    .row .kbd { color: var(--muted); flex-shrink: 0; }
+    .row svg { flex-shrink: 0; color: var(--muted); }
+    .row:focus-visible, .row:hover { outline: none; }
+    .row:focus-visible { background: var(--accent); color: var(--accent-fg); }
+    .row:focus-visible .kbd, .row:focus-visible .mono, .row:focus-visible svg,
+    .row:focus-visible .grow { color: inherit; }
+
+    .well {
+      display: flex; align-items: center; gap: 8px; height: 32px;
+      background: var(--well); border-radius: 7px; padding: 0 4px 0 10px;
+      margin: 0 12px;
+    }
+    .code-label { font-size: 12px; color: var(--muted); }
+    .code {
+      font-size: 13px; letter-spacing: 0.28em; flex-grow: 1; padding-left: 4px;
+      -webkit-user-select: text; user-select: text;
+    }
+    .plain-btn {
+      height: 24px; padding: 0 8px; border: none; background: transparent;
+      color: var(--text); font-size: 12px; font-weight: 500; border-radius: 5px;
+    }
+    .plain-btn:hover { background: var(--hover); }
+    .plain-btn:focus-visible { outline: none; background: var(--accent); color: var(--accent-fg); }
+    .btn {
+      display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px;
+      border-radius: 5px; border: 0.5px solid var(--btn-border);
+      background: var(--btn); color: var(--text); font-size: 12px;
+    }
+    .btn.small { height: 26px; padding: 0 12px; }
+    .btn:hover { filter: brightness(0.97); }
+    .btn.accent { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 500; }
+    .btn:focus-visible { outline: none; background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+    .code-sec { padding: 8px 0; }
+
+    .devices { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+    .devices .sec-head { padding: 0; }
+    .dev { display: flex; align-items: center; gap: 10px; }
+    .dev-ic {
+      width: 30px; height: 30px; border-radius: 7px; background: var(--chipbg);
+      display: flex; align-items: center; justify-content: center; position: relative;
+      flex-shrink: 0;
+    }
+    .dev-ic .live {
+      position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px;
+      border-radius: 50%; background: var(--ok); border: 2px solid var(--ring);
+    }
+    .dev-text { display: flex; flex-direction: column; gap: 1px; flex-grow: 1; min-width: 0; }
+    .dev-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dev-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pill {
+      font-size: 11.5px; font-weight: 600; color: var(--run-text); background: var(--run-bg);
+      border-radius: 999px; padding: 3px 9px; white-space: nowrap; flex-shrink: 0;
+    }
+    .small { font-size: 12px; }
+    .muted { color: var(--muted); }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 2px; }
+    .chip-pill {
+      display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted);
+      background: var(--well); border-radius: 999px; padding: 3px 9px;
+      border: none;
+    }
+    button.chip-pill:hover { background: var(--hover); }
+    button.chip-pill:focus-visible { outline: none; background: var(--accent); color: var(--accent-fg); }
+
+    .note {
+      margin: 0 12px 12px; padding: 10px 12px; border-radius: 8px; background: var(--note);
+      display: flex; gap: 9px; font-size: 12px; line-height: 1.45; color: var(--note-text);
+    }
+    .note .note-ic { flex-shrink: 0; margin-top: 1px; }
+    .note .warn { color: var(--warn); }
+    .note .danger { color: var(--danger); }
+    .note strong { color: var(--text); font-weight: 600; }
+    .note .link {
+      border: none; background: transparent; padding: 0; color: var(--link);
+      font-size: 12px; text-decoration: underline;
+    }
+    .note .link:focus-visible { outline: none; background: var(--accent); color: var(--accent-fg); }
+    .note .x {
+      flex-shrink: 0; width: 20px; height: 20px; margin: -2px -4px 0 0;
+      border: none; border-radius: 5px; background: transparent; color: var(--muted);
+      display: flex; align-items: center; justify-content: center; padding: 0;
+    }
+    .note .x:hover { background: var(--hover); }
+    .note .x:focus-visible { outline: none; background: var(--accent); color: var(--accent-fg); }
+    .note-actions { display: flex; gap: 6px; margin-top: 2px; }
+
+    .foot { border-top: 0.5px solid var(--line); padding: 5px; display: flex; flex-direction: column; }
+    .foot .row { height: 26px; padding: 0 10px; font-size: 13px; }
+    .foot .row:hover { background: var(--accent); color: var(--accent-fg); }
+    .foot .row:hover .kbd, .foot .row:hover .grow { color: inherit; }
+    .foot .sep { height: 0.5px; background: var(--line); margin: 4px 10px; }
+    .foot .row .kbd { margin-left: 8px; }
+
+    .off-body { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 8px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+    .fact { display: flex; align-items: center; gap: 7px; }
+
+    .stopped { display: flex; align-items: flex-start; gap: 12px; padding: 16px; }
+    .stopped .stop-ic { width: 22px; height: 22px; color: var(--danger); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+    .stopped .stop-text { display: flex; flex-direction: column; gap: 3px; flex-grow: 1; }
+    .stopped .sub { color: var(--muted); font-size: 12px; white-space: normal; }
+    .stop-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .empty-body { padding: 4px 16px 16px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <main id="pop" class="pop" role="dialog" aria-label="Imagen"></main>
+  <script>
+    (function () {
+      "use strict";
+
+      var D_GLYPH = "M1 2h14v1h-14zM0 3h1v1h-1zM15 3h1v1h-1zM0 4h1v1h-1zM12 4h1v1h-1zM15 4h1v1h-1zM0 5h1v1h-1zM11 5h2v1h-2zM15 5h1v1h-1zM0 6h1v1h-1zM11 6h3v1h-3zM15 6h1v1h-1zM0 7h1v1h-1zM10 7h4v1h-4zM15 7h1v1h-1zM0 8h1v1h-1zM9 8h5v1h-5zM15 8h1v1h-1zM0 9h1v1h-1zM3 9h1v1h-1zM8 9h5v1h-5zM15 9h1v1h-1zM0 10h1v1h-1zM3 10h2v1h-2zM7 10h6v1h-6zM15 10h1v1h-1zM0 11h1v1h-1zM4 11h8v1h-8zM15 11h1v1h-1zM0 12h1v1h-1zM5 12h6v1h-6zM15 12h1v1h-1zM0 13h1v1h-1zM6 13h3v1h-3zM15 13h1v1h-1zM1 14h14v1h-14z";
+
+      var ICONS = {
+        globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+        lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        unlock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+        warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+        shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+        moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+        power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+        x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+        copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+        tablet: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/>',
+        phone: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 18h.01"/>',
+        laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+        check: '<path d="M20 6 9 17l-5-5"/>'
+      };
+
+      var S = {
+        zh: {
+          remote: "远程访问",
+          subOn: "正在监听端口 {port} · 已启用访问码",
+          subNoCode: "正在监听端口 {port} · 未启用访问码",
+          subOff: "已关闭 · 其他设备无法连接",
+          subBlocked: "已开启，但设备无法连接到这台 Mac",
+          starting: "正在启动…",
+          active: "活跃",
+          signedIn: "已登录",
+          running: "运行中",
+          openOnIpad: "在 iPad 上打开",
+          clickToCopy: "点击复制",
+          copied: "已复制",
+          accessCode: "访问码",
+          show: "显示",
+          hide: "隐藏",
+          copy: "复制",
+          devices: "设备",
+          devicesCount: "{active} 台活跃 · {total} 台已登录",
+          noDevices: "还没有设备登录。",
+          seenNow: "刚刚",
+          seenMin: "{n} 分钟前",
+          seenH: "{n} 小时前",
+          seenD: "{n} 天前",
+          generatingN: "{n} 个生成中",
+          awakeNow: "正在保持 Mac 唤醒",
+          awakeIdle: "有设备活跃时保持唤醒",
+          fwOk: "防火墙未拦截",
+          openImagen: "打开 Imagen",
+          settings: "远程访问设置…",
+          quit: "退出 Imagen",
+          offBlurb: "打开后，同一 Wi-Fi 下的 iPad 或手机可以在 Safari 里使用这个图库。生成仍然在这台 Mac 上运行。",
+          offFact: "默认需要 5 位访问码",
+          noCodeBold: "没有访问码。",
+          noCodeBody: "这个网络里的任何人都能打开你的图库、删除图片、花掉你的 Vertex 额度。",
+          requireCode: "需要访问码",
+          dismiss: "关闭提示",
+          fwBold: "macOS 防火墙拦截了所有传入连接。",
+          fwBody: "请在 系统设置 › 网络 › 防火墙 中关闭「阻止所有传入连接」，然后回来。",
+          openFw: "打开防火墙设置",
+          recheck: "再次检查",
+          noNetwork: "没有找到可用的局域网地址。请把这台 Mac 连上 Wi-Fi 或网线。",
+          reasonOther: "远程监听出错：{reason}",
+          stoppedTitle: "Imagen 未在运行",
+          stoppedBody: "后端已于 {time} 退出。远程设备无法连接。",
+          restart: "重新启动",
+          showLogs: "显示日志",
+          noLibTitle: "没有打开图库",
+          noLibBody: "选择图库后，Imagen 会在后台运行，远程访问和菜单栏状态恢复。",
+          tooMany: "访问码错误次数过多，远程访问已自动关闭。重新打开前建议先换一个新访问码。",
+          anon: "本网络正在使用",
+          moreDevices: "还有 {n} 台…"
+        },
+        en: {
+          remote: "Remote access",
+          subOn: "Listening on {port} · access code on",
+          subNoCode: "Listening on {port} · no access code",
+          subOff: "Off · other devices can’t connect",
+          subBlocked: "On, but devices can’t reach this Mac",
+          starting: "Starting…",
+          active: "active",
+          signedIn: "signed in",
+          running: "running",
+          openOnIpad: "OPEN ON YOUR IPAD",
+          clickToCopy: "click to copy",
+          copied: "Copied",
+          accessCode: "Access code",
+          show: "Show",
+          hide: "Hide",
+          copy: "Copy",
+          devices: "DEVICES",
+          devicesCount: "{active} active · {total} signed in",
+          noDevices: "No devices signed in yet.",
+          seenNow: "Now",
+          seenMin: "{n} min ago",
+          seenH: "{n} h ago",
+          seenD: "{n} d ago",
+          generatingN: "Generating {n}",
+          awakeNow: "Keeping Mac awake",
+          awakeIdle: "Stays awake while a device is active",
+          fwOk: "Firewall not blocking",
+          openImagen: "Open Imagen",
+          settings: "Remote access settings…",
+          quit: "Quit Imagen",
+          offBlurb: "Turn on to use this library from an iPad or phone on the same Wi-Fi. Generations keep running on this Mac.",
+          offFact: "A 5-digit access code is required by default",
+          noCodeBold: "No access code.",
+          noCodeBody: "Anyone on this network can open your library, delete images and spend Vertex credits.",
+          requireCode: "Require a code",
+          dismiss: "Dismiss",
+          fwBold: "macOS Firewall blocks all incoming connections.",
+          fwBody: "Turn that off in System Settings › Network › Firewall, then come back.",
+          openFw: "Open Firewall settings",
+          recheck: "Check again",
+          noNetwork: "No local network address found. Connect this Mac to Wi-Fi or Ethernet.",
+          reasonOther: "Remote listener error: {reason}",
+          stoppedTitle: "Imagen isn’t running",
+          stoppedBody: "The backend exited at {time}. Remote devices can’t connect.",
+          restart: "Restart",
+          showLogs: "Show logs",
+          noLibTitle: "No library open",
+          noLibBody: "Pick a library and Imagen runs in the background again, remote access included.",
+          tooMany: "Remote access was turned off after too many wrong codes. Consider a new code before turning it back on.",
+          anon: "Active on this network",
+          moreDevices: "+{n} more"
+        }
+      };
+
+      var state = null;
+      var showCode = false;
+      var copiedWhat = "";
+      var copiedAt = 0;
+      var lastHeight = 0;
+      var pop = document.getElementById("pop");
+
+      function invoke(cmd, args) {
+        var internals = window.__TAURI_INTERNALS__;
+        if (!internals || typeof internals.invoke !== "function") {
+          return Promise.reject(new Error("no ipc"));
+        }
+        return internals.invoke(cmd, args || {});
+      }
+
+      function lang() {
+        var want = state && state.lang;
+        if (want === "zh" || want === "en") return want;
+        return (navigator.language || "en").toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+      }
+
+      function t(key, vars) {
+        var table = S[lang()] || S.en;
+        var text = table[key] || S.en[key] || key;
+        if (vars) {
+          Object.keys(vars).forEach(function (k) {
+            text = text.split("{" + k + "}").join(String(vars[k]));
+          });
+        }
+        return text;
+      }
+
+      function esc(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+
+      function svg(name, size, cls) {
+        return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size +
+          '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+          'stroke-linejoin="round" aria-hidden="true"' + (cls ? ' class="' + cls + '"' : "") +
+          ">" + ICONS[name] + "</svg>";
+      }
+
+      function glyph(size) {
+        return '<svg viewBox="0 0 16 16" width="' + size + '" height="' + size +
+          '" shape-rendering="crispEdges" aria-hidden="true"><path d="' + D_GLYPH +
+          '" fill="currentColor"/></svg>';
+      }
+
+      function num(value) {
+        var n = Number(value);
+        return isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      }
+
+      function addrUrl(ip, port) {
+        return "http://" + ip + ":" + port;
+      }
+
+      function mainAddress(st) {
+        var list = st.addresses || [];
+        var pick = function (kind) {
+          for (var i = 0; i < list.length; i++) if (list[i].kind === kind) return list[i];
+          return null;
+        };
+        return pick("wifi") || pick("ethernet") || pick("tailscale") || list[0] || null;
+      }
+
+      function deviceIcon(name) {
+        var n = String(name || "").toLowerCase();
+        if (/ipad|tablet/.test(n)) return "tablet";
+        if (/iphone|phone/.test(n)) return "phone";
+        return "laptop";
+      }
+
+      function seenLabel(ts) {
+        var s = Math.max(0, Date.now() / 1000 - Number(ts || 0));
+        if (s < 60) return t("seenNow");
+        if (s < 3600) return t("seenMin", { n: Math.floor(s / 60) });
+        if (s < 86400) return t("seenH", { n: Math.floor(s / 3600) });
+        return t("seenD", { n: Math.floor(s / 86400) });
+      }
+
+      function clockTime(unixSeconds) {
+        var d = unixSeconds ? new Date(unixSeconds * 1000) : new Date();
+        var hh = String(d.getHours()).padStart(2, "0");
+        var mm = String(d.getMinutes()).padStart(2, "0");
+        return hh + ":" + mm;
+      }
+
+      // --- blocks -----------------------------------------------------------
+
+      function header(opts) {
+        var dot = opts.dot ? '<span class="dot ' + esc(opts.dot) + '"></span>' : "";
+        var sw = opts.switch === null || opts.switch === undefined ? "" :
+          '<button type="button" role="switch" class="switch' + (opts.switch ? " on" : "") +
+          '" aria-checked="' + (opts.switch ? "true" : "false") + '" aria-label="' +
+          esc(t("remote")) + '" data-action="toggle-remote"><span class="knob"></span></button>';
+        return '<div class="head"><span class="chip">' + glyph(18) + "</span>" +
+          '<div class="head-text"><span class="head-title">' + esc(t("remote")) + "</span>" +
+          '<span class="sub">' + dot + esc(opts.status) + "</span></div>" + sw + "</div>";
+      }
+
+      function tiles(st) {
+        var devices = st.devices || [];
+        var active = 0;
+        for (var i = 0; i < devices.length; i++) if (devices[i].active) active++;
+        if (st.anon_active) active++;
+        var a = state.activity || {};
+        var running = num(a.generating);
+        return '<div class="tiles">' +
+          '<div class="tile"><span class="n ok">' + active + '</span><span class="l">' + esc(t("active")) + "</span></div>" +
+          '<div class="tile"><span class="n">' + devices.length + '</span><span class="l">' + esc(t("signedIn")) + "</span></div>" +
+          '<div class="tile"><span class="n run">' + running + '</span><span class="l">' + esc(t("running")) + "</span></div>" +
+          "</div>";
+      }
+
+      function rowsOpen() {
+        return '<div class="rows">';
+      }
+
+      function row(opts) {
+        return '<button type="button" class="row" data-action="' + esc(opts.action) +
+          '"' + (opts.label ? ' aria-label="' + esc(opts.label) + '"' : "") + ">" +
+          (opts.icon || "") + '<span class="grow">' + opts.inner + "</span>" +
+          (opts.trailing || "") + "</button>";
+      }
+
+      function addressSection(st) {
+        var main = mainAddress(st);
+        if (!main) return "";
+        var url = addrUrl(main.ip, st.port);
+        var local = st.local_name ? addrUrl(st.local_name, st.port) : null;
+        var copied = copiedWhat === "address" && Date.now() - copiedAt < 1200;
+        var html = '<div class="sec"><div class="sec-head"><span class="label">' +
+          esc(t("openOnIpad")) + '</span><span class="hint">' + esc(t("clickToCopy")) +
+          "</span></div>" + rowsOpen();
+        html += row({
+          action: "copy-address",
+          label: "Copy " + url,
+          icon: svg("globe", 14),
+          inner: '<span class="mono">' + esc(url) + "</span>",
+          trailing: '<span class="kbd">' + (copied ? esc(t("copied")) : "⌘C") + "</span>"
+        });
+        if (local) {
+          var copiedLocal = copiedWhat === "local" && Date.now() - copiedAt < 1200;
+          html += row({
+            action: "copy-local",
+            label: "Copy " + local,
+            icon: svg("globe", 14),
+            inner: '<span class="mono minor">' + esc(local) + "</span>",
+            trailing: copiedLocal ? '<span class="kbd">' + esc(t("copied")) + "</span>" : ""
+          });
+        }
+        return html + "</div></div>";
+      }
+
+      function codeRow(st) {
+        var masked = "●●●●●";
+        return '<div class="sec code-sec"><div class="well">' + svg("lock", 13) +
+          '<span class="code-label">' + esc(t("accessCode")) + "</span>" +
+          '<span class="code" aria-label="' + (showCode ? "" : esc(t("accessCode"))) + '">' +
+          esc(showCode ? st.code : masked) + "</span>" +
+          '<button type="button" class="plain-btn" data-action="show-code">' +
+          esc(showCode ? t("hide") : t("show")) + "</button>" +
+          '<button type="button" class="btn" data-action="copy-code">' + svg("copy", 12) +
+          esc(t("copy")) + "</button></div></div>";
+      }
+
+      function devicesSection(st) {
+        var devices = (st.devices || []).slice().sort(function (a, b) {
+          return (b.last_seen || 0) - (a.last_seen || 0);
+        });
+        var active = 0;
+        for (var i = 0; i < devices.length; i++) if (devices[i].active) active++;
+        if (st.anon_active) active++;
+        var shown = devices.slice(0, 3);
+        var html = '<div class="sec devices"><div class="sec-head"><span class="label">' +
+          esc(t("devices")) + '</span><span class="hint">' +
+          esc(t("devicesCount", { active: active, total: devices.length })) +
+          "</span></div>";
+
+        if (devices.length === 0 && !st.anon_active) {
+          html += '<span class="muted small">' + esc(t("noDevices")) + "</span>";
+        }
+        if (st.anon_active) {
+          html += '<div class="dev"><span class="dev-ic">' + svg("globe", 15) +
+            '</span><div class="dev-text"><span class="dev-name">' + esc(t("anon")) +
+            "</span></div>" + (num(st.anon_running) > 0 ?
+              '<span class="pill">' + esc(t("generatingN", { n: num(st.anon_running) })) + "</span>" : "") +
+            "</div>";
+        }
+        shown.forEach(function (d) {
+          var sub = (d.active ? t("seenNow") : seenLabel(d.last_seen)) +
+            (d.ip ? " · " + d.ip : "");
+          html += '<div class="dev"><span class="dev-ic">' +
+            svg(deviceIcon(d.name), 15) + (d.active ? '<span class="live"></span>' : "") +
+            '</span><div class="dev-text"><span class="dev-name">' + esc(d.name) +
+            '</span><span class="dev-sub">' + esc(sub) + "</span></div>" +
+            (num(d.running) > 0 ?
+              '<span class="pill">' + esc(t("generatingN", { n: num(d.running) })) + "</span>" : "") +
+            "</div>";
+        });
+        if (devices.length > 3) {
+          html += '<button type="button" class="row" data-action="open-settings"><span class="grow muted">' +
+            esc(t("moreDevices", { n: devices.length - 3 })) + "</span></button>";
+        }
+        var chips = "";
+        if (st.keep_awake) {
+          chips += '<span class="chip-pill">' + svg("moon", 12) +
+            esc(st.awake_now ? t("awakeNow") : t("awakeIdle")) + "</span>";
+        }
+        if (st.firewall === "ok") {
+          chips += '<span class="chip-pill">' + svg("shield", 12) + esc(t("fwOk")) + "</span>";
+        }
+        if (chips) html += '<div class="chips">' + chips + "</div>";
+        return html + "</div>";
+      }
+
+      function footer(extraSettings) {
+        var items = [
+          { action: "open-main", label: t("openImagen"), kbd: "⌘D" }
+        ];
+        if (extraSettings) items.push({ action: "open-settings", label: t("settings"), kbd: "⌘," });
+        items.push({ separator: true });
+        items.push({ action: "quit", label: t("quit"), kbd: "⌘Q" });
+        var html = '<div class="foot">';
+        items.forEach(function (item) {
+          if (item.separator) {
+            html += '<span class="sep"></span>';
+            return;
+          }
+          html += '<button type="button" class="row" data-action="' + esc(item.action) + '">' +
+            '<span class="grow">' + esc(item.label) + '</span><span class="kbd">' +
+            esc(item.kbd) + "</span></button>";
+        });
+        return html + "</div>";
+      }
+
+      function noCodeNote() {
+        return '<div class="note">' + svg("unlock", 14, "note-ic warn") +
+          "<span><strong>" + esc(t("noCodeBold")) + "</strong> " + esc(t("noCodeBody")) +
+          ' <button type="button" class="link" data-action="require-code">' +
+          esc(t("requireCode")) + "</button></span>" +
+          '<button type="button" class="x" data-action="dismiss-no-code" aria-label="' +
+          esc(t("dismiss")) + '">' + svg("x", 12) + "</button></div>";
+      }
+
+      // --- states -----------------------------------------------------------
+
+      function renderMain(st) {
+        var noCode = st.state === "no_code";
+        var port = st.port == null ? "" : st.port;
+        var html = header({
+          status: noCode ? t("subNoCode", { port: port }) : t("subOn", { port: port }),
+          dot: noCode ? "warn" : "ok",
+          switch: true
+        });
+        if (noCode && !state.no_code_dismissed) html += noCodeNote();
+        html += tiles(st);
+        html += addressSection(st);
+        if (st.require_code && st.code) html += codeRow(st);
+        html += devicesSection(st);
+        html += footer(true);
+        return html;
+      }
+
+      function renderOff(st) {
+        var blurb = st.reason === "too_many_attempts" ? t("tooMany") : t("offBlurb");
+        return header({ status: t("subOff"), switch: false }) +
+          '<div class="off-body"><span>' + esc(blurb) + '</span><span class="fact">' +
+          svg("lock", 13) + esc(t("offFact")) + "</span></div>" + footer(false);
+      }
+
+      function renderBlocked(st) {
+        var note;
+        if (st.reason === "firewall") {
+          note = '<div class="note">' + svg("shield", 14, "note-ic danger") +
+            "<span><strong>" + esc(t("fwBold")) + "</strong> " + esc(t("fwBody")) + "</span></div>" +
+            '<div style="padding:0 12px 12px;display:flex;gap:6px">' +
+            '<button type="button" class="btn small accent" data-action="open-firewall">' +
+            esc(t("openFw")) + "</button>" +
+            '<button type="button" class="btn small" data-action="recheck">' + esc(t("recheck")) +
+            "</button></div>";
+        } else {
+          var body = st.reason === "no_network"
+            ? esc(t("noNetwork"))
+            : esc(t("reasonOther", { reason: st.reason || "" }));
+          note = '<div class="note">' + svg("warning", 14, "note-ic danger") +
+            "<span>" + body + "</span></div>";
+        }
+        return header({ status: t("subBlocked"), dot: "danger", switch: true }) + note +
+          footer(true);
+      }
+
+      function renderStopped() {
+        return '<div class="stopped"><span class="stop-ic">' + svg("power", 18) + "</span>" +
+          '<div class="stop-text"><span class="head-title">' + esc(t("stoppedTitle")) +
+          '</span><span class="sub">' + esc(t("stoppedBody", { time: clockTime(state.stopped_at) })) +
+          '</span><div class="stop-actions">' +
+          '<button type="button" class="btn small accent" data-action="restart">' +
+          esc(t("restart")) + "</button>" +
+          '<button type="button" class="btn small" data-action="show-logs">' +
+          esc(t("showLogs")) + "</button></div></div></div>" + footer(false);
+      }
+
+      function renderNoLibrary() {
+        return '<div class="head"><span class="chip">' + glyph(18) + "</span>" +
+          '<div class="head-text"><span class="head-title">' + esc(t("noLibTitle")) +
+          "</span></div></div>" +
+          '<div class="empty-body">' + esc(t("noLibBody")) + "</div>" + footer(false);
+      }
+
+      function renderStarting() {
+        // Only the title row while the backend comes up.
+        return header({ status: t("starting"), switch: null });
+      }
+
+      function render() {
+        if (!state) return;
+        var st = state.status || {};
+        var html;
+        if (!state.has_library) {
+          html = renderNoLibrary();
+        } else if (state.backend === "stopped") {
+          html = renderStopped();
+        } else if (state.backend !== "healthy" || !state.status) {
+          html = renderStarting();
+        } else if (st.state === "blocked") {
+          html = renderBlocked(st);
+        } else if (st.state === "off") {
+          html = renderOff(st);
+        } else {
+          html = renderMain(st);
+        }
+        pop.innerHTML = html;
+        pop.setAttribute("aria-label", t("remote"));
+        scheduleResize();
+      }
+
+      function scheduleResize() {
+        window.requestAnimationFrame(function () {
+          var height = Math.ceil(pop.getBoundingClientRect().height);
+          if (!height || Math.abs(height - lastHeight) < 1) return;
+          lastHeight = height;
+          invoke("menubar_resize", { height: height }).catch(function () {});
+        });
+      }
+
+      // --- actions ----------------------------------------------------------
+
+      function copy(what) {
+        invoke("menubar_copy", { what: what }).then(function () {
+          copiedWhat = what;
+          copiedAt = Date.now();
+          render();
+          window.setTimeout(function () {
+            copiedWhat = "";
+            render();
+          }, 1300);
+        }).catch(function () {});
+      }
+
+      pop.addEventListener("click", function (event) {
+        var button = event.target.closest("button[data-action]");
+        if (!button) return;
+        var action = button.getAttribute("data-action");
+        var st = (state && state.status) || {};
+        switch (action) {
+          case "toggle-remote":
+            invoke("menubar_set_remote", { enabled: st.state === "off" }).catch(function () {});
+            break;
+          case "copy-address":
+            copy("address");
+            break;
+          case "copy-local":
+            copy("local");
+            break;
+          case "copy-code":
+            copy("code");
+            break;
+          case "show-code":
+            showCode = !showCode;
+            render();
+            break;
+          case "require-code":
+            invoke("menubar_require_code").catch(function () {});
+            break;
+          case "dismiss-no-code":
+            if (state) state.no_code_dismissed = true;
+            invoke("menubar_dismiss_no_code").catch(function () {});
+            render();
+            break;
+          case "open-main":
+            invoke("menubar_open_main").catch(function () {});
+            break;
+          case "open-settings":
+            invoke("menubar_open_settings").catch(function () {});
+            break;
+          case "quit":
+            invoke("menubar_quit").catch(function () {});
+            break;
+          case "restart":
+            invoke("menubar_restart_backend").catch(function () {});
+            break;
+          case "show-logs":
+            invoke("menubar_show_logs").catch(function () {});
+            break;
+          case "open-firewall":
+            invoke("menubar_open_firewall").catch(function () {});
+            break;
+          case "recheck":
+            invoke("menubar_recheck").catch(function () {});
+            break;
+          default:
+            break;
+        }
+      });
+
+      function rows() {
+        return Array.prototype.slice.call(pop.querySelectorAll("button[data-action]"));
+      }
+
+      document.addEventListener("keydown", function (event) {
+        var mod = event.metaKey;
+        var key = String(event.key || "").toLowerCase();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          invoke("menubar_close").catch(function () {});
+          return;
+        }
+        if (mod && key === "d") {
+          event.preventDefault();
+          invoke("menubar_open_main").catch(function () {});
+          return;
+        }
+        if (mod && key === ",") {
+          event.preventDefault();
+          invoke("menubar_open_settings").catch(function () {});
+          return;
+        }
+        if (mod && key === "q") {
+          event.preventDefault();
+          invoke("menubar_quit").catch(function () {});
+          return;
+        }
+        if (mod && key === "c") {
+          var selection = window.getSelection ? String(window.getSelection()) : "";
+          if (!selection) {
+            event.preventDefault();
+            copy("address");
+          }
+          return;
+        }
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          var list = rows();
+          if (!list.length) return;
+          event.preventDefault();
+          var index = list.indexOf(document.activeElement);
+          var next = event.key === "ArrowDown" ? index + 1 : index - 1;
+          if (index === -1) next = 0;
+          next = Math.max(0, Math.min(list.length - 1, next));
+          list[next].focus();
+          return;
+        }
+      });
+
+      window.addEventListener("contextmenu", function (event) {
+        event.preventDefault();
+      });
+
+      window.addEventListener("blur", function () {
+        showCode = false;
+      });
+
+      window.addEventListener("focus", function () {
+        // The popover is shown again: the masked code starts hidden.
+        showCode = false;
+        invoke("menubar_state").then(function (snapshot) {
+          state = snapshot;
+          render();
+        }).catch(function () {});
+      });
+
+      // The shell pushes a fresh snapshot while the popover is open.
+      try {
+        window.__TAURI__.event.listen("menubar://state", function (event) {
+          state = event.payload;
+          render();
+        });
+      } catch (e) {
+        /* no event API: the pull below still works */
+      }
+
+      invoke("menubar_state").then(function (snapshot) {
+        state = snapshot;
+        render();
+      }).catch(function () {});
+
+      if (window.ResizeObserver) {
+        new ResizeObserver(scheduleResize).observe(pop);
+      }
+    })();
+  </script>
+</body>
+</html>
