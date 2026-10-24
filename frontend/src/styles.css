@@ -2343,12 +2343,15 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     margin: 0 0 var(--space-2);
     padding: 0;
     background: var(--sidebar-bg);
+    /* Fills the gap under the head so tiles never show through it. */
+    box-shadow: 0 var(--space-2) 0 var(--sidebar-bg);
   }
   :is(.phone-island, .phone-picker) .library-sticky {
     top: 44px;
     margin: 0 0 var(--space-2);
     background: var(--sidebar-bg);
   }
+  .phone-island .library-sticky { top: calc(44px + var(--space-2)); }
   :is(.phone-island, .phone-picker) .library-toolbar { padding: 0 0 var(--space-2); }
   :is(.phone-island, .phone-picker) .library-toolbar .searchbox {
     flex: 1 1 100%;
