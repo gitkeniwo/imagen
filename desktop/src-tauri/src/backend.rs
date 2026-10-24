@@ -313,11 +313,21 @@ pub fn http_json(
     path: &str,
     body: Option<&Value>,
 ) -> Option<(u16, Value)> {
+    http_json_timeout(port, method, path, body, Duration::from_secs(2))
+}
+
+/// Same request with an explicit read timeout, for the long-poll (the backend
+/// holds the response open until something changes).
+pub fn http_json_timeout(
+    port: u16,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+    read_timeout: Duration,
+) -> Option<(u16, Value)> {
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().ok()?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .ok()?;
+    stream.set_read_timeout(Some(read_timeout)).ok()?;
     stream
         .set_write_timeout(Some(Duration::from_secs(2)))
         .ok()?;

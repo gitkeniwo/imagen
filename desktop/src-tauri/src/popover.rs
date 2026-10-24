@@ -381,7 +381,13 @@ pub fn menubar_open_firewall(app: AppHandle) {
 
 #[tauri::command]
 pub fn menubar_recheck(app: AppHandle) {
-    tray::refresh_now(&app);
+    // "Check again": bypass the cached network/firewall reads, then wake the
+    // long-poll so the fresh status appears at once.
+    thread::spawn(move || {
+        let port = backend::port(&app);
+        let _ = backend::http_json(port, "GET", "/api/remote/status?recheck=1", None);
+        tray::refresh_now(&app);
+    });
 }
 
 #[tauri::command]

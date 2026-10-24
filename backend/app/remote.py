@@ -78,6 +78,52 @@ _running: dict[str, int] = {}
 _generating_total = 0
 
 
+# --- change notification (desktop long-poll) --------------------------------
+# A monotonically increasing revision, bumped whenever something the shell
+# displays changes. The shell holds GET /api/desktop/wait?since=<rev> open; the
+# condition wakes it. Time-based transitions (a device going idle, a stale
+# queue report) are caught by the shell's slow fallback poll instead.
+
+_revision = 1
+_revision_lock = threading.Lock()
+_revision_cond = threading.Condition(_revision_lock)
+_last_activity_bump = 0.0
+ACTIVITY_BUMP_INTERVAL_S = 1.0
+
+
+def revision() -> int:
+    with _revision_lock:
+        return _revision
+
+
+def bump_revision() -> None:
+    global _revision
+    with _revision_cond:
+        _revision += 1
+        _revision_cond.notify_all()
+
+
+def bump_activity() -> None:
+    """Bump at most once a second: LAN requests arrive in bursts."""
+    global _revision, _last_activity_bump
+    now = time.monotonic()
+    with _revision_cond:
+        if now - _last_activity_bump < ACTIVITY_BUMP_INTERVAL_S:
+            return
+        _last_activity_bump = now
+        _revision += 1
+        _revision_cond.notify_all()
+
+
+def wait_for_revision(since: int, timeout: float) -> int:
+    """Block until the revision differs from ``since`` or the timeout expires."""
+    with _revision_cond:
+        if _revision != since:
+            return _revision
+        _revision_cond.wait(max(0.0, timeout))
+        return _revision
+
+
 def is_desktop() -> bool:
     """Remote access exists only in the desktop build (shell sets the mode)."""
     return bool(os.environ.get("IMAGEN_LIBRARY_MODE"))
@@ -196,6 +242,7 @@ def create_session(name: str | None, ip: str, ua: str) -> str:
             "ua": ua[:200],
         }
         _save()
+    bump_revision()
     return token
 
 
@@ -222,6 +269,7 @@ def touch(session: dict | None, ip: str) -> None:
     """Record a LAN request; last_seen reaches disk at most once a minute."""
     global _last_activity
     _last_activity = time.monotonic()
+    bump_activity()
     if session is None:
         return
     with _lock:
@@ -237,7 +285,8 @@ def revoke_session(sid: str) -> bool:
         if _sessions.pop(sid, None) is None:
             return False
         _save()
-        return True
+    bump_revision()
+    return True
 
 
 def revoke_all() -> None:
@@ -245,12 +294,14 @@ def revoke_all() -> None:
         _load()
         _sessions.clear()
         _save()
+    bump_revision()
 
 
 def session_started(sid: str | None) -> str:
     key = sid or "-"
     with _lock:
         _running[key] = _running.get(key, 0) + 1
+    bump_revision()
     return key
 
 
@@ -261,6 +312,7 @@ def session_finished(key: str) -> None:
             _running[key] = left
         else:
             _running.pop(key, None)
+    bump_revision()
 
 
 def generation_started() -> None:
@@ -268,6 +320,7 @@ def generation_started() -> None:
     global _generating_total
     with _lock:
         _generating_total += 1
+    bump_revision()
 
 
 def generation_finished() -> None:
@@ -275,6 +328,7 @@ def generation_finished() -> None:
     with _lock:
         if _generating_total > 0:
             _generating_total -= 1
+    bump_revision()
 
 
 def generating_total() -> int:
@@ -342,6 +396,7 @@ def _disable_locked(reason: str) -> None:
     cfg["enabled"] = False
     _disabled_reason = reason
     _save()
+    bump_revision()
     loop = _loop
     if loop is not None and loop.is_running():
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_stop_listener()))
@@ -350,7 +405,9 @@ def _disable_locked(reason: str) -> None:
 # --- network info -----------------------------------------------------------
 
 _net_cache: tuple[float, dict] | None = None
-_NET_TTL_S = 5.0
+# The address/host lookup forks networksetup/ifconfig/scutil; 15 s keeps the
+# frontend's status poll and the shell's 15 s fallback from doing it every time.
+_NET_TTL_S = 15.0
 
 
 def _run(cmd: list[str]) -> str:
@@ -441,8 +498,24 @@ def host_name() -> str:
     return network_info()["host_name"]
 
 
+_fw_cache: tuple[float, str] | None = None
+# The check forks a process, so it must not run on every status read. "Check
+# again" in the popover clears it (see clear_caches).
+_FW_TTL_S = 15.0
+
+
 def firewall_state() -> str:
     """'blocked' when block-all is on, 'ok' when readable, else 'unknown'."""
+    global _fw_cache
+    now = time.monotonic()
+    if _fw_cache is not None and now - _fw_cache[0] < _FW_TTL_S:
+        return _fw_cache[1]
+    result = _firewall_state_uncached()
+    _fw_cache = (now, result)
+    return result
+
+
+def _firewall_state_uncached() -> str:
     tool = "/usr/libexec/ApplicationFirewall/socketfilterfw"
     if not os.path.exists(tool):
         return "unknown"
@@ -452,6 +525,14 @@ def firewall_state() -> str:
     if "set to enabled" in out or "block all enabled" in out:
         return "blocked"
     return "ok"
+
+
+def clear_caches() -> None:
+    """Re-read the slow, externally changing checks (network + firewall)."""
+    global _fw_cache, _net_cache
+    _fw_cache = None
+    _net_cache = None
+    bump_revision()
 
 
 # --- LAN listener -----------------------------------------------------------
@@ -520,12 +601,14 @@ async def _start_listener(app) -> None:
             sock.close()
             _listener_error = "port_in_use" if exc.errno in (48, 98) else f"bind: {exc}"
             logger.warning("LAN listener could not bind port %s: %s", port, exc)
+            bump_revision()
             return
         _sock = sock
         _listener_port = port
         _server = _make_server(app, sock, port)
         _task = asyncio.create_task(_serve(_server, sock))
         logger.info("LAN listener on 0.0.0.0:%s", port)
+        bump_revision()
 
 
 async def _stop_listener() -> None:
@@ -544,6 +627,8 @@ async def _stop_listener() -> None:
                     server.force_exit = True
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(task, timeout=2)
+        if server is not None or task is not None:
+            bump_revision()
 
 
 def _listener_lock_get() -> asyncio.Lock:
@@ -578,6 +663,8 @@ async def startup(app) -> None:
 
 
 async def shutdown() -> None:
+    # Wake any long-poll waiters so the shell reconnects (or exits) at once.
+    bump_revision()
     if _awake_task is not None:
         _awake_task.cancel()
     _stop_caffeinate()
@@ -612,6 +699,7 @@ def _sync_keep_awake() -> None:
     global _caffeinate
     if sys.platform != "darwin" or not shutil.which("caffeinate"):
         return
+    was_awake = keeping_awake()
     if _want_awake():
         if _caffeinate is None or _caffeinate.poll() is not None:
             # -w ties the assertion to this process, so a crash can't leak it.
@@ -623,6 +711,8 @@ def _sync_keep_awake() -> None:
             )
     else:
         _stop_caffeinate()
+    if was_awake != keeping_awake():
+        bump_revision()
 
 
 def keeping_awake() -> bool:
@@ -718,6 +808,7 @@ async def update_config(app, patch: dict) -> None:
             cfg["code"] = _new_code()
         _save()
     await apply_config(app)
+    bump_revision()
 
 
 def regenerate_code() -> str:
@@ -727,4 +818,6 @@ def regenerate_code() -> str:
         cfg["code"] = _new_code()
         _sessions.clear()
         _save()
-        return cfg["code"]
+        code = cfg["code"]
+    bump_revision()
+    return code

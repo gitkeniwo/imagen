@@ -86,7 +86,10 @@ def session(request: Request):
 
 
 @router.get("/remote/status", dependencies=[Depends(loopback_only)])
-def get_status():
+def get_status(recheck: bool = False):
+    if recheck:
+        # "Check again" in the popover: bypass the cached network/firewall reads.
+        remote.clear_caches()
     return remote.status()
 
 

@@ -26,10 +26,15 @@ pub const TRAY_OPEN_ID: &str = "tray-open";
 pub const TRAY_REMOTE_ID: &str = "tray-remote";
 pub const TRAY_QUIT_ID: &str = "tray-quit";
 
-// Local loopback requests are cheap; a 2 s ceiling keeps the icon in step when
-// the user flips remote access in the main window.
-const POLL_OPEN: Duration = Duration::from_secs(1);
-const POLL_CLOSED: Duration = Duration::from_secs(2);
+// The shell holds one long-poll request open; the backend answers as soon as a
+// revision bumps. This fallback catches time-based transitions (a device going
+// idle, a queue report aging out), network/firewall changes seen by the cached
+// checks, and any lost wake-up.
+const FALLBACK: Duration = Duration::from_secs(15);
+const LONG_POLL_TIMEOUT_S: u64 = 25;
+// Read timeout > hold time + status computation.
+const LONG_POLL_READ: Duration = Duration::from_secs(35);
+const SHELL_CHECK: Duration = Duration::from_millis(500);
 const PULSE_EVERY: Duration = Duration::from_millis(700);
 const TICK: Duration = Duration::from_millis(120);
 
@@ -252,7 +257,6 @@ pub fn handle_menu_event(app: &AppHandle, event: &tauri::menu::MenuEvent) -> boo
                     }
                 }
                 refresh_now(&app);
-                poll_once(&app);
             });
             true
         }
@@ -365,70 +369,83 @@ fn activity_number(activity: &Option<Value>, key: &str) -> u64 {
         .unwrap_or(0)
 }
 
-/// One polling round. Runs off the UI thread; every call blocks at most a few
-/// hundred milliseconds against a live loopback backend.
-fn poll_once(app: &AppHandle) {
-    let port = backend::port(app);
-    let status = backend::http_json(port, "GET", "/api/remote/status", None)
-        .and_then(|(code, body)| (code == 200).then_some(body));
-    let activity = backend::http_json(port, "GET", "/api/desktop/activity", None)
-        .and_then(|(code, body)| (code == 200).then_some(body));
+fn exiting(app: &AppHandle) -> bool {
+    app.try_state::<backend::BackendState>()
+        .map(|s| s.exiting.load(Ordering::SeqCst))
+        .unwrap_or(true)
+}
+
+fn snapshot_status(body: &Value) -> (Option<Value>, Option<Value>) {
+    (body.get("status").cloned(), body.get("activity").cloned())
+}
+
+/// Apply the shell's own state and, when given, a fresh remote snapshot.
+///
+/// `None` is the cheap 500 ms tick: it only refreshes the child-process state
+/// (stopped/starting/healthy), so a backend crash changes the icon at once.
+/// A snapshot arrives on every long-poll response and fallback poll.
+fn commit(app: &AppHandle, snapshot: Option<(Option<Value>, Option<Value>)>) {
     let backend_state = backend::shell_status(app).to_string();
     let has_library = backend::has_library(app);
-
-    let generating =
-        activity_number(&activity, "generating") + activity_number(&activity, "queued_local");
-    let lang = activity
-        .as_ref()
-        .and_then(|a| a.get("lang"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let remote_state = status
-        .as_ref()
-        .and_then(|s| s.get("state"))
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let enabled = status
-        .as_ref()
-        .and_then(|s| s.get("enabled"))
-        .and_then(Value::as_bool);
+    let test_mode = backend::test_mode(app);
 
     let Some(handle) = app.try_state::<TrayHandle>() else {
         return;
     };
     let mut inner = handle.inner.lock().unwrap_or_else(|p| p.into_inner());
 
-    // Entering no_code (including at launch) un-dismisses the warning.
+    let mut shell_changed = inner.state.backend != backend_state
+        || inner.state.has_library != has_library
+        || inner.state.test_mode != test_mode;
+    let has_snapshot = snapshot.is_some();
+
+    if let Some((status, activity)) = snapshot {
+        inner.state.status = status;
+        inner.state.activity = activity;
+    }
+
+    // Derived from the snapshot (recomputed every commit so shell-only ticks
+    // keep them). Entering no_code (including at launch) un-dismisses the note.
+    let remote_state = inner
+        .state
+        .status
+        .as_ref()
+        .and_then(|s| s.get("state"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
     if remote_state.as_deref() == Some("no_code")
         && inner.last_remote_state.as_deref() != Some("no_code")
     {
         inner.state.no_code_dismissed = false;
     }
     if remote_state.is_some() {
-        inner.last_remote_state = remote_state.clone();
+        inner.last_remote_state = remote_state;
     }
+    inner.state.generating = activity_number(&inner.state.activity, "generating")
+        + activity_number(&inner.state.activity, "queued_local");
+    inner.state.lang = inner
+        .state
+        .activity
+        .as_ref()
+        .and_then(|a| a.get("lang"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
 
-    let previous_backend = inner.state.backend.clone();
     let stopped_at = if backend_state == "stopped" {
-        match (previous_backend.as_str(), inner.state.stopped_at) {
+        match (inner.state.backend.as_str(), inner.state.stopped_at) {
             ("stopped", Some(at)) => Some(at),
             _ => Some(now_secs()),
         }
     } else {
         None
     };
-
-    inner.state = TrayState {
-        backend: backend_state.clone(),
-        has_library,
-        stopped_at,
-        status,
-        activity,
-        generating,
-        lang: lang.clone(),
-        no_code_dismissed: inner.state.no_code_dismissed,
-        test_mode: backend::test_mode(app),
-    };
+    if inner.state.stopped_at != stopped_at {
+        shell_changed = true;
+    }
+    inner.state.backend = backend_state.clone();
+    inner.state.has_library = has_library;
+    inner.state.test_mode = test_mode;
+    inner.state.stopped_at = stopped_at;
 
     // Pick the icon. When the backend is up but a status request failed, keep
     // the last icon instead of guessing.
@@ -446,7 +463,7 @@ fn poll_once(app: &AppHandle) {
         {
             Some("blocked") => Some(IconState::Blocked),
             Some("no_code") => Some(IconState::NoCode),
-            _ if generating > 0 => Some(IconState::Generating),
+            _ if inner.state.generating > 0 => Some(IconState::Generating),
             Some("active") => Some(IconState::Active),
             Some("idle") => Some(IconState::Idle),
             Some("off") => Some(IconState::Off),
@@ -464,14 +481,21 @@ fn poll_once(app: &AppHandle) {
         }
     }
 
-    let current_lang = menu_lang(lang.as_deref());
-    let checked = enabled.unwrap_or(false);
+    let current_lang = menu_lang(inner.state.lang.as_deref());
+    let checked = inner
+        .state
+        .status
+        .as_ref()
+        .and_then(|s| s.get("enabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let mut change_menu = None;
     let signature = (current_lang.to_string(), checked);
     if inner.menu_signature.as_ref() != Some(&signature) {
         inner.menu_signature = Some(signature);
         change_menu = Some((current_lang, checked));
     }
+    let push = has_snapshot || shell_changed;
     drop(inner);
 
     if let Some(icon) = change_icon {
@@ -481,36 +505,79 @@ fn poll_once(app: &AppHandle) {
     if let Some((lang, checked)) = change_menu {
         apply_menu(app, lang, checked);
     }
-    push_to_popover(app);
+    if push {
+        push_to_popover(app);
+    }
+}
+
+/// Hold `/api/desktop/wait` open forever. The backend answers when a revision
+/// bumps (config change, listener state, sessions, generation counts, client
+/// queue), so idle cost is one blocked request instead of a poll every second.
+fn spawn_long_poll(app: AppHandle) {
+    thread::spawn(move || {
+        let mut revision: u64 = 0;
+        loop {
+            if exiting(&app) || app.try_state::<TrayHandle>().is_none() {
+                break;
+            }
+            let port = backend::port(&app);
+            let path = format!(
+                "/api/desktop/wait?since={revision}&timeout={LONG_POLL_TIMEOUT_S}"
+            );
+            match backend::http_json_timeout(port, "GET", &path, None, LONG_POLL_READ) {
+                Some((200, body)) => {
+                    revision = body.get("revision").and_then(Value::as_u64).unwrap_or(0);
+                    let (status, activity) = snapshot_status(&body);
+                    commit(&app, Some((status, activity)));
+                }
+                _ => {
+                    // Backend down/restarting: retry slowly and let the shell
+                    // tick thread show the stopped icon.
+                    for _ in 0..10 {
+                        if exiting(&app) {
+                            return;
+                        }
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn spawn_poll(app: AppHandle) {
+    spawn_long_poll(app.clone());
     thread::spawn(move || {
-        let mut next_poll = Instant::now();
+        let mut next_shell = Instant::now();
+        let mut next_fallback = Instant::now() + FALLBACK;
         let mut next_pulse = Instant::now();
         let mut pulsing = false;
         loop {
-            let exiting = app
-                .try_state::<backend::BackendState>()
-                .map(|s| s.exiting.load(Ordering::SeqCst))
-                .unwrap_or(true);
-            if exiting || app.try_state::<TrayHandle>().is_none() {
+            if exiting(&app) || app.try_state::<TrayHandle>().is_none() {
                 break;
             }
 
             let now = Instant::now();
-            if now >= next_poll || WAKE.swap(false, Ordering::SeqCst) {
-                poll_once(&app);
-                // Poll faster only while the popover is open *and* the backend
-                // is answering; a down backend is retried every 5 s.
-                let interval = if popover::is_visible(&app)
-                    && backend::shell_status(&app) == "healthy"
-                {
-                    POLL_OPEN
-                } else {
-                    POLL_CLOSED
-                };
-                next_poll = Instant::now() + interval;
+            // refresh_now() covers spawn/stop/restart and explicit "check now".
+            let wake = WAKE.swap(false, Ordering::SeqCst);
+            if wake || now >= next_shell {
+                commit(&app, None);
+                next_shell = Instant::now() + SHELL_CHECK;
+            }
+            if wake || now >= next_fallback {
+                // since=0 always returns immediately; this also re-runs the
+                // cached network/firewall checks when their TTL expired.
+                let port = backend::port(&app);
+                if let Some((200, body)) = backend::http_json(
+                    port,
+                    "GET",
+                    "/api/desktop/wait?since=0&timeout=0",
+                    None,
+                ) {
+                    let (status, activity) = snapshot_status(&body);
+                    commit(&app, Some((status, activity)));
+                }
+                next_fallback = Instant::now() + FALLBACK;
             }
 
             // Pulse two frames while a generation is in flight. Only the

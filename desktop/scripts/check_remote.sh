@@ -196,7 +196,47 @@ expect "loopback GET /api/desktop/activity" 200 "$(code "$LOOP/api/desktop/activ
 [ "$(jget "$TMP/body" lang)" = "en" ] || die "activity.lang did not take the client report"
 expect "LAN PUT /api/desktop/client" 404 "$(code -b "$JAR" -X PUT -H "$LAN_ORIGIN" -H 'Content-Type: application/json' -d '{"queued":0,"running":0,"lang":"en"}' "$LAN/api/desktop/client")"
 expect "LAN GET /api/desktop/activity" 404 "$(code -b "$JAR" "$LAN/api/desktop/activity")"
+expect "LAN GET /api/desktop/wait" 404 "$(code -b "$JAR" "$LAN/api/desktop/wait?since=0&timeout=0")"
 say "desktop bridge is loopback-only"
+
+# --- desktop long-poll: a config change wakes the shell quickly ------------
+expect "loopback GET /api/desktop/wait" 200 "$(code "$LOOP/api/desktop/wait?since=0&timeout=0")"
+[ "$(jget "$TMP/body" revision)" -ge 1 ] || die "wait response has no revision"
+[ -n "$(jget "$TMP/body" status.state)" ] || die "wait response has no status"
+say "long-poll returns an immediate snapshot and revision"
+"$PYTHON" - "$LOOP" <<'PY' || die "long-poll wake-up check failed"
+import concurrent.futures
+import sys
+import time
+
+import httpx
+
+loop = sys.argv[1]
+r = httpx.get(f"{loop}/api/desktop/wait", params={"since": 0, "timeout": 0}, timeout=10)
+r.raise_for_status()
+revision = r.json()["revision"]
+
+started = time.monotonic()
+with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+    waiting = pool.submit(
+        httpx.get,
+        f"{loop}/api/desktop/wait",
+        params={"since": revision, "timeout": 2},
+        timeout=10,
+    )
+    time.sleep(0.4)
+    httpx.put(f"{loop}/api/remote/config", json={"require_code": False}, timeout=10)
+    snap = waiting.result(timeout=6).json()
+elapsed = time.monotonic() - started
+httpx.put(f"{loop}/api/remote/config", json={"require_code": True}, timeout=10)
+if elapsed >= 1.5:
+    raise SystemExit(f"long-poll woke after {elapsed:.2f}s (expected < 1.5s)")
+if snap["status"]["require_code"]:
+    raise SystemExit("long-poll returned a stale status after the config change")
+if snap["revision"] == revision:
+    raise SystemExit("revision did not change after a config change")
+print(f"  PASS long-poll woke in {elapsed * 1000:.0f} ms with fresh status")
+PY
 
 # --- host + origin checks ---
 expect "loopback Host: evil.example" 403 "$(code -H 'Host: evil.example' "$LOOP/api/images")"
