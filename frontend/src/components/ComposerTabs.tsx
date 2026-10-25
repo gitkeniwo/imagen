@@ -1,8 +1,10 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useI18n } from "../i18n";
 import type { WorkspaceRecord } from "../composerDraft";
@@ -10,6 +12,9 @@ import Icon from "./ui/Icon";
 import Menu from "./ui/Menu";
 import Popover from "./ui/Popover";
 import { Button } from "./ui/Button";
+import Sheet from "./ui/Sheet";
+import { useBackLayer } from "../backStack";
+import { seenLabel } from "./RemoteIndicator";
 
 function workspaceTone(workspace: WorkspaceRecord): string {
   const empty = workspace.prompt.trim() === "" && workspace.inputIds.length === 0;
@@ -43,15 +48,53 @@ export default function ComposerTabs({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [nameValue, setNameValue] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  const [phoneEditorId, setPhoneEditorId] = useState<string | null>(null);
+  const [phoneName, setPhoneName] = useState("");
+  const [phoneConfirmClose, setPhoneConfirmClose] = useState(false);
   const renameIdRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const tablistRef = useRef<HTMLDivElement>(null);
+  const longPress = useRef<{
+    timer: number;
+    x: number;
+    y: number;
+    fired: boolean;
+  } | null>(null);
+  const suppressClickUntil = useRef(0);
 
   useEffect(() => {
     if (!renamingId) return;
     inputRef.current?.focus();
     inputRef.current?.select();
   }, [renamingId]);
+
+  const measureOverflow = useCallback(() => {
+    const list = tablistRef.current;
+    if (!list) return;
+    setOverflowing(list.scrollWidth > list.clientWidth + 1);
+  }, []);
+
+  useEffect(() => {
+    const list = tablistRef.current;
+    if (!list) return;
+    measureOverflow();
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(list);
+    window.addEventListener("resize", measureOverflow);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measureOverflow);
+    };
+  }, [measureOverflow, workspaces]);
+
+  useEffect(() => {
+    tabRefs.current.get(activeId)?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [activeId, overflowing]);
 
   const startRename = (workspace: WorkspaceRecord) => {
     renameIdRef.current = workspace.id;
@@ -75,6 +118,61 @@ export default function ComposerTabs({
     }
     onClose(workspace.id);
   };
+
+  const openPhoneEditor = (workspace: WorkspaceRecord) => {
+    setPhoneName(workspace.name ?? "");
+    setPhoneConfirmClose(false);
+    setPhoneEditorId(workspace.id);
+  };
+
+  const clearLongPress = () => {
+    if (longPress.current) window.clearTimeout(longPress.current.timer);
+  };
+
+  const onPhonePointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    workspace: WorkspaceRecord,
+  ) => {
+    if (!phone || event.button !== 0) return;
+    clearLongPress();
+    const entry = {
+      timer: window.setTimeout(() => {
+        if (!longPress.current) return;
+        longPress.current.fired = true;
+        suppressClickUntil.current = Date.now() + 700;
+        openPhoneEditor(workspace);
+      }, 500),
+      x: event.clientX,
+      y: event.clientY,
+      fired: false,
+    };
+    longPress.current = entry;
+  };
+
+  const onPhonePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const entry = longPress.current;
+    if (!entry || entry.fired) return;
+    if (
+      Math.abs(event.clientX - entry.x) > 8 ||
+      Math.abs(event.clientY - entry.y) > 8
+    ) {
+      clearLongPress();
+      longPress.current = null;
+    }
+  };
+
+  const phoneWorkspace = workspaces.find(
+    (workspace) => workspace.id === phoneEditorId,
+  );
+
+  useBackLayer(phoneEditorId !== null, () => {
+    setPhoneEditorId(null);
+    return true;
+  });
+
+  useEffect(() => {
+    if (phoneEditorId && !phoneWorkspace) setPhoneEditorId(null);
+  }, [phoneEditorId, phoneWorkspace]);
 
   const onTablistKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (renamingId) return;
@@ -102,11 +200,12 @@ export default function ComposerTabs({
 
   return (
     <div
-      className={`composer-tabs${phone ? " phone" : ""}${undocked ? " undocked" : ""}`}
+      className={`composer-tabs${phone ? " phone" : ""}${undocked ? " undocked" : ""}${overflowing ? " has-overflow" : ""}`}
       data-workspace-count={workspaces.length}
     >
       <div
         className="composer-tablist"
+        ref={tablistRef}
         role="tablist"
         aria-label={t("ws_tablist")}
         aria-orientation="horizontal"
@@ -157,9 +256,29 @@ export default function ComposerTabs({
                     <div
                       className={`ws-tab-wrap${isActive ? " active" : ""}${workspaceTone(workspace)}`}
                       onContextMenu={(event) => {
+                        if (phone) {
+                          event.preventDefault();
+                          return;
+                        }
                         if (renamingId === workspace.id) return;
                         event.preventDefault();
                         toggle();
+                      }}
+                      onPointerDown={(event) =>
+                        onPhonePointerDown(event, workspace)
+                      }
+                      onPointerMove={onPhonePointerMove}
+                      onPointerUp={() => {
+                        clearLongPress();
+                        longPress.current = null;
+                      }}
+                      onPointerCancel={() => {
+                        clearLongPress();
+                        longPress.current = null;
+                      }}
+                      onPointerLeave={() => {
+                        clearLongPress();
+                        longPress.current = null;
                       }}
                     >
                       {renamingId === workspace.id ? (
@@ -198,8 +317,16 @@ export default function ComposerTabs({
                             title={workspace.name ?? aria}
                             tabIndex={isActive ? 0 : -1}
                             className="ws-tab"
-                            onClick={() => onSelect(workspace.id)}
-                            onDoubleClick={() => startRename(workspace)}
+                            onClick={() => {
+                              if (Date.now() < suppressClickUntil.current) {
+                                suppressClickUntil.current = 0;
+                                return;
+                              }
+                              onSelect(workspace.id);
+                            }}
+                            onDoubleClick={() => {
+                              if (!phone) startRename(workspace);
+                            }}
                             onKeyDown={(event) => {
                               if (event.key === "F2") {
                                 event.preventDefault();
@@ -209,7 +336,7 @@ export default function ComposerTabs({
                           >
                             <span className="ws-tab-name">{label}</span>
                           </button>
-                          {workspaces.length > 1 && (
+                          {!phone && workspaces.length > 1 && (
                             <button
                               type="button"
                               className="ws-tab-close"
@@ -252,6 +379,29 @@ export default function ComposerTabs({
           );
         })}
       </div>
+      {overflowing && !phone && (
+        <Menu
+          align="end"
+          items={workspaces.map((workspace) => ({
+            label: workspace.name ?? String(workspace.number),
+            hint: workspace.id === activeId ? "•" : undefined,
+            onSelect: () => onSelect(workspace.id),
+          }))}
+          renderTrigger={({ open, toggle }) => (
+            <button
+              type="button"
+              className="ws-overflow"
+              aria-label={`${t("ws_all")} (${workspaces.length})`}
+              title={t("ws_all")}
+              aria-expanded={open}
+              onClick={toggle}
+            >
+              <span>{workspaces.length}</span>
+              <Icon name="chevronDown" size="sm" />
+            </button>
+          )}
+        />
+      )}
       <button
         type="button"
         className="ws-new"
@@ -266,6 +416,96 @@ export default function ComposerTabs({
         <div className="ws-rename-hint" role="note">
           {t("ws_rename_hint")}
         </div>
+      )}
+      {phone && phoneWorkspace && (
+        <Sheet
+          title={
+            phoneWorkspace.name ??
+            t("ws_label", { n: phoneWorkspace.number })
+          }
+          onClose={() => setPhoneEditorId(null)}
+          footer={
+            <div className="ws-sheet-foot">
+              <Button onClick={() => setPhoneEditorId(null)}>
+                {t("cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  onRename(phoneWorkspace.id, phoneName);
+                  setPhoneEditorId(null);
+                }}
+              >
+                {t("save")}
+              </Button>
+            </div>
+          }
+        >
+          <div className="ws-sheet-sub">
+            {t("ws_meta", {
+              count: phoneWorkspace.inputIds.length,
+              ago: seenLabel(t, phoneWorkspace.updatedAt / 1000),
+            })}
+          </div>
+          <label className="sheet-field">
+            <span className="lab">{t("ws_name")}</span>
+            <input
+              value={phoneName}
+              placeholder={String(phoneWorkspace.number)}
+              maxLength={40}
+              onChange={(event) => setPhoneName(event.target.value)}
+            />
+          </label>
+          <p className="ws-sheet-hint">{t("ws_rename_hint")}</p>
+          <div className="ws-sheet-actions">
+            <button
+              type="button"
+              disabled={workspaces.length >= limit}
+              onClick={() => {
+                if (onDuplicate(phoneWorkspace.id)) setPhoneEditorId(null);
+              }}
+            >
+              <Icon name="duplicate" size="sm" />
+              {t("ws_duplicate")}
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={workspaces.length <= 1}
+              onClick={() => {
+                if (phoneWorkspace.prompt.trim() || phoneWorkspace.inputIds.length) {
+                  setPhoneConfirmClose(true);
+                } else {
+                  onClose(phoneWorkspace.id);
+                  setPhoneEditorId(null);
+                }
+              }}
+            >
+              <Icon name="close" size="sm" />
+              {t("ws_close")}
+            </button>
+          </div>
+          {phoneConfirmClose && (
+            <div className="ws-sheet-confirm">
+              <p>{t("ws_close_confirm")}</p>
+              <div className="confirm-bubble-actions">
+                <Button size="sm" onClick={() => setPhoneConfirmClose(false)}>
+                  {t("cancel")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    onClose(phoneWorkspace.id);
+                    setPhoneEditorId(null);
+                  }}
+                >
+                  {t("ws_close")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </Sheet>
       )}
     </div>
   );

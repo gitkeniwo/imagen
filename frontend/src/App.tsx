@@ -895,19 +895,31 @@ export default function App() {
             <Button
               className="topbar-btn"
               icon="add"
-              title={t("import_result")}
+              title={t("new_menu")}
+              aria-label={t("new_menu")}
               onClick={() => setShowAddHistory(true)}
             >
-              {t("new_menu")}
+              <span className="topbar-label">{t("new_menu")}</span>
             </Button>
-            <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
-              <Icon name="usage" /> {t("usage")}
+            <button
+              className="topbar-btn"
+              onClick={() => setDashboardOpen(true)}
+              title={t("usage_title")}
+              aria-label={t("usage")}
+            >
+              <Icon name="usage" />
+              <span className="topbar-label">{t("usage")}</span>
             </button>
-            <button className="topbar-btn" onClick={() => { setSettingsSection("library"); setShowSettings(true); }}>
+            <button
+              className="topbar-btn"
+              onClick={() => { setSettingsSection("library"); setShowSettings(true); }}
+              title={configured ? t("settings") : t("set_api_key")}
+              aria-label={configured ? t("settings") : t("set_api_key")}
+            >
               {configured ? (
-                <><Icon name="settings" /> {t("settings")}</>
+                <><Icon name="settings" /> <span className="topbar-label">{t("settings")}</span></>
               ) : (
-                <><Icon name="warning" /> {t("set_api_key")}</>
+                <><Icon name="warning" /> <span className="topbar-label">{t("set_api_key")}</span></>
               )}
             </button>
           </header>

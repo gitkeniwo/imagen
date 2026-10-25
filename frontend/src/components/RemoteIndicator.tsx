@@ -153,11 +153,11 @@ export default function RemoteIndicator({ onOpenSettings }: { onOpenSettings: ()
         <span className={s.state === "active" ? "rm-radio-live" : undefined}>
           <Icon name={s.state === "blocked" || s.state === "no_code" ? "warning" : "radio"} />
         </span>
-        {s.state === "blocked" ? t("remote_blocked_pill")
-          : s.state === "no_code" ? t("remote_no_code")
+        {s.state === "blocked" ? <span className="rm-pill-label">{t("remote_blocked_pill")}</span>
+          : s.state === "no_code" ? <span className="rm-pill-label">{t("remote_no_code")}</span>
           : s.state === "off" ? null
-          : s.state === "active" ? <>{t("remote_pill")}<span className="rm-count">{n}</span></>
-          : <>{t("remote_pill")}<span className="rm-dot live soft" /></>}
+          : s.state === "active" ? <><span className="rm-pill-label">{t("remote_pill")}</span><span className="rm-count">{n}</span></>
+          : <><span className="rm-pill-label">{t("remote_pill")}</span><span className="rm-dot live soft" /></>}
       </button>
 
       {open && (
