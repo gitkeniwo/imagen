@@ -75,6 +75,18 @@ login() { # code jar -> status
   code -c "$2" -X POST -H "$LAN_ORIGIN" -H 'Content-Type: application/json' \
     -d "{\"code\":\"$1\",\"name\":\"Test iPad\",\"remember\":true}" "$LAN/api/remote/login"
 }
+lock_free() { # library dir -> 0 when this process can take the flock
+  "$PYTHON" - "$1/.imagen.lock" <<'PY'
+import fcntl
+import sys
+
+with open(sys.argv[1], "a+") as handle:
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(1)
+PY
+}
 wait_health() { # port
   for _ in $(seq 1 150); do
     curl -sf --max-time 1 -o /dev/null "http://127.0.0.1:$1/api/health" && return 0
@@ -176,6 +188,56 @@ expect "loopback /api/health keeps token" 200 "$(code "$LOOP/api/health")"
 expect "loopback /api/settings/library keeps path" 200 "$(code "$LOOP/api/settings/library")"
 [ -n "$(jget "$TMP/body" path)" ] || die "loopback library path is empty"
 
+# --- desktop shell bridge (loopback only) ---
+expect "loopback PUT /api/desktop/client" 200 "$(code -X PUT -H 'Content-Type: application/json' -d '{"queued":2,"running":1,"lang":"en"}' "$LOOP/api/desktop/client")"
+expect "loopback GET /api/desktop/activity" 200 "$(code "$LOOP/api/desktop/activity")"
+[ "$(jget "$TMP/body" generating)" = "0" ] || die "activity.generating is not 0 before any generation"
+[ "$(jget "$TMP/body" queued_local)" = "2" ] || die "activity.queued_local did not take the client report"
+[ "$(jget "$TMP/body" lang)" = "en" ] || die "activity.lang did not take the client report"
+expect "LAN PUT /api/desktop/client" 404 "$(code -b "$JAR" -X PUT -H "$LAN_ORIGIN" -H 'Content-Type: application/json' -d '{"queued":0,"running":0,"lang":"en"}' "$LAN/api/desktop/client")"
+expect "LAN GET /api/desktop/activity" 404 "$(code -b "$JAR" "$LAN/api/desktop/activity")"
+expect "LAN GET /api/desktop/wait" 404 "$(code -b "$JAR" "$LAN/api/desktop/wait?since=0&timeout=0")"
+say "desktop bridge is loopback-only"
+
+# --- desktop long-poll: a config change wakes the shell quickly ------------
+expect "loopback GET /api/desktop/wait" 200 "$(code "$LOOP/api/desktop/wait?since=0&timeout=0")"
+[ "$(jget "$TMP/body" revision)" -ge 1 ] || die "wait response has no revision"
+[ -n "$(jget "$TMP/body" status.state)" ] || die "wait response has no status"
+say "long-poll returns an immediate snapshot and revision"
+"$PYTHON" - "$LOOP" <<'PY' || die "long-poll wake-up check failed"
+import concurrent.futures
+import sys
+import time
+
+import httpx
+
+loop = sys.argv[1]
+r = httpx.get(f"{loop}/api/desktop/wait", params={"since": 0, "timeout": 0}, timeout=10)
+r.raise_for_status()
+revision = r.json()["revision"]
+
+started = time.monotonic()
+with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+    waiting = pool.submit(
+        httpx.get,
+        f"{loop}/api/desktop/wait",
+        params={"since": revision, "timeout": 2},
+        timeout=10,
+    )
+    time.sleep(0.4)
+    httpx.put(f"{loop}/api/remote/config", json={"require_code": False}, timeout=10)
+    snap = waiting.result(timeout=6).json()
+elapsed = time.monotonic() - started
+httpx.put(f"{loop}/api/remote/config", json={"require_code": True}, timeout=10)
+if elapsed >= 1.5:
+    raise SystemExit(f"long-poll woke after {elapsed:.2f}s (expected < 1.5s)")
+if snap["status"]["require_code"]:
+    raise SystemExit("long-poll returned a stale status after the config change")
+if snap["revision"] == revision:
+    raise SystemExit("revision did not change after a config change")
+print(f"  PASS long-poll woke in {elapsed * 1000:.0f} ms with fresh status")
+PY
+
 # --- host + origin checks ---
 expect "loopback Host: evil.example" 403 "$(code -H 'Host: evil.example' "$LOOP/api/images")"
 expect "loopback Host: 127.0.0.1 ok" 200 "$(code -H "Host: 127.0.0.1:$LOOP_PORT" "$LOOP/api/images")"
@@ -256,11 +318,21 @@ BAD="$(grep -vc '^200$' "$TMP/loop-codes" || true)"
 [ "$BAD" = "0" ] || { cat "$TMP/loop-codes" >&2; die "$BAD loopback requests failed while toggling"; }
 say "all $(wc -l <"$TMP/loop-codes" | tr -d ' ') loopback requests succeeded while toggling"
 
+# --- a quiet client's queue report ages out ---
+sleep 21
+expect "activity after the client went quiet" 200 "$(code "$LOOP/api/desktop/activity")"
+[ "$(jget "$TMP/body" queued_local)" = "0" ] || die "queued_local is not 0 after the 20 s cutoff"
+[ "$(jget "$TMP/body" lang)" = "en" ] || die "lang should survive the staleness cutoff"
+say "queued_local falls back to 0 after the 20 s cutoff"
+
 # --- config survives a restart ---
 expect "enable again" 200 "$(put_config '{"enabled":true}')"
 kill "$BACKEND_PID"; wait "$BACKEND_PID" 2>/dev/null || true
 for _ in $(seq 1 30); do listening "$LAN_PORT" || break; sleep 0.1; done
 listening "$LAN_PORT" && die "LAN port still listening after backend stop"
+# SIGTERM shutdown is graceful: the flock can outlive the listener for a moment.
+for _ in $(seq 1 100); do lock_free "$DATA" && break; sleep 0.1; done
+lock_free "$DATA" || die "library lock still held after the backend stopped"
 (
   cd "$BACKEND"
   exec env IMAGEN_DATA_DIR="$DATA" IMAGEN_LIBRARY_MODE=existing IMAGEN_PORT="$LOOP_PORT" \
@@ -353,6 +425,117 @@ row, state = run(loop, {}, f"loop-drop-{time.time_ns()}")
 if not row or row["raw_finish"] != "CLIENT_DISCONNECTED" or not state.get("abort_seen"):
     fail(f"loopback control: got {row and (row['status'], row['raw_finish'])} abort_seen={state.get('abort_seen')}")
 print("  PASS loopback disconnect still aborts (control)")
+PY
+
+# --- C. /api/desktop/activity counts every generation lifecycle ------------
+head2 "C. generation count returns to zero (fake backend)"
+"$PYTHON" - "$FAKE_PORT" <<'PY'
+import sys
+import threading
+import time
+
+import httpx
+
+loop = f"http://127.0.0.1:{int(sys.argv[1])}"
+
+
+def fail(msg):
+    raise SystemExit(f"FAIL: {msg}")
+
+
+def activity():
+    return httpx.get(f"{loop}/api/desktop/activity", timeout=10).json()
+
+
+def wait_for(predicate, seconds, what):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        value = activity()
+        if predicate(value):
+            return value
+        time.sleep(0.1)
+    fail(f"timeout waiting for {what}; last activity={activity()}")
+
+
+def config(outcome, delay):
+    r = httpx.put(f"{loop}/__test/fake-config", json={"outcome": outcome, "delay": delay}, timeout=10)
+    if r.status_code != 200:
+        fail(f"fake-config: {r.status_code} {r.text}")
+
+
+def start(cid, cancel=False):
+    body = {
+        "prompt": f"count {cid}",
+        "model": "gemini-3-pro-image",
+        "aspectRatio": "1:1",
+        "resolution": None,
+        "outputFormat": "image/png",
+        "inputImageIds": [],
+        "uploadImageIds": [],
+        "clientTaskId": cid,
+    }
+    result = {}
+
+    def worker():
+        try:
+            r = httpx.post(f"{loop}/api/generate", json=body, timeout=90)
+            result["http"] = r.status_code
+            result["status"] = (r.json() or {}).get("status")
+        except Exception as exc:  # noqa: BLE001
+            result["error"] = str(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    seen = wait_for(lambda a: a["generating"] >= 1, 15, "the counter to reach 1")
+    if seen["generating"] != 1:
+        fail(f"generating should be exactly 1, got {seen['generating']}")
+    if cancel:
+        r = httpx.post(f"{loop}/api/generate/cancel/{cid}", timeout=10)
+        if not r.json().get("ok"):
+            fail(f"cancel was refused for {cid}")
+    return thread, result
+
+
+if activity()["generating"] != 0:
+    fail("generating is not 0 at rest")
+
+config("success", 1.5)
+thread, result = start(f"count-ok-{time.time_ns()}")
+thread.join(60)
+if result.get("status") != "success":
+    fail(f"success path: {result}")
+wait_for(lambda a: a["generating"] == 0, 15, "the counter to fall back after success")
+print("  PASS success: generating 1 -> 0, status=success")
+
+config("error", 1.0)
+thread, result = start(f"count-err-{time.time_ns()}")
+thread.join(60)
+if result.get("status") != "error":
+    fail(f"error path: {result}")
+wait_for(lambda a: a["generating"] == 0, 15, "the counter to fall back after an error")
+print("  PASS error: generating 1 -> 0, status=error")
+
+config("success", 10)
+thread, result = start(f"count-cancel-{time.time_ns()}", cancel=True)
+thread.join(60)
+if result.get("status") != "aborted":
+    fail(f"cancel path: {result}")
+wait_for(lambda a: a["generating"] == 0, 15, "the counter to fall back after a cancel")
+print("  PASS cancel: generating 1 -> 0, status=aborted")
+config("success", 0)
+
+# A 4xx validation failure never reaches the counter.
+r = httpx.post(
+    f"{loop}/api/generate",
+    json={"prompt": "x", "model": "gemini-3-pro-image", "markerColor": "chartreuse"},
+    timeout=10,
+)
+if r.status_code != 400:
+    fail(f"validation failure: expected 400, got {r.status_code}")
+time.sleep(0.3)
+if activity()["generating"] != 0:
+    fail("a 4xx validation failure was counted as an in-flight generation")
+print("  PASS validation 4xx is not counted")
 PY
 
 printf '\nREMOTE CHECK PASS\n'

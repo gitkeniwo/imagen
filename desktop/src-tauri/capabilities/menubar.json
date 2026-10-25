@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "menubar",
+  "description": "Menubar popover and quit HUD: core IPC only, no shell commands beyond the menubar bridge.",
+  "windows": ["menubar", "quit-hud"],
+  "permissions": ["core:default"]
+}

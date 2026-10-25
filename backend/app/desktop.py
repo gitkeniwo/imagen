@@ -64,6 +64,14 @@ def _watch_parent(server) -> None:
         pass
     print("imagen-backend: parent closed stdin, shutting down", file=sys.stderr, flush=True)
     server.should_exit = True
+    # Release the shell's long-poll immediately; otherwise uvicorn's graceful
+    # shutdown waits for that request (up to its 25 s hold).
+    try:
+        from app import remote
+
+        remote.bump_revision()
+    except Exception:  # noqa: BLE001 — shutdown must never fail here
+        pass
     timer = threading.Timer(PARENT_WATCH_TIMEOUT_S, _force_exit)
     timer.daemon = True
     timer.start()
@@ -87,6 +95,8 @@ def build_server(app, port: int):
         lifespan="on",
         access_log=False,
         log_level="info",
+        # A held long-poll must not delay quitting by its full timeout.
+        timeout_graceful_shutdown=2,
     )
     return uvicorn.Server(config)
 

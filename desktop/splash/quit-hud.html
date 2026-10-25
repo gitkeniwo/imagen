@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Imagen</title>
+  <style>
+    /* The blur comes from the window's HudWindow vibrancy material; the page
+       itself is fully transparent. */
+    :root {
+      color-scheme: light dark;
+      --text: #0b0f19;
+      --muted: #4b5464;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --text: #eef5f4;
+        --muted: #9fbab6;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; background: transparent;
+      overflow: hidden; overscroll-behavior: none;
+      -webkit-user-select: none; user-select: none; cursor: default;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hud {
+      width: 100%; height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 3px;
+      opacity: 0; transform: scale(0.97);
+      transition: opacity 120ms ease-out, transform 120ms ease-out;
+    }
+    .hud.visible { opacity: 1; transform: scale(1); }
+    .hud.leaving {
+      opacity: 0; transform: scale(0.98);
+      transition: opacity 200ms ease-in, transform 200ms ease-in;
+    }
+    .title { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.2; }
+    .sub { font-size: 12px; color: var(--muted); line-height: 1.2; }
+  </style>
+</head>
+<body>
+  <div class="hud" id="hud">
+    <div class="title" id="title"></div>
+    <div class="sub" id="sub"></div>
+  </div>
+  <script>
+    (function () {
+      "use strict";
+      var hud = document.getElementById("hud");
+      var title = document.getElementById("title");
+      var sub = document.getElementById("sub");
+
+      function listen(event, handler) {
+        try {
+          window.__TAURI__.event.listen(event, handler);
+        } catch (e) {
+          /* no IPC: stay invisible */
+        }
+      }
+
+      function show(payload) {
+        if (!payload || !payload.title) return;
+        title.textContent = payload.title;
+        sub.textContent = payload.sub || "";
+        hud.classList.remove("leaving");
+        // Force a frame with the new text before fading in.
+        window.requestAnimationFrame(function () {
+          hud.classList.add("visible");
+        });
+      }
+
+      function invoke(cmd) {
+        var internals = window.__TAURI_INTERNALS__;
+        if (!internals || typeof internals.invoke !== "function") return;
+        internals.invoke(cmd, {}).then(function (payload) {
+          if (payload) show(payload);
+        }).catch(function () {});
+      }
+
+      listen("quit-hud://show", function (event) {
+        show(event.payload);
+      });
+
+      listen("quit-hud://hide", function () {
+        hud.classList.remove("visible");
+        hud.classList.add("leaving");
+      });
+
+      // A hidden webview may miss the first event; when the HUD window is
+      // ordered in, pull the text that is already waiting for it.
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") invoke("quit_hud_state");
+      });
+      invoke("quit_hud_state");
+    })();
+  </script>
+</body>
+</html>

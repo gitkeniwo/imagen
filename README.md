@@ -105,6 +105,20 @@ automatically; the default `auto` (used by test scripts) treats a folder with
 `app.db` as existing and anything else as new. Validation failures exit with
 code 3, and a library already in use exits with code 4.
 
+### Background mode and the menu bar
+
+Closing the window (⌘W or the red button) no longer quits: Imagen keeps running
+from the menu bar. The Dock icon disappears, the menu bar keeps an icon, and
+remote devices keep working — queued generations keep running too.
+
+- Click the icon for a dashboard: remote access on/off, the address and access
+  code, signed-in devices, and how many generations are running.
+- Right-click it for Open Imagen (⌘D), Remote access, or Quit Imagen (⌘Q).
+- ⌘D, Finder, or Spotlight brings the window back as a normal app.
+
+⌘Q still quits, but while generations are running it asks you to hold ⌘Q for
+about a second ("Hold ⌘Q to quit"). Choosing Quit from a menu exits immediately.
+
 ### Unsigned build
 
 The app is **not signed with a Developer ID and is not notarized**. Other people

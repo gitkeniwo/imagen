@@ -47,6 +47,9 @@ export default function SettingsModal({
   const { t, lang, setLang } = useI18n();
   const { remote, hostName, device, signOut } = useRemote();
   const [section, setSection] = useState<Section>(initialSection);
+  // The menubar popover can ask for another section while the modal is already
+  // open (window event -> App state). The prop only changes on that request.
+  useEffect(() => setSection(initialSection), [initialSection]);
   const [project, setProject] = useState("");
   const [location, setLocation] = useState("global");
   const [library, setLibrary] = useState<LibraryInfo | null>(null);

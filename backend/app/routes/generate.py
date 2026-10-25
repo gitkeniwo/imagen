@@ -281,6 +281,7 @@ async def generate(body: GenerateRequest, request: Request):
         try:
             return await _run_generation()
         finally:
+            remote.generation_finished()
             if owner is not None:
                 remote.session_finished(owner)
             if cid:
@@ -288,6 +289,10 @@ async def generate(body: GenerateRequest, request: Request):
                 PROGRESS.pop(cid, None)
                 CANCELLED.discard(cid)
 
+    # Counted only here: every earlier return is a 4xx validation failure that
+    # never reaches Vertex. Paired with generation_finished() in _run's finally,
+    # so success, error, block and cancel all decrement exactly once.
+    remote.generation_started()
     if cid:
         INFLIGHT.add(cid)
     task = asyncio.create_task(_run())
