@@ -9,6 +9,7 @@ import {
   QueueTask,
   TaskSpec,
 } from "../api";
+import { ComposerDraft } from "../composerDraft";
 import { useI18n } from "../i18n";
 import Popover from "../components/ui/Popover";
 import ReferenceTray from "../components/ReferenceTray";
@@ -26,6 +27,8 @@ const ATTEMPTS_KEY = "imagen-task-attempts";
 
 export default function Generate({
   tray,
+  draft,
+  updateDraft,
   prefill,
   consumePrefill,
   addManyToTray,
@@ -49,6 +52,8 @@ export default function Generate({
   phone = false,
 }: {
   tray: ImageRow[];
+  draft: ComposerDraft;
+  updateDraft: (patch: Partial<ComposerDraft>) => void;
   prefill: Prefill | null;
   consumePrefill: () => void;
   addManyToTray: (imgs: ImageRow[]) => void;
@@ -74,13 +79,24 @@ export default function Generate({
   const { t } = useI18n();
   const [saveOpen, setSaveOpen] = useState(false);
   const { conn, remote } = useRemote();
-  const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(MODELS[0].id);
-  const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [resolution, setResolution] = useState("1K");
-  const [format, setFormat] = useState("image/jpeg");
-  const [tagIds, setTagIds] = useState<number[]>([]);
-  const [skipIfPrecedingSucceeds, setSkipIfPrecedingSucceeds] = useState(false);
+  // The draft itself lives in App so one place owns loading/saving it.
+  const {
+    prompt,
+    model,
+    aspectRatio,
+    resolution,
+    format,
+    tagIds,
+    skipIfPrecedingSucceeds,
+  } = draft;
+  const setPrompt = (v: string) => updateDraft({ prompt: v });
+  const setModel = (v: string) => updateDraft({ model: v });
+  const setAspectRatio = (v: string) => updateDraft({ aspectRatio: v });
+  const setResolution = (v: string) => updateDraft({ resolution: v });
+  const setFormat = (v: string) => updateDraft({ format: v });
+  const setTagIds = (ids: number[]) => updateDraft({ tagIds: ids });
+  const setSkipIfPrecedingSucceeds = (v: boolean) =>
+    updateDraft({ skipIfPrecedingSucceeds: v });
   const [pickingRefs, setPickingRefs] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -97,16 +113,18 @@ export default function Generate({
     localStorage.setItem(ATTEMPTS_KEY, String(attempts));
   }, [attempts]);
 
-  // Apply a "reuse" prefill coming from the History tab.
+  // Apply a "reuse" prefill coming from the History tab (or the queue).
   useEffect(() => {
     if (prefill) {
-      setPrompt(prefill.prompt);
-      setModel(normalizeModelId(prefill.model));
-      if (prefill.aspectRatio) setAspectRatio(prefill.aspectRatio);
-      if (prefill.resolution) setResolution(prefill.resolution);
+      updateDraft({
+        prompt: prefill.prompt,
+        model: normalizeModelId(prefill.model),
+        ...(prefill.aspectRatio ? { aspectRatio: prefill.aspectRatio } : {}),
+        ...(prefill.resolution ? { resolution: prefill.resolution } : {}),
+      });
       consumePrefill();
     }
-  }, [prefill, consumePrefill]);
+  }, [prefill, consumePrefill, updateDraft]);
 
   const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);

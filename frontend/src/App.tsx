@@ -44,6 +44,7 @@ import { Button, IconButton } from "./components/ui/Button";
 import appIcon from "./assets/app-icon.png";
 import { isRefDrag } from "./imageDrag";
 import { uuid } from "./uuid";
+import { ComposerDraft, emptyDraft } from "./composerDraft";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
@@ -132,6 +133,14 @@ export default function App() {
     setManagerOpen(true);
   };
   const [tray, setTray] = useState<ImageRow[]>([]);
+  // Composer contents live here: one place owns the draft so it can outlive
+  // panel switches and, in the next step, be loaded/saved locally.
+  const [draft, setDraft] = useState<ComposerDraft>(emptyDraft);
+  const updateDraft = useCallback(
+    (patch: Partial<ComposerDraft>) =>
+      setDraft((prev) => ({ ...prev, ...patch, updatedAt: Date.now() })),
+    [],
+  );
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -873,6 +882,8 @@ export default function App() {
             )}
             <Generate
               tray={tray}
+              draft={draft}
+              updateDraft={updateDraft}
               prefill={prefill}
               consumePrefill={consumePrefill}
               addManyToTray={addManyToTray}
@@ -941,6 +952,8 @@ export default function App() {
             <div className="phone-panel" hidden={phoneTab !== "create"}>
               <Generate
                 tray={tray}
+                draft={draft}
+                updateDraft={updateDraft}
                 prefill={prefill}
                 consumePrefill={consumePrefill}
                 addManyToTray={addManyToTray}
