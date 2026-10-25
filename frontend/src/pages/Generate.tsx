@@ -248,7 +248,7 @@ export default function Generate({
                     icon="clear"
                     label={t("composer_clear")}
                     aria-expanded={clearOpen}
-                    disabled={!prompt.trim() && tray.length === 0}
+                    disabled={prompt === "" && tray.length === 0}
                     onClick={() => setClearOpen((v) => !v)}
                   />
                 }

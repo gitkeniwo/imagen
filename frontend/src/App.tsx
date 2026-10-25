@@ -712,7 +712,10 @@ export default function App() {
     });
   }, []);
 
+  // Reuse replaces the references, so a failed-lookup pending list is obsolete.
   const reuse = useCallback((g: Generation) => {
+    composerTouched.current = true;
+    pendingInputIds.current = null;
     setTray(g.inputs ?? []);
     setPrefill({
       prompt: g.prompt,
@@ -724,6 +727,8 @@ export default function App() {
 
   // Reuse a queued task's settings (prompt/model/ratio/resolution + inputs).
   const reuseTask = useCallback((task: QueueTask) => {
+    composerTouched.current = true;
+    pendingInputIds.current = null;
     setTray(task.inputs ?? []);
     setPrefill({
       prompt: task.prompt,
