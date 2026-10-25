@@ -161,6 +161,18 @@ export default function App() {
   // A failed image lookup keeps the saved ids here; the next save writes them
   // back instead of erasing the references. Any manual change clears it.
   const pendingInputIds = useRef<number[] | null>(null);
+  // Clear button: prompt and references only; settings and attempts stay.
+  const clearComposer = useCallback(() => {
+    composerTouched.current = true;
+    pendingInputIds.current = null;
+    setDraft((prev) => ({
+      ...prev,
+      prompt: "",
+      inputIds: [],
+      updatedAt: Date.now(),
+    }));
+    setTray([]);
+  }, []);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"library" | "remote">("library");
@@ -968,6 +980,7 @@ export default function App() {
               tray={tray}
               draft={draft}
               updateDraft={updateDraft}
+              clearComposer={clearComposer}
               prefill={prefill}
               consumePrefill={consumePrefill}
               addManyToTray={addManyToTray}
@@ -1038,6 +1051,7 @@ export default function App() {
                 tray={tray}
                 draft={draft}
                 updateDraft={updateDraft}
+                clearComposer={clearComposer}
                 prefill={prefill}
                 consumePrefill={consumePrefill}
                 addManyToTray={addManyToTray}

@@ -1354,6 +1354,11 @@ body.manager-open { overflow: hidden; }
   min-height: 96px; font-size: var(--fs-lg); line-height: 1.6; resize: vertical;
 }
 .composer-prompt:focus, .composer-prompt:focus-visible { outline: none; box-shadow: none; border: none; }
+/* Clear button tucked into the prompt's top-right corner; the textarea keeps
+   a matching right inset so text never runs underneath it. */
+.composer-prompt-wrap { position: relative; }
+.composer-prompt-wrap .composer-prompt { padding-right: 36px; }
+.composer-clear-wrap { position: absolute; top: 0; right: 0; }
 .composer-params {
   display: grid; grid-template-columns: auto auto minmax(0, 1fr);
   column-gap: var(--space-5); row-gap: var(--space-3_5);

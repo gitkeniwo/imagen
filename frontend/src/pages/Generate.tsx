@@ -29,6 +29,7 @@ export default function Generate({
   tray,
   draft,
   updateDraft,
+  clearComposer,
   prefill,
   consumePrefill,
   addManyToTray,
@@ -54,6 +55,7 @@ export default function Generate({
   tray: ImageRow[];
   draft: ComposerDraft;
   updateDraft: (patch: Partial<ComposerDraft>) => void;
+  clearComposer: () => void;
   prefill: Prefill | null;
   consumePrefill: () => void;
   addManyToTray: (imgs: ImageRow[]) => void;
@@ -99,7 +101,9 @@ export default function Generate({
     updateDraft({ skipIfPrecedingSucceeds: v });
   const [pickingRefs, setPickingRefs] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   // "Try up to N times": one submit enqueues N copies of the task as a retry
   // group (copies 2..N are auto-skip, so the first success cancels the rest).
   const [attempts, setAttempts] = useState(() => {
@@ -215,20 +219,61 @@ export default function Generate({
             onPickLibrary={() => setPickingRefs(true)}
             onOpen={(img) => onOpenViewer(img, tray)}
           />
-          <textarea
-            className="composer-prompt"
-            aria-label={t("prompt")}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              // Cmd/Ctrl+Enter enqueues, same as the generate button.
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder={t("prompt_placeholder")}
-          />
+          <div className="composer-prompt-wrap">
+            <textarea
+              ref={promptRef}
+              className="composer-prompt"
+              aria-label={t("prompt")}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                // Cmd/Ctrl+Enter enqueues, same as the generate button.
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              placeholder={t("prompt_placeholder")}
+            />
+            <div className="composer-clear-wrap">
+              <Popover
+                fixed
+                align="end"
+                open={clearOpen}
+                onClose={() => setClearOpen(false)}
+                panelClassName="confirm-bubble"
+                panelProps={{ role: "dialog", "aria-label": t("composer_clear") }}
+                trigger={
+                  <IconButton
+                    icon="clear"
+                    label={t("composer_clear")}
+                    aria-expanded={clearOpen}
+                    disabled={!prompt.trim() && tray.length === 0}
+                    onClick={() => setClearOpen((v) => !v)}
+                  />
+                }
+              >
+                <p>{t("composer_clear_confirm")}</p>
+                <div className="confirm-bubble-actions">
+                  <Button size="sm" onClick={() => setClearOpen(false)}>
+                    {t("cancel")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => {
+                      setClearOpen(false);
+                      clearComposer();
+                      // Let the popover unmount before moving focus back.
+                      window.setTimeout(() => promptRef.current?.focus(), 0);
+                    }}
+                  >
+                    {t("composer_clear")}
+                  </Button>
+                </div>
+              </Popover>
+            </div>
+          </div>
           {phone && (
             <div className="composer-phone-optrow">
               <button
