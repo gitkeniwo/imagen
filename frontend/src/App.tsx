@@ -44,7 +44,13 @@ import { Button, IconButton } from "./components/ui/Button";
 import appIcon from "./assets/app-icon.png";
 import { isRefDrag } from "./imageDrag";
 import { uuid } from "./uuid";
-import { ComposerDraft, emptyDraft } from "./composerDraft";
+import {
+  ComposerDraft,
+  emptyDraft,
+  loadStore,
+  sanitizeDraft,
+  saveStore,
+} from "./composerDraft";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
@@ -136,12 +142,25 @@ export default function App() {
   // Composer contents live here: one place owns the draft so it can outlive
   // panel switches and, in the next step, be loaded/saved locally.
   const [draft, setDraft] = useState<ComposerDraft>(emptyDraft);
+  // Hydration can finish after the user has already started typing; in that
+  // case their input wins and the stored draft is not applied over it.
+  const composerTouched = useRef(false);
   const updateDraft = useCallback(
-    (patch: Partial<ComposerDraft>) =>
-      setDraft((prev) => ({ ...prev, ...patch, updatedAt: Date.now() })),
+    (patch: Partial<ComposerDraft>) => {
+      composerTouched.current = true;
+      setDraft((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
+    },
     [],
   );
   const [prefill, setPrefill] = useState<Prefill | null>(null);
+  // Composer persistence: localStorage only, namespaced by the library key.
+  // `hydrated` stays false until the saved draft has been applied, so the
+  // initial empty render never overwrites what is on disk.
+  const [libraryKey, setLibraryKey] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  // A failed image lookup keeps the saved ids here; the next save writes them
+  // back instead of erasing the references. Any manual change clears it.
+  const pendingInputIds = useRef<number[] | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"library" | "remote">("library");
@@ -193,12 +212,75 @@ export default function App() {
   // popover and the ⌘Q guard know whether anything is still running. Remote
   // pages and older backends (404) skip this silently.
   const [isDesktopHost, setIsDesktopHost] = useState(false);
+
+  // One getLibrary() call serves both desktop-host detection and the composer
+  // key (the LAN branch returns the same key). Then load the draft, resolve
+  // its reference images/tags, and only then allow saving.
   useEffect(() => {
-    if (remote) return;
-    api.getLibrary()
-      .then((info) => setIsDesktopHost(info.desktop))
-      .catch(() => {});
+    let cancelled = false;
+    const hydrate = async () => {
+      let info;
+      try {
+        info = await api.getLibrary();
+      } catch {
+        // Offline / unauthorized: keep the memory-only composer this session.
+        return;
+      }
+      if (cancelled) return;
+      setIsDesktopHost(!remote && info.desktop);
+      if (!info.key) return; // older backend: no library key, no persistence
+
+      const stored = sanitizeDraft(loadStore(info.key).workspaces[0]);
+      let images: ImageRow[] = [];
+      let pending: number[] | null = null;
+      if (stored.inputIds.length > 0) {
+        try {
+          images = (await api.lookupImages(stored.inputIds)).images;
+        } catch {
+          // Keep the ids; the tray starts empty but the next save preserves
+          // them. A manual reference change drops the pending list.
+          pending = stored.inputIds;
+        }
+      }
+      let tagIds = stored.tagIds;
+      if (tagIds.length > 0) {
+        try {
+          const { tags } = await api.listTags();
+          const alive = new Set(tags.map((tag) => tag.id));
+          tagIds = tagIds.filter((id) => alive.has(id));
+        } catch {
+          // Tag list unavailable: keep the saved ids rather than clearing them.
+        }
+      }
+      if (cancelled) return;
+      if (!composerTouched.current) {
+        pendingInputIds.current = pending;
+        setTray(images);
+        setDraft({ ...stored, tagIds });
+      }
+      setLibraryKey(info.key);
+      setHydrated(true);
+    };
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
   }, [remote]);
+
+  // Write-through: raw localStorage, no debounce — a ⌘Q right after a keypress
+  // must not drop the last characters. `tray` is the source of truth for refs.
+  useEffect(() => {
+    if (!hydrated || !libraryKey) return;
+    const inputIds = tray.length
+      ? tray.map((img) => img.id)
+      : pendingInputIds.current ?? [];
+    const next: ComposerDraft = { ...draft, inputIds, updatedAt: Date.now() };
+    saveStore(libraryKey, {
+      version: 1,
+      activeId: next.id,
+      workspaces: [next],
+    });
+  }, [hydrated, libraryKey, draft, tray]);
 
   const queuedCount = queue.filter((task) => task.status === "pending").length;
   const runningCount = queue.filter(
@@ -588,33 +670,35 @@ export default function App() {
     });
   }, [queue, dispatchTick, concurrency, remote, conn, reportNetworkError]);
 
-  const addToTray = useCallback(
-    (img: ImageRow) =>
-      setTray((t) => (t.some((x) => x.id === img.id) ? t : [...t, img])),
-    [],
-  );
-  const addManyToTray = useCallback(
-    (imgs: ImageRow[]) =>
-      setTray((t) => {
-        const seen = new Set(t.map((x) => x.id));
-        return [...t, ...imgs.filter((i) => !seen.has(i.id))];
-      }),
-    [],
-  );
-  const removeFromTray = useCallback(
-    (id: number) => setTray((t) => t.filter((x) => x.id !== id)),
-    [],
-  );
-  const moveInTray = useCallback(
-    (from: number, to: number) =>
-      setTray((t) => {
-        const next = [...t];
-        const [m] = next.splice(from, 1);
-        next.splice(to, 0, m);
-        return next;
-      }),
-    [],
-  );
+  // Any manual reference change makes a failed-lookup pending list obsolete.
+  const addToTray = useCallback((img: ImageRow) => {
+    composerTouched.current = true;
+    pendingInputIds.current = null;
+    setTray((t) => (t.some((x) => x.id === img.id) ? t : [...t, img]));
+  }, []);
+  const addManyToTray = useCallback((imgs: ImageRow[]) => {
+    composerTouched.current = true;
+    pendingInputIds.current = null;
+    setTray((t) => {
+      const seen = new Set(t.map((x) => x.id));
+      return [...t, ...imgs.filter((i) => !seen.has(i.id))];
+    });
+  }, []);
+  const removeFromTray = useCallback((id: number) => {
+    composerTouched.current = true;
+    pendingInputIds.current = null;
+    setTray((t) => t.filter((x) => x.id !== id));
+  }, []);
+  const moveInTray = useCallback((from: number, to: number) => {
+    composerTouched.current = true;
+    pendingInputIds.current = null;
+    setTray((t) => {
+      const next = [...t];
+      const [m] = next.splice(from, 1);
+      next.splice(to, 0, m);
+      return next;
+    });
+  }, []);
 
   const reuse = useCallback((g: Generation) => {
     setTray(g.inputs ?? []);
