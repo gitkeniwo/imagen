@@ -9,6 +9,7 @@ import {
   QueueTask,
   TaskSpec,
 } from "../api";
+import { ComposerDraft } from "../composerDraft";
 import { useI18n } from "../i18n";
 import Popover from "../components/ui/Popover";
 import ReferenceTray from "../components/ReferenceTray";
@@ -26,6 +27,9 @@ const ATTEMPTS_KEY = "imagen-task-attempts";
 
 export default function Generate({
   tray,
+  draft,
+  updateDraft,
+  clearComposer,
   prefill,
   consumePrefill,
   addManyToTray,
@@ -49,6 +53,9 @@ export default function Generate({
   phone = false,
 }: {
   tray: ImageRow[];
+  draft: ComposerDraft;
+  updateDraft: (patch: Partial<ComposerDraft>) => void;
+  clearComposer: () => void;
   prefill: Prefill | null;
   consumePrefill: () => void;
   addManyToTray: (imgs: ImageRow[]) => void;
@@ -74,16 +81,29 @@ export default function Generate({
   const { t } = useI18n();
   const [saveOpen, setSaveOpen] = useState(false);
   const { conn, remote } = useRemote();
-  const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(MODELS[0].id);
-  const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [resolution, setResolution] = useState("1K");
-  const [format, setFormat] = useState("image/jpeg");
-  const [tagIds, setTagIds] = useState<number[]>([]);
-  const [skipIfPrecedingSucceeds, setSkipIfPrecedingSucceeds] = useState(false);
+  // The draft itself lives in App so one place owns loading/saving it.
+  const {
+    prompt,
+    model,
+    aspectRatio,
+    resolution,
+    format,
+    tagIds,
+    skipIfPrecedingSucceeds,
+  } = draft;
+  const setPrompt = (v: string) => updateDraft({ prompt: v });
+  const setModel = (v: string) => updateDraft({ model: v });
+  const setAspectRatio = (v: string) => updateDraft({ aspectRatio: v });
+  const setResolution = (v: string) => updateDraft({ resolution: v });
+  const setFormat = (v: string) => updateDraft({ format: v });
+  const setTagIds = (ids: number[]) => updateDraft({ tagIds: ids });
+  const setSkipIfPrecedingSucceeds = (v: boolean) =>
+    updateDraft({ skipIfPrecedingSucceeds: v });
   const [pickingRefs, setPickingRefs] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   // "Try up to N times": one submit enqueues N copies of the task as a retry
   // group (copies 2..N are auto-skip, so the first success cancels the rest).
   const [attempts, setAttempts] = useState(() => {
@@ -97,16 +117,18 @@ export default function Generate({
     localStorage.setItem(ATTEMPTS_KEY, String(attempts));
   }, [attempts]);
 
-  // Apply a "reuse" prefill coming from the History tab.
+  // Apply a "reuse" prefill coming from the History tab (or the queue).
   useEffect(() => {
     if (prefill) {
-      setPrompt(prefill.prompt);
-      setModel(normalizeModelId(prefill.model));
-      if (prefill.aspectRatio) setAspectRatio(prefill.aspectRatio);
-      if (prefill.resolution) setResolution(prefill.resolution);
+      updateDraft({
+        prompt: prefill.prompt,
+        model: normalizeModelId(prefill.model),
+        ...(prefill.aspectRatio ? { aspectRatio: prefill.aspectRatio } : {}),
+        ...(prefill.resolution ? { resolution: prefill.resolution } : {}),
+      });
       consumePrefill();
     }
-  }, [prefill, consumePrefill]);
+  }, [prefill, consumePrefill, updateDraft]);
 
   const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
@@ -197,20 +219,61 @@ export default function Generate({
             onPickLibrary={() => setPickingRefs(true)}
             onOpen={(img) => onOpenViewer(img, tray)}
           />
-          <textarea
-            className="composer-prompt"
-            aria-label={t("prompt")}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              // Cmd/Ctrl+Enter enqueues, same as the generate button.
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder={t("prompt_placeholder")}
-          />
+          <div className="composer-prompt-wrap">
+            <textarea
+              ref={promptRef}
+              className="composer-prompt"
+              aria-label={t("prompt")}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                // Cmd/Ctrl+Enter enqueues, same as the generate button.
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSubmit) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              placeholder={t("prompt_placeholder")}
+            />
+            <div className="composer-clear-wrap">
+              <Popover
+                fixed
+                align="end"
+                open={clearOpen}
+                onClose={() => setClearOpen(false)}
+                panelClassName="confirm-bubble"
+                panelProps={{ role: "dialog", "aria-label": t("composer_clear") }}
+                trigger={
+                  <IconButton
+                    icon="clear"
+                    label={t("composer_clear")}
+                    aria-expanded={clearOpen}
+                    disabled={prompt === "" && tray.length === 0}
+                    onClick={() => setClearOpen((v) => !v)}
+                  />
+                }
+              >
+                <p>{t("composer_clear_confirm")}</p>
+                <div className="confirm-bubble-actions">
+                  <Button size="sm" onClick={() => setClearOpen(false)}>
+                    {t("cancel")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => {
+                      setClearOpen(false);
+                      clearComposer();
+                      // Let the popover unmount before moving focus back.
+                      window.setTimeout(() => promptRef.current?.focus(), 0);
+                    }}
+                  >
+                    {t("composer_clear")}
+                  </Button>
+                </div>
+              </Popover>
+            </div>
+          </div>
           {phone && (
             <div className="composer-phone-optrow">
               <button

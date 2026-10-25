@@ -124,6 +124,8 @@ const ICONS = {
   // Generic
   add: Plus,
   remove: Minus,
+  // Wipe the composer's contents (distinct from clearing a tag: `untag`).
+  clear: Eraser,
   close: X,
   search: Search,
   prev: ChevronLeft,

@@ -304,6 +304,8 @@ export interface LibraryInfo {
   images: number;
   bytes: number;
   history: number;
+  // Opaque per-library id (a path hash). Namespaces the local composer draft.
+  key: string;
   // Desktop only: recently opened libraries (current one excluded). `index`
   // is the shell's own list position used by imagen-action://open-recent/<n>.
   recent: { index: number; path: string; name: string; opened_at: number | null; exists: boolean }[];
@@ -356,6 +358,11 @@ export const api = {
     if (params.starred) q.set("starred", "true");
     if (params.q && params.q.trim()) q.set("q", params.q.trim());
     return handle(await fetch(`/api/images?${q.toString()}`));
+  },
+  // Restore saved composer references: live rows only, in the requested order.
+  async lookupImages(ids: number[]): Promise<{ images: ImageRow[] }> {
+    if (ids.length === 0) return { images: [] };
+    return handle(await fetch(`/api/images/lookup?ids=${ids.join(",")}`));
   },
   async patchImage(
     id: number,
