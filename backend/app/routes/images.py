@@ -90,6 +90,40 @@ def list_images(
     return {"images": rows, "total": total}
 
 
+MAX_LOOKUP_IDS = 50
+
+
+@router.get("/lookup")
+def lookup_images(ids: str = Query(...)):
+    """Fetch live image rows by id, in the order requested.
+
+    Used to restore a composer draft: ids of deleted/purged images simply drop
+    out. Declared before the ``/{image_id}/...`` routes so "lookup" is not
+    parsed as an image id.
+    """
+    raw = ids.split(",")
+    if (
+        not raw
+        or len(raw) > MAX_LOOKUP_IDS
+        or any(not (part.isascii() and part.isdigit()) or int(part) <= 0 for part in raw)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"ids must be 1-{MAX_LOOKUP_IDS} comma-separated positive integers",
+        )
+    id_list = [int(part) for part in raw]
+    placeholders = ",".join("?" * len(id_list))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM images WHERE deleted_at IS NULL AND id IN ({placeholders})",
+            id_list,
+        ).fetchall()
+        by_id = {row["id"]: dict(row) for row in rows}
+        images = [by_id[image_id] for image_id in id_list if image_id in by_id]
+        tagging.attach_tags(conn, images)
+    return {"images": images}
+
+
 @router.get("/batch-download")
 def batch_download(ids: str = Query(...)):
     try:

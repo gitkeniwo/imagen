@@ -3,6 +3,7 @@
 Auth itself uses Application Default Credentials (ADC) on the machine — no
 secret is stored here; only the (non-secret) project id and location.
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -83,6 +84,10 @@ def get_library(request: Request):
             "SELECT COUNT(*) c FROM generations WHERE status NOT IN ('note', 'running')"
         ).fetchone()["c"]
     current = Path(DATA_DIR).resolve()
+    # Opaque per-library id. Clients key their local composer draft by this so
+    # switching libraries (same origin) never mixes drafts up. The hash hides
+    # the path, so it is safe to expose on the LAN listener too.
+    library_key = hashlib.sha256(str(current).encode("utf-8")).hexdigest()[:16]
     if is_lan(request.scope):
         # Remote devices don't get to see (or switch) the Mac's library.
         return {
@@ -92,6 +97,7 @@ def get_library(request: Request):
             "images": images["c"],
             "bytes": images["b"],
             "history": history,
+            "key": library_key,
             "recent": [],
         }
     return {
@@ -101,6 +107,7 @@ def get_library(request: Request):
         "images": images["c"],
         "bytes": images["b"],
         "history": history,
+        "key": library_key,
         "recent": _recent_libraries(current),
     }
 
