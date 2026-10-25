@@ -286,6 +286,7 @@ label { font-size: var(--fs-md); font-weight: 500; color: var(--text); display: 
   position: sticky; top: 0; z-index: 10; flex: none;
   display: flex; align-items: center; gap: var(--space-1); height: 56px; padding: 0 var(--space-4);
   background: var(--topbar-bg); backdrop-filter: blur(16px);
+  container-type: inline-size;
 }
 .main-panel { min-width: 0; padding: 0 var(--space-6) var(--space-16); }
 .brand-icon { width: 24px; height: 24px; display: block; border-radius: var(--radius-sm); }
@@ -299,6 +300,94 @@ label { font-size: var(--fs-md); font-weight: 500; color: var(--text); display: 
   font-size: var(--fs-md); font-weight: 500;
 }
 .topbar-btn:hover:not(:disabled) { background: var(--panel-2); }
+
+/* ===== composer workspace tabs (desktop) ===== */
+.composer-tabs {
+  position: relative; z-index: 2; align-self: flex-end; flex: 0 1 auto;
+  min-width: 0; max-width: min(70vw, 760px); height: 42px;
+  display: flex; align-items: center; gap: var(--space-0_5);
+  margin: 0 0 -1px calc(var(--space-6) - var(--space-4));
+  padding: 0 5px;
+  background: var(--panel); border: 1px solid var(--border); border-bottom: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow);
+}
+.composer-tablist {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 2px;
+  overflow: hidden;
+}
+.ws-tab-wrap {
+  position: relative; flex: none; height: 28px; min-width: 28px;
+  display: flex; align-items: center; border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.ws-tab-wrap.active { background: var(--ui-accent-soft); color: var(--ui-accent); }
+.ws-tab-wrap.empty:not(.active) { color: var(--muted-2); }
+.ws-tab {
+  height: 28px; min-width: 28px; max-width: 120px; padding: 0 8px;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--radius-sm); background: transparent;
+  box-shadow: none; color: inherit; font-size: var(--fs-md); font-weight: 400;
+}
+.ws-tab-wrap.active .ws-tab { font-weight: 700; }
+.ws-tab-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-tab-wrap.active:has(.ws-tab-close) .ws-tab { padding-right: var(--space-1); }
+.ws-tab-close {
+  width: 20px; height: 20px; min-height: 0; padding: 0; margin-right: 4px;
+  display: none; align-items: center; justify-content: center; flex: none;
+  border: 0; border-radius: var(--radius-xs); background: transparent;
+  box-shadow: none; color: inherit;
+}
+.ws-tab-close .icon { width: 12px; height: 12px; }
+.composer-tabs:hover .ws-tab-close,
+.ws-tab-wrap:focus-within .ws-tab-close { display: flex; }
+.ws-tab-close:hover:not(:disabled) { background: color-mix(in srgb, currentColor 12%, transparent); }
+.ws-tab-input {
+  width: 110px; height: 28px; padding: 0 8px; border: 1px solid var(--ui-accent);
+  border-radius: var(--radius-sm); background: var(--panel);
+  box-shadow: 0 0 0 3px var(--ui-accent-soft);
+  color: var(--text); font-size: var(--fs-md); font-weight: 600; outline: none;
+}
+.ws-new {
+  width: 28px; height: 28px; min-height: 0; padding: 0; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--radius-sm); background: transparent;
+  box-shadow: none; color: var(--muted);
+}
+.ws-new:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
+.ws-new:disabled { opacity: 0.45; }
+.ws-rename-hint {
+  position: absolute; z-index: 6; top: calc(100% + 7px); left: var(--space-3);
+  padding: 6px 10px; border-radius: var(--radius-md);
+  background: var(--text); color: var(--bg);
+  box-shadow: var(--shadow-lg); font-size: var(--fs-sm); line-height: 1.4;
+  white-space: nowrap; pointer-events: none;
+}
+.composer-tabs:not(.undocked)::before {
+  content: ""; position: absolute; z-index: 3; left: 100%; bottom: 0;
+  width: 16px; height: 14px; background: var(--panel);
+}
+.composer-tabs:not(.undocked)::after {
+  content: ""; position: absolute; z-index: 4; left: 100%; bottom: 0;
+  width: 14px; height: 14px; border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); border-bottom-left-radius: 14px;
+  background: var(--topbar-bg);
+}
+.composer-tabs.undocked {
+  margin-bottom: 0; border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow);
+}
+.composer-tabs.undocked::before,
+.composer-tabs.undocked::after { display: none; }
+.ws-confirm::before { right: auto; left: 12px; }
+.composer.docked {
+  border-top-left-radius: 0;
+  border-top-right-radius: 14px;
+}
 
 .side-panel {
   position: relative;
@@ -2737,6 +2826,23 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     border-radius: 18px;
     box-shadow: var(--shadow);
   }
+  .composer-tabs.phone {
+    position: static; align-self: stretch; width: auto; max-width: none;
+    height: 46px; margin: calc(var(--space-3_5) * -1)
+      calc(var(--space-3_5) * -1) 0;
+    padding: 0 6px; border: 0; border-bottom: 1px solid var(--divider);
+    border-radius: 18px 18px 0 0; background: transparent; box-shadow: none;
+  }
+  .composer-tabs.phone .ws-tab-wrap,
+  .composer-tabs.phone .ws-tab,
+  .composer-tabs.phone .ws-new { height: 36px; }
+  .composer-tabs.phone .ws-tab-wrap { min-width: 36px; border-radius: var(--radius-lg); }
+  .composer-tabs.phone .ws-tab {
+    min-width: 36px; max-width: 120px; padding: 0 10px;
+    border-radius: var(--radius-lg); font-size: 15px;
+  }
+  .composer-tabs.phone .ws-new { width: 44px; }
+  .composer-tabs.phone .ws-tab-close { display: none !important; }
   .composer-phone .composer-prompt {
     min-height: 120px;
     font-size: 17px;

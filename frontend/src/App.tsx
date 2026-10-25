@@ -37,6 +37,7 @@ import MoreMenu, { type MorePage } from "./components/MoreMenu";
 import { useIsPhone } from "./useIsPhone";
 import { useBackLayer } from "./backStack";
 import PanelTabs from "./components/ui/PanelTabs";
+import ComposerTabs from "./components/ComposerTabs";
 import { usePanelCounts } from "./usePanelCounts";
 import { useToast } from "./components/Toast";
 import Icon from "./components/ui/Icon";
@@ -135,6 +136,8 @@ export default function App() {
   const [libraryKey, setLibraryKey] = useState<string | null>(null);
   const composer = useComposerWorkspaces(libraryKey);
   const {
+    workspaces,
+    activeId,
     draft,
     tray,
     updateDraft,
@@ -144,6 +147,12 @@ export default function App() {
     removeFromTray,
     moveInTray,
     replaceReferences,
+    selectWorkspace,
+    createWorkspace,
+    duplicateWorkspace,
+    renameWorkspace,
+    closeWorkspace,
+    workspaceLimit,
   } = composer;
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -165,6 +174,8 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const mainColRef = useRef<HTMLDivElement>(null);
+  const [mainScrolled, setMainScrolled] = useState(false);
   const isPhone = useIsPhone();
   const [phoneTab, setPhoneTab] = useState<PhoneTab>(initialPhoneTab);
   const [morePage, setMorePage] = useState<MorePage | null>(null);
@@ -332,6 +343,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    const main = mainColRef.current;
+    if (!main) return;
+    const onScroll = () => setMainScrolled(main.scrollTop > 0);
+    onScroll();
+    main.addEventListener("scroll", onScroll, { passive: true });
+    return () => main.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(PHONE_TAB_KEY, phoneTab);
@@ -836,8 +856,31 @@ export default function App() {
         </aside>
 
         {remote && <div className={`rm-topline${conn === "lost" ? " lost" : ""}`} aria-hidden="true" />}
-        <div className="main-col">
+        <div className="main-col" ref={mainColRef}>
           <header className="topbar">
+            <ComposerTabs
+              workspaces={workspaces}
+              activeId={activeId}
+              limit={workspaceLimit}
+              undocked={configured === false || mainScrolled}
+              onSelect={selectWorkspace}
+              onCreate={() => {
+                const created = createWorkspace();
+                if (created) {
+                  window.setTimeout(
+                    () =>
+                      document
+                        .querySelector<HTMLTextAreaElement>(".composer-prompt")
+                        ?.focus(),
+                    0,
+                  );
+                }
+                return created;
+              }}
+              onDuplicate={duplicateWorkspace}
+              onRename={renameWorkspace}
+              onClose={closeWorkspace}
+            />
             <div className="spacer" />
             {remote ? (
               <RemoteChip />
@@ -875,6 +918,15 @@ export default function App() {
             <Generate
               tray={tray}
               draft={draft}
+              workspaces={workspaces}
+              activeId={activeId}
+              workspaceLimit={workspaceLimit}
+              composerUndocked={configured === false || mainScrolled}
+              onSelectWorkspace={selectWorkspace}
+              onCreateWorkspace={createWorkspace}
+              onDuplicateWorkspace={duplicateWorkspace}
+              onRenameWorkspace={renameWorkspace}
+              onCloseWorkspace={closeWorkspace}
               updateDraft={updateDraft}
               clearComposer={clearComposer}
               prefill={prefill}
@@ -946,6 +998,15 @@ export default function App() {
               <Generate
                 tray={tray}
                 draft={draft}
+                workspaces={workspaces}
+                activeId={activeId}
+                workspaceLimit={workspaceLimit}
+                composerUndocked={false}
+                onSelectWorkspace={selectWorkspace}
+                onCreateWorkspace={createWorkspace}
+                onDuplicateWorkspace={duplicateWorkspace}
+                onRenameWorkspace={renameWorkspace}
+                onCloseWorkspace={closeWorkspace}
                 updateDraft={updateDraft}
                 clearComposer={clearComposer}
                 prefill={prefill}
