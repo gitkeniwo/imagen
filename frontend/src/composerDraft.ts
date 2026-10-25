@@ -36,14 +36,6 @@ export type ComposerStorageEntry =
   | { kind: "active" }
   | { kind: "workspace"; id: string };
 
-// Temporary compatibility surface for the single-workspace App while the
-// workspace hook is wired in.
-export interface ComposerStore {
-  version: 1;
-  activeId: string;
-  workspaces: ComposerDraft[];
-}
-
 interface LegacyComposerStore {
   version: 1;
   activeId: string;
@@ -130,31 +122,6 @@ export function emptyWorkspace(
     number,
     name: null,
   };
-}
-
-export function emptyStore(): ComposerStore {
-  const draft = emptyDraft();
-  return { version: 1, activeId: draft.id, workspaces: [draft] };
-}
-
-export function loadStore(libraryKey: string): ComposerStore {
-  const loaded = loadWorkspaces(libraryKey);
-  const draft =
-    loaded.workspaces.find((workspace) => workspace.id === loaded.lastId) ??
-    loaded.workspaces[0];
-  return { version: 1, activeId: draft.id, workspaces: [draft] };
-}
-
-export function saveStore(libraryKey: string, store: ComposerStore): void {
-  const draft = store.workspaces.find((item) => item.id === store.activeId) ??
-    store.workspaces[0];
-  if (!draft) return;
-  saveWorkspace(libraryKey, {
-    ...draft,
-    number:
-      "number" in draft && typeof draft.number === "number" ? draft.number : 1,
-    name: "name" in draft && typeof draft.name === "string" ? draft.name : null,
-  });
 }
 
 function positiveIds(value: unknown): number[] {
