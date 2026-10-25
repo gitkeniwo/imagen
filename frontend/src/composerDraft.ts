@@ -30,6 +30,12 @@ export interface LoadedWorkspaces {
   lastId: string | null;
 }
 
+export type ComposerStorageEntry =
+  | { kind: "index" }
+  | { kind: "last" }
+  | { kind: "active" }
+  | { kind: "workspace"; id: string };
+
 // Temporary compatibility surface for the single-workspace App while the
 // workspace hook is wired in.
 export interface ComposerStore {
@@ -65,6 +71,33 @@ const lastKey = (libraryKey: string) => `${libraryPrefix(libraryKey)}:last`;
 const activeKey = (libraryKey: string) => `${libraryPrefix(libraryKey)}:active`;
 const workspaceKeyPrefix = (libraryKey: string) =>
   `${libraryPrefix(libraryKey)}:ws:`;
+
+export function parseComposerStorageKey(
+  libraryKey: string,
+  key: string | null,
+): ComposerStorageEntry | null {
+  if (!key) return null;
+  if (key === workspaceIndexKey(libraryKey)) return { kind: "index" };
+  if (key === lastKey(libraryKey)) return { kind: "last" };
+  if (key === activeKey(libraryKey)) return { kind: "active" };
+  const prefix = workspaceKeyPrefix(libraryKey);
+  if (key.startsWith(prefix)) {
+    const id = key.slice(prefix.length);
+    return id ? { kind: "workspace", id } : null;
+  }
+  return null;
+}
+
+export function hasLocalStorage(): boolean {
+  try {
+    const key = "__imagen_composer_probe__";
+    localStorage.setItem(key, "1");
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function emptyDraft(): ComposerDraft {
   return {
@@ -313,6 +346,13 @@ function readWorkspace(
     console.warn(`[composer] could not read workspace ${id}`, err);
     return null;
   }
+}
+
+export function readStoredWorkspace(
+  libraryKey: string,
+  id: string,
+): WorkspaceRecord | null {
+  return readWorkspace(libraryKey, id);
 }
 
 function migrateV1(libraryKey: string): LoadedWorkspaces | null {

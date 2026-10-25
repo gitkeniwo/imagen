@@ -1,13 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ImageRow } from "./api";
+import { useI18n } from "./i18n";
+import { useToast } from "./components/Toast";
 import {
+  deleteWorkspaceRecord,
   emptyWorkspace,
+  hasLocalStorage,
   loadWindowActiveId,
   loadWorkspaces,
+  nextWorkspaceNumber,
+  parseComposerStorageKey,
+  readStoredWorkspace,
   saveLastActiveId,
   saveWindowActiveId,
   saveWorkspace,
   sanitizeWorkspace,
+  sanitizeWorkspaceName,
+  updateWorkspaceIndex,
+  WORKSPACE_LIMIT,
   type ComposerDraft,
   type WorkspaceRecord,
 } from "./composerDraft";
@@ -35,6 +45,8 @@ function workspaceFromDraft(
 }
 
 export function useComposerWorkspaces(libraryKey: string | null) {
+  const { t } = useI18n();
+  const toast = useToast();
   const memoryWorkspace = useRef(emptyWorkspace(1));
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([
     memoryWorkspace.current,
@@ -49,6 +61,7 @@ export function useComposerWorkspaces(libraryKey: string | null) {
   const hydratedRef = useRef(hydrated);
   const lastSaved = useRef(new Map<string, string>());
   const lookupsInFlight = useRef(new Set<string>());
+  const storageAvailable = useRef(hasLocalStorage());
 
   workspacesRef.current = workspaces;
   activeIdRef.current = activeId;
@@ -355,15 +368,225 @@ export function useComposerWorkspaces(libraryKey: string | null) {
     saveWindowActiveId(libraryKey, cleaned.id);
   }, [active, hydrated, libraryKey]);
 
-  const selectWorkspace = useCallback(
+  const activateWorkspace = useCallback(
     (id: string) => {
-      if (!workspacesRef.current.some((workspace) => workspace.id === id)) return;
       setActiveId(id);
-      saveWindowActiveId(libraryKey ?? "", id);
+      if (libraryKey) saveWindowActiveId(libraryKey, id);
       if (libraryKey) saveLastActiveId(libraryKey, id);
     },
     [libraryKey],
   );
+
+  const selectWorkspace = useCallback(
+    (id: string) => {
+      if (!workspacesRef.current.some((workspace) => workspace.id === id)) return;
+      activateWorkspace(id);
+    },
+    [activateWorkspace],
+  );
+
+  const structureSnapshot = useCallback(() => {
+    const current = workspacesRef.current;
+    if (!libraryKey || !storageAvailable.current) return current;
+    const active = current.find(
+      (workspace) => workspace.id === activeIdRef.current,
+    );
+    if (active) saveWorkspace(libraryKey, active);
+    return loadWorkspaces(libraryKey).workspaces;
+  }, [libraryKey]);
+
+  const applyStructure = useCallback(
+    (next: WorkspaceRecord[], activeAfter: string) => {
+      setWorkspaces(next);
+      workspacesRef.current = next;
+      activateWorkspace(activeAfter);
+    },
+    [activateWorkspace],
+  );
+
+  const createWorkspace = useCallback((): boolean => {
+    const snapshot = structureSnapshot();
+    if (snapshot.length >= WORKSPACE_LIMIT) return false;
+    const source =
+      workspacesRef.current.find(
+        (workspace) => workspace.id === activeIdRef.current,
+      ) ?? snapshot[0];
+    if (!source) return false;
+
+    const workspace = emptyWorkspace(
+      nextWorkspaceNumber(snapshot),
+      source,
+    );
+    const sourceAt = snapshot.findIndex((item) => item.id === source.id);
+    const next = [...snapshot];
+    next.splice(sourceAt >= 0 ? sourceAt + 1 : next.length, 0, workspace);
+
+    if (libraryKey && storageAvailable.current) {
+      saveWorkspace(libraryKey, workspace);
+      updateWorkspaceIndex(libraryKey, (order) => {
+        const copy = [...order];
+        const at = sourceAt >= 0 ? copy.indexOf(source.id) : -1;
+        copy.splice(at >= 0 ? at + 1 : copy.length, 0, workspace.id);
+        return copy;
+      });
+    }
+    lastSaved.current.set(workspace.id, JSON.stringify(workspace));
+    applyStructure(next, workspace.id);
+    return true;
+  }, [applyStructure, libraryKey, structureSnapshot]);
+
+  const duplicateWorkspace = useCallback((): boolean => {
+    const snapshot = structureSnapshot();
+    if (snapshot.length >= WORKSPACE_LIMIT) return false;
+    const source =
+      workspacesRef.current.find(
+        (workspace) => workspace.id === activeIdRef.current,
+      ) ?? snapshot[0];
+    if (!source) return false;
+
+    const copy = emptyWorkspace(nextWorkspaceNumber(snapshot), source);
+    const workspace: WorkspaceRecord = {
+      ...copy,
+      prompt: source.prompt,
+      inputIds: [...source.inputIds],
+      tagIds: [...source.tagIds],
+      updatedAt: Date.now(),
+      name: null,
+    };
+    const sourceAt = snapshot.findIndex((item) => item.id === source.id);
+    const next = [...snapshot];
+    next.splice(sourceAt >= 0 ? sourceAt + 1 : next.length, 0, workspace);
+
+    if (libraryKey && storageAvailable.current) {
+      saveWorkspace(libraryKey, workspace);
+      updateWorkspaceIndex(libraryKey, (order) => {
+        const current = [...order];
+        const at = sourceAt >= 0 ? current.indexOf(source.id) : -1;
+        current.splice(at >= 0 ? at + 1 : current.length, 0, workspace.id);
+        return current;
+      });
+    }
+    lastSaved.current.set(workspace.id, JSON.stringify(workspace));
+    applyStructure(next, workspace.id);
+    return true;
+  }, [applyStructure, libraryKey, structureSnapshot]);
+
+  const renameWorkspace = useCallback(
+    (id: string, name: string) => {
+      const cleaned = sanitizeWorkspaceName(name);
+      updateWorkspace(id, (workspace) => ({
+        ...workspace,
+        name: cleaned,
+        updatedAt: Date.now(),
+      }));
+    },
+    [updateWorkspace],
+  );
+
+  const closeWorkspace = useCallback(
+    (id: string): boolean => {
+      const current = workspacesRef.current;
+      if (current.length <= 1) return false;
+      const at = current.findIndex((workspace) => workspace.id === id);
+      if (at === -1) return false;
+      const fallback = current[at + 1] ?? current[at - 1];
+      let next = current.filter((workspace) => workspace.id !== id);
+
+      if (libraryKey && storageAvailable.current) {
+        deleteWorkspaceRecord(libraryKey, id);
+        updateWorkspaceIndex(libraryKey, (order) =>
+          order.filter((item) => item !== id),
+        );
+        const loaded = loadWorkspaces(libraryKey).workspaces;
+        if (loaded.length > 0) next = loaded;
+      }
+      lastSaved.current.delete(id);
+
+      let activeAfter = activeIdRef.current;
+      if (activeAfter === id) {
+        const preferred = next.find((workspace) => workspace.id === fallback.id);
+        activeAfter = preferred?.id ?? next[Math.min(at, next.length - 1)].id;
+      }
+      applyStructure(next, activeAfter);
+      return true;
+    },
+    [applyStructure, libraryKey],
+  );
+
+  // Merge index/record changes from other windows. Prompt focus is the only
+  // conflict rule: a focused editor keeps its text and wins on the next write.
+  useEffect(() => {
+    if (!libraryKey) return;
+    const promptFocused = () => {
+      const element = document.activeElement;
+      return (
+        element instanceof HTMLElement &&
+        element.classList.contains("composer-prompt")
+      );
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      const entry = parseComposerStorageKey(libraryKey, event.key);
+      if (!entry || entry.kind === "last" || entry.kind === "active") return;
+
+      if (entry.kind === "index" || event.key === null) {
+        const loaded = loadWorkspaces(libraryKey).workspaces;
+        const previous = workspacesRef.current;
+        const previousActive = activeIdRef.current;
+        const activeStillExists = loaded.some(
+          (workspace) => workspace.id === previousActive,
+        );
+        const previousActiveAt = previous.findIndex(
+          (workspace) => workspace.id === previousActive,
+        );
+        const merged = loaded.map((remote) => {
+          if (remote.id === previousActive && activeStillExists) {
+            return previous.find((workspace) => workspace.id === remote.id) ?? remote;
+          }
+          return remote;
+        });
+        if (JSON.stringify(merged) !== JSON.stringify(previous)) {
+          setWorkspaces(merged);
+          workspacesRef.current = merged;
+        }
+        for (const workspace of loaded) {
+          lastSaved.current.set(workspace.id, JSON.stringify(workspace));
+        }
+        if (!activeStillExists && loaded.length > 0) {
+          const next =
+            loaded[Math.min(Math.max(previousActiveAt, 0), loaded.length - 1)];
+          activateWorkspace(next.id);
+          toast(t("ws_closed_elsewhere"), "info");
+        }
+        return;
+      }
+
+      const remote = readStoredWorkspace(libraryKey, entry.id);
+      if (!remote) return;
+      const current = workspacesRef.current.find(
+        (workspace) => workspace.id === entry.id,
+      );
+      if (!current) return;
+      let next = remote;
+      if (entry.id === activeIdRef.current && promptFocused()) {
+        next = {
+          ...current,
+          number: remote.number,
+          name: remote.name,
+        };
+      }
+      if (JSON.stringify(next) === JSON.stringify(current)) return;
+      lastSaved.current.set(remote.id, JSON.stringify(remote));
+      setWorkspaces((all) =>
+        all.map((workspace) =>
+          workspace.id === remote.id ? next : workspace,
+        ),
+      );
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [activateWorkspace, libraryKey, t, toast]);
 
   return {
     workspaces,
@@ -380,5 +603,10 @@ export function useComposerWorkspaces(libraryKey: string | null) {
     moveInTray,
     replaceReferences,
     selectWorkspace,
+    createWorkspace,
+    duplicateWorkspace,
+    renameWorkspace,
+    closeWorkspace,
+    workspaceLimit: WORKSPACE_LIMIT,
   };
 }
