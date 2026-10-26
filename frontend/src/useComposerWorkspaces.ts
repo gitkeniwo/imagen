@@ -524,9 +524,15 @@ export function useComposerWorkspaces(libraryKey: string | null) {
 
   // Merge index/record changes from other windows. Prompt focus is the only
   // conflict rule: a focused editor keeps its text and wins on the next write.
+  // activeElement survives the window losing focus, so a background window
+  // must also check document focus or it would keep (and later re-save) stale
+  // text over edits made elsewhere.
   useEffect(() => {
     if (!libraryKey) return;
     const promptFocused = () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) {
+        return false;
+      }
       const element = document.activeElement;
       return (
         element instanceof HTMLElement &&
