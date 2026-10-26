@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { api, Generation, ImageRow, imgThumbUrl } from "../api";
+import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
 import TagPicker from "./TagPicker";
@@ -20,9 +20,21 @@ import { useBackLayer } from "../backStack";
 // reuse), a ★ favorite toggle, and an editable note — so a good image is one
 // click from saving its prompt.
 // `list` (optional) enables prev/next navigation within the surrounding grid.
+export interface ViewerPager {
+  // Absolute position of the first item in `list` within the full result set.
+  offset: number;
+  total: number;
+  // Number of rows to request for each prefetch. Defaults to `list.length`.
+  batchSize?: number;
+  // Must use the same filters/sort as the grid that opened the viewer.
+  fetch(offset: number, limit: number): Promise<ImageRow[]>;
+}
+
 export default function ImageViewer({
   image,
   list,
+  pager,
+  onIndexChange,
   onClose,
   onAddToTray,
   onTagsChanged,
@@ -31,6 +43,8 @@ export default function ImageViewer({
 }: {
   image: ImageRow;
   list: ImageRow[];
+  pager?: ViewerPager;
+  onIndexChange?: (globalIndex: number, image?: ImageRow) => void;
   onClose: () => void;
   onAddToTray: (img: ImageRow) => void;
   onTagsChanged: () => void;
@@ -39,12 +53,47 @@ export default function ImageViewer({
 }) {
   const { t } = useI18n();
   const toast = useToast();
-  useBackLayer(true, onClose);
-  const items = list.length ? list : [image];
-  const [idx, setIdx] = useState(
+  const [items, setItems] = useState<ImageRow[]>(() => {
+    const seen = new Set<number>();
+    const seed = (list.length ? list : [image]).filter((img) => {
+      if (seen.has(img.id)) return false;
+      seen.add(img.id);
+      return true;
+    });
+    if (!seen.has(image.id)) seed.unshift(image);
+    return seed;
+  });
+  const [idx, setIdx] = useState(() =>
     Math.max(0, items.findIndex((i) => i.id === image.id)),
   );
+  const [startOffset, setStartOffset] = useState(pager?.offset ?? 0);
+  const total = Math.max(items.length, pager?.total ?? items.length);
+  const itemsRef = useRef(items);
+  const idxRef = useRef(idx);
+  const startRef = useRef(startOffset);
+  const totalRef = useRef(total);
+  const setCurrentIndex = useCallback((next: number) => {
+    idxRef.current = next;
+    setIdx(next);
+  }, []);
+  const close = useCallback(() => {
+    const globalIndex = Math.min(
+      Math.max(0, totalRef.current - 1),
+      startRef.current + idxRef.current,
+    );
+    const lastImage =
+      itemsRef.current[Math.min(idxRef.current, itemsRef.current.length - 1)] ?? image;
+    onIndexChange?.(globalIndex, lastImage);
+    onClose();
+  }, [image, onClose, onIndexChange]);
+  useBackLayer(true, close);
   const current = items[Math.min(idx, items.length - 1)] ?? image;
+  const globalIndex = Math.min(
+    Math.max(0, total - 1),
+    startOffset + idx,
+  );
+  const globalPosition = globalIndex + 1;
+  const multi = total > 1;
   const [tagIds, setTagIds] = useState<number[]>(
     (current.tags ?? []).map((x) => x.id),
   );
@@ -86,6 +135,101 @@ export default function ImageViewer({
   const onHandleUp = () => {
     dragRef.current = null;
   };
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  useEffect(() => {
+    startRef.current = startOffset;
+  }, [startOffset]);
+  useEffect(() => {
+    totalRef.current = total;
+  }, [total]);
+
+  const batchSizeRef = useRef(
+    Math.max(1, pager?.batchSize ?? (list.length || items.length)),
+  );
+  const nextLoad = useRef<Promise<boolean> | null>(null);
+  const prevLoad = useRef<Promise<boolean> | null>(null);
+  const loadNext = useCallback(() => {
+    if (!pager) return Promise.resolve(false);
+    if (nextLoad.current) return nextLoad.current;
+    const from = startRef.current + itemsRef.current.length;
+    if (from >= totalRef.current) return Promise.resolve(false);
+    const request = pager
+      .fetch(from, batchSizeRef.current)
+      .then((rows) => {
+        const seen = new Set(itemsRef.current.map((img) => img.id));
+        const fresh = rows.filter((img) => {
+          if (seen.has(img.id)) return false;
+          seen.add(img.id);
+          return true;
+        });
+        if (fresh.length === 0) return false;
+        const merged = [...itemsRef.current, ...fresh];
+        itemsRef.current = merged;
+        setItems(merged);
+        return true;
+      })
+      .finally(() => {
+        if (nextLoad.current === request) nextLoad.current = null;
+      });
+    nextLoad.current = request;
+    return request;
+  }, [pager]);
+  const loadPrev = useCallback(() => {
+    if (!pager) return Promise.resolve(false);
+    if (prevLoad.current) return prevLoad.current;
+    const from = startRef.current;
+    if (from <= 0) return Promise.resolve(false);
+    const to = Math.max(0, from - batchSizeRef.current);
+    const request = pager
+      .fetch(to, from - to)
+      .then((rows) => {
+        const seen = new Set(itemsRef.current.map((img) => img.id));
+        const fresh = rows.filter((img) => {
+          if (seen.has(img.id)) return false;
+          seen.add(img.id);
+          return true;
+        });
+        if (fresh.length === 0) return false;
+        const merged = [...fresh, ...itemsRef.current];
+        const shiftedIndex = idxRef.current + fresh.length;
+        itemsRef.current = merged;
+        startRef.current = to;
+        idxRef.current = shiftedIndex;
+        setItems(merged);
+        setStartOffset(to);
+        setIdx(shiftedIndex);
+        return true;
+      })
+      .finally(() => {
+        if (prevLoad.current === request) prevLoad.current = null;
+      });
+    prevLoad.current = request;
+    return request;
+  }, [pager]);
+
+  // Warm the browser cache around the current image. On phones this is the
+  // difference between a blank frame and an immediate full-resolution swap.
+  const prevImageId = items[idx - 1]?.id;
+  const nextImageId = items[idx + 1]?.id;
+  useEffect(() => {
+    for (const id of [prevImageId, nextImageId]) {
+      if (id == null) continue;
+      const preload = new Image();
+      preload.src = imgFileUrl(id);
+      void preload.decode().catch(() => {});
+    }
+  }, [prevImageId, nextImageId]);
+
+  // Fetch the next/previous grid page while the user is still 2-3 images away
+  // from its boundary, so crossing it only changes the displayed image.
+  useEffect(() => {
+    if (!pager) return;
+    if (idx >= items.length - 3) void loadNext().catch(() => {});
+    if (idx <= 2) void loadPrev().catch(() => {});
+  }, [idx, items.length, loadNext, loadPrev, pager]);
 
   // Reset editable tags when navigating to another image.
   useEffect(() => {
@@ -163,21 +307,62 @@ export default function ImageViewer({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const navBusy = useRef(false);
+  const [navLoading, setNavLoading] = useState<"prev" | "next" | null>(null);
+  const goTo = useCallback(
+    async (delta: -1 | 1) => {
+      if (navBusy.current) return;
+      const local = idxRef.current;
+      if (delta > 0 && local < itemsRef.current.length - 1) {
+        setCurrentIndex(local + 1);
+        return;
+      }
+      if (delta < 0 && local > 0) {
+        setCurrentIndex(local - 1);
+        return;
+      }
+      const direction = delta > 0 ? "next" : "prev";
+      if (
+        (delta > 0 && startRef.current + itemsRef.current.length >= totalRef.current) ||
+        (delta < 0 && startRef.current <= 0)
+      ) {
+        return;
+      }
+      navBusy.current = true;
+      setNavLoading(direction);
+      try {
+        const loaded = await (delta > 0 ? loadNext() : loadPrev());
+        if (!loaded) return;
+        if (delta > 0 && idxRef.current < itemsRef.current.length - 1) {
+          setCurrentIndex(idxRef.current + 1);
+        } else if (delta < 0 && idxRef.current > 0) {
+          setCurrentIndex(idxRef.current - 1);
+        }
+      } catch (e) {
+        toast(t("op_failed", { msg: (e as Error).message }));
+      } finally {
+        navBusy.current = false;
+        setNavLoading(null);
+      }
+    },
+    [loadNext, loadPrev, setCurrentIndex, t, toast],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return onClose();
+      if (e.key === "Escape") return close();
       const el = e.target instanceof Element ? e.target : null;
       if (el?.closest("input, textarea, select, [contenteditable='true']")) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "i" || e.key === "I") setPanelHidden((h) => !h);
       else if (zoomedRef.current) return;
-      else if (e.key === "ArrowLeft") setIdx((i) => Math.max(0, i - 1));
-      else if (e.key === "ArrowRight") setIdx((i) => Math.min(items.length - 1, i + 1));
+      else if (e.key === "ArrowLeft") void goTo(-1);
+      else if (e.key === "ArrowRight") void goTo(1);
     };
     if (editingGen || duplicatingGen) return;
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items.length, onClose, editingGen, duplicatingGen]);
+  }, [close, goTo, editingGen, duplicatingGen]);
 
   const refreshGeneration = () => {
     if (source !== "generated") return;
@@ -244,9 +429,10 @@ export default function ImageViewer({
     />
   );
 
-  const multi = items.length > 1;
-  const prev = () => setIdx((i) => Math.max(0, i - 1));
-  const next = () => setIdx((i) => Math.min(items.length - 1, i + 1));
+  const prev = () => void goTo(-1);
+  const next = () => void goTo(1);
+  const atStart = globalIndex <= 0;
+  const atEnd = globalIndex >= total - 1;
   const format = (current.mime || "").replace("image/", "").toUpperCase();
   const params = gen
     ? [gen.model.replace("-image", "").replace("-preview", ""), gen.aspect_ratio, gen.resolution, format]
@@ -255,7 +441,7 @@ export default function ImageViewer({
     : "";
 
   return (
-    <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={onClose}>
+    <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={close}>
       <div
         className={`viewer-window${panelHidden ? " panel-hidden" : ""}${phone ? " phone" : ""}${phone && expanded ? " expanded" : ""}`}
         onClick={(e) => e.stopPropagation()}
@@ -268,14 +454,14 @@ export default function ImageViewer({
         >
           {(phone || panelHidden) && (
             <div className="viewer-phone-top">
-              <IconButton variant="overlay" size="md" icon="close" label={t("close")} onClick={onClose} />
-              {multi && <span className="viewer-phone-count">{idx + 1} / {items.length}</span>}
+              <IconButton variant="overlay" size="md" icon="close" label={t("close")} onClick={close} />
+              {multi && <span className="viewer-phone-count">{globalPosition} / {total}</span>}
               <span className="viewer-phone-menu">{moreMenu}</span>
             </div>
           )}
           {multi && (
             <>
-              <span className="viewer-count">{idx + 1} / {items.length}</span>
+              <span className="viewer-count">{globalPosition} / {total}</span>
               {/* Phone: the outer fifths of the stage switch images while not zoomed. */}
               {phone && !zoomed && (
                 <>
@@ -283,14 +469,14 @@ export default function ImageViewer({
                     type="button"
                     className="viewer-zone prev"
                     aria-label={t("prev_image")}
-                    disabled={idx === 0}
+                    disabled={atStart || navLoading === "prev"}
                     onClick={prev}
                   />
                   <button
                     type="button"
                     className="viewer-zone next"
                     aria-label={t("next_image")}
-                    disabled={idx === items.length - 1}
+                    disabled={atEnd || navLoading === "next"}
                     onClick={next}
                   />
                 </>
@@ -301,7 +487,7 @@ export default function ImageViewer({
                 size="lg"
                 icon="prev"
                 label={t("prev_image")}
-                disabled={idx === 0}
+                disabled={atStart || navLoading === "prev"}
                 hidden={zoomed || phone}
                 onClick={prev}
               />
@@ -311,7 +497,7 @@ export default function ImageViewer({
                 size="lg"
                 icon="next"
                 label={t("next_image")}
-                disabled={idx === items.length - 1}
+                disabled={atEnd || navLoading === "next"}
                 hidden={zoomed || phone}
                 onClick={next}
               />
@@ -362,7 +548,7 @@ export default function ImageViewer({
                 size="md"
                 icon="close"
                 label={t("close")}
-                onClick={onClose}
+                onClick={close}
               />
             </div>
             <div className="viewer-meta">

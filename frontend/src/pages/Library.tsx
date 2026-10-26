@@ -16,6 +16,7 @@ import { Button, IconButton } from "../components/ui/Button";
 import appIcon from "../assets/app-icon.png";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
+import type { ViewerPager } from "../components/ImageViewer";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -46,7 +47,12 @@ export default function Library({
   onSelectModeChange,
 }: {
   addToTray: (img: ImageRow) => void;
-  onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  onOpenViewer: (
+    img: ImageRow,
+    list: ImageRow[],
+    pager?: ViewerPager,
+    onIndexChange?: (globalIndex: number, image?: ImageRow) => void,
+  ) => void;
   compact?: boolean;
   refreshKey?: number;
   onChanged?: () => void;
@@ -200,7 +206,29 @@ export default function Library({
       return;
     }
     if (selectMode) toggleSelect(img.id);
-    else onOpenViewer(img, images);
+    else {
+      const offset = page * pageSize;
+      onOpenViewer(
+        img,
+        images,
+        {
+          offset,
+          total,
+          fetch: async (nextOffset, limit) => {
+            const r = await api.listImages({
+              limit,
+              offset: nextOffset,
+              source: source || undefined,
+              tag: tagFilter ?? undefined,
+              starred: starredOnly || undefined,
+              q: query || undefined,
+            });
+            return r.images;
+          },
+        },
+        (globalIndex) => setPage(Math.floor(globalIndex / pageSize)),
+      );
+    }
   };
 
   const endLongPress = () => {

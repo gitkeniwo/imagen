@@ -25,6 +25,9 @@ export interface ImageRow {
   created_at: string;
   deleted_at?: string | null;
   tags?: TagRef[];
+  // Set on History output thumbnails so the viewer can restore the exact grid
+  // page even when the page also contains records without output images.
+  generation_offset?: number;
 }
 
 export interface Generation {
@@ -43,6 +46,9 @@ export interface Generation {
   marker_color: MarkerColor | null;
   inputs?: ImageRow[];
   outputImage?: ImageRow | null;
+  generation_offset?: number;
+  // Position in the distinct live-output-image sequence used by the viewer.
+  output_index?: number;
 }
 
 export type MarkerColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
@@ -471,8 +477,14 @@ export const api = {
       starred?: boolean;
       kind?: "vertex" | "manual";
       withOutput?: boolean;
+      uniqueOutputs?: boolean;
     } = {},
-  ): Promise<{ generations: Generation[]; total: number }> {
+  ): Promise<{
+    generations: Generation[];
+    total: number;
+    output_total: number;
+    output_offset: number;
+  }> {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
@@ -481,6 +493,7 @@ export const api = {
     if (params.starred) q.set("starred", "true");
     if (params.kind) q.set("kind", params.kind);
     if (params.withOutput) q.set("with_output", "true");
+    if (params.uniqueOutputs) q.set("unique_outputs", "true");
     return handle(await fetch(`/api/generations?${q.toString()}`));
   },
   async generationByOutput(imageId: number): Promise<Generation | null> {
