@@ -25,6 +25,9 @@ export interface ImageRow {
   created_at: string;
   deleted_at?: string | null;
   tags?: TagRef[];
+  // Set on History output thumbnails so the viewer can restore the exact grid
+  // page even when the page also contains records without output images.
+  generation_offset?: number;
 }
 
 export interface Generation {
@@ -43,6 +46,7 @@ export interface Generation {
   marker_color: MarkerColor | null;
   inputs?: ImageRow[];
   outputImage?: ImageRow | null;
+  generation_offset?: number;
 }
 
 export type MarkerColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
@@ -472,7 +476,12 @@ export const api = {
       kind?: "vertex" | "manual";
       withOutput?: boolean;
     } = {},
-  ): Promise<{ generations: Generation[]; total: number }> {
+  ): Promise<{
+    generations: Generation[];
+    total: number;
+    output_total: number;
+    output_offset: number;
+  }> {
     const q = new URLSearchParams();
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));

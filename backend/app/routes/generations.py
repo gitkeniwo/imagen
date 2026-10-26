@@ -12,6 +12,9 @@ router = APIRouter(prefix="/api/generations", tags=["generations"])
 _STATUSES = {"success", "blocked", "error"}
 _SOURCES = {"vertex", "manual"}
 _MARKER_COLORS = {"red", "orange", "yellow", "green", "blue", "purple", "pink"}
+_LIVE_OUTPUT_CLAUSE = (
+    "output_image_id IN (SELECT id FROM images WHERE deleted_at IS NULL)"
+)
 
 
 def _now() -> str:
@@ -215,35 +218,36 @@ def list_generations(
     # "favorites" / saved-prompt view), and/or by record kind:
     # 'vertex' (real generation via this app), 'manual' (a logged result from
     # elsewhere. Legacy notes are preserved for rollback but no longer shown.
-    clauses, params = ["status != 'note'"], []
+    base_clauses, params = ["status != 'note'"], []
     if tag is not None:
-        clauses.append(
+        base_clauses.append(
             "output_image_id IN "
             "(SELECT image_id FROM image_tags WHERE tag_id = ?)"
         )
         params.append(tag)
     if starred:
-        clauses.append(
+        base_clauses.append(
             "output_image_id IN "
             "(SELECT id FROM images WHERE starred = 1 AND deleted_at IS NULL)"
         )
+    if kind == "vertex":
+        base_clauses.append("source = ?")
+        params.append("vertex")
+    elif kind == "manual":
+        base_clauses.append("source = ? AND status != ?")
+        params.extend(["manual", "note"])
+    if q and q.strip():
+        base_clauses.append("prompt LIKE ?")
+        params.append(f"%{q.strip()}%")
+    clauses = [*base_clauses]
     if with_output:
         # Only retain records with a live output image. This deliberately
         # excludes running, blocked, cancelled, failed, and deleted-output
         # records while remaining compatible with all other filters.
-        clauses.append(
-            "output_image_id IN (SELECT id FROM images WHERE deleted_at IS NULL)"
-        )
-    if kind == "vertex":
-        clauses.append("source = ?")
-        params.append("vertex")
-    elif kind == "manual":
-        clauses.append("source = ? AND status != ?")
-        params.extend(["manual", "note"])
-    if q and q.strip():
-        clauses.append("prompt LIKE ?")
-        params.append(f"%{q.strip()}%")
+        clauses.append(_LIVE_OUTPUT_CLAUSE)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    base_where = f"WHERE {' AND '.join(base_clauses)}"
+    output_where = f"WHERE {' AND '.join([*base_clauses, _LIVE_OUTPUT_CLAUSE])}"
     with get_conn() as conn:
         gens = conn.execute(
             f"SELECT * FROM generations {where} ORDER BY id DESC LIMIT ? OFFSET ?",
@@ -252,8 +256,32 @@ def list_generations(
         total = conn.execute(
             f"SELECT COUNT(*) c FROM generations {where}", params
         ).fetchone()["c"]
+        output_total = conn.execute(
+            f"SELECT COUNT(*) c FROM generations {output_where}", params
+        ).fetchone()["c"]
+        output_offset = 0
+        if gens:
+            # Rows are ordered by id DESC. Everything above the first row on
+            # this page precedes it in the output-only viewer list.
+            output_offset = conn.execute(
+                f"SELECT COUNT(*) c FROM generations {output_where} AND id > ?",
+                (*params, gens[0]["id"]),
+            ).fetchone()["c"]
         out = _hydrate(conn, [dict(g) for g in gens])
-    return {"generations": out, "total": total}
+        generation_offset = offset
+        if with_output and gens:
+            generation_offset = conn.execute(
+                f"SELECT COUNT(*) c FROM generations {base_where} AND id > ?",
+                (*params, gens[0]["id"]),
+            ).fetchone()["c"]
+        for i, g in enumerate(out):
+            g["generation_offset"] = generation_offset + i
+    return {
+        "generations": out,
+        "total": total,
+        "output_total": output_total,
+        "output_offset": output_offset,
+    }
 
 
 @router.get("/by-output/{image_id}")

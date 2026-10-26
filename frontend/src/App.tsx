@@ -27,7 +27,7 @@ import RemoteIndicator, { RemoteChip } from "./components/RemoteIndicator";
 import { useRemote } from "./remote";
 import AddHistoryModal from "./components/AddHistoryModal";
 import UsageDashboard from "./components/UsageDashboard";
-import ImageViewer from "./components/ImageViewer";
+import ImageViewer, { type ViewerPager } from "./components/ImageViewer";
 import HoverPeek from "./components/HoverPeek";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 import Drafts from "./pages/Drafts";
@@ -183,13 +183,21 @@ export default function App() {
   // it is on so Library can show the floating selection capsule instead.
   const [phoneSelecting, setPhoneSelecting] = useState(false);
   // Image viewer (lightbox) + a bump counter to refresh data after tag edits.
-  const [viewer, setViewer] = useState<{ image: ImageRow; list: ImageRow[] } | null>(
-    null,
-  );
+  const [viewer, setViewer] = useState<{
+    image: ImageRow;
+    list: ImageRow[];
+    pager?: ViewerPager;
+    onIndexChange?: (globalIndex: number, image?: ImageRow) => void;
+  } | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [draftVersion, setDraftVersion] = useState(0);
   const openViewer = useCallback(
-    (image: ImageRow, list: ImageRow[] = []) => setViewer({ image, list }),
+    (
+      image: ImageRow,
+      list: ImageRow[] = [],
+      pager?: ViewerPager,
+      onIndexChange?: (globalIndex: number, image?: ImageRow) => void,
+    ) => setViewer({ image, list, pager, onIndexChange }),
     [],
   );
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
@@ -1163,6 +1171,8 @@ export default function App() {
         <ImageViewer
           image={viewer.image}
           list={viewer.list}
+          pager={viewer.pager}
+          onIndexChange={viewer.onIndexChange}
           onClose={() => setViewer(null)}
           onAddToTray={addToTray}
           onTagsChanged={bumpData}
