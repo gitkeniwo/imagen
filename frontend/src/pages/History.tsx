@@ -72,7 +72,6 @@ export default function History({
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [outputTotal, setOutputTotal] = useState(0);
-  const [outputOffset, setOutputOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Enter grid rows per page, never a ragged last row; list view has one item
@@ -103,7 +102,6 @@ export default function History({
         setGens(r.generations);
         setTotal(r.total);
         setOutputTotal(r.output_total);
-        setOutputOffset(r.output_offset);
         setTags(tagsRes.tags);
         if (r.total > 0 && page * pageSize >= r.total) {
           setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
@@ -150,23 +148,16 @@ export default function History({
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const hasPages = total > pageSize;
 
-  // All output images on this page, for viewer prev/next navigation.
-  const pageOutputs: ImageRow[] = [];
-  gens.forEach((g, index) => {
-    const output = g.outputImage;
-    if (!output || output.deleted_at) return;
-    output.generation_offset = page * pageSize + index;
-    pageOutputs.push(output);
-  });
-
-  const openOutputViewer = (img: ImageRow) => {
+  const openOutputViewer = (img: ImageRow, generation: Generation, gridIndex: number) => {
+    img.generation_offset = page * pageSize + gridIndex;
     onOpenViewer(
       img,
-      pageOutputs,
+      [img],
       {
-        // Viewer resolves the selected image's local index within this list.
-        offset: outputOffset,
+        // The clicked image is the first item, at its unique-output position.
+        offset: generation.output_index ?? 0,
         total: outputTotal,
+        batchSize: pageSize,
         fetch: async (nextOffset, limit) => {
           const r = await api.listGenerations({
             limit,
@@ -174,13 +165,13 @@ export default function History({
             tag: tagFilter ?? undefined,
             q: query || undefined,
             kind: kindFilter ?? undefined,
-            withOutput: true,
+            uniqueOutputs: true,
           });
           const outputs: ImageRow[] = [];
-          r.generations.forEach((g, index) => {
+          r.generations.forEach((g) => {
             const output = g.outputImage;
             if (!output || output.deleted_at) return;
-            output.generation_offset = g.generation_offset ?? nextOffset + index;
+            output.generation_offset = g.generation_offset;
             outputs.push(output);
           });
           return outputs;
@@ -386,7 +377,7 @@ export default function History({
           className={`history-list hlist ${layout}${compact ? " compact" : ""}${phone && layout === "grid" ? " phone-cols2" : ""}`}
           style={layout === "grid" ? ({ "--history-columns": effectiveColumns } as CSSProperties) : undefined}
         >
-          {gens.map((g) => {
+          {gens.map((g, index) => {
             const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
             const missing = !!g.outputImage?.deleted_at || (g.status === "success" && !g.outputImage);
             return (
@@ -396,7 +387,7 @@ export default function History({
                 layout={layout}
                 output={outImg}
                 missing={missing}
-                onOpen={() => outImg && openOutputViewer(outImg)}
+                onOpen={() => outImg && openOutputViewer(outImg, g, index)}
                 onToggleStar={outImg ? () => toggleStar(outImg) : undefined}
                 onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
                 tags={genTags(g)}

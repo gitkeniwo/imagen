@@ -47,6 +47,8 @@ export interface Generation {
   inputs?: ImageRow[];
   outputImage?: ImageRow | null;
   generation_offset?: number;
+  // Position in the distinct live-output-image sequence used by the viewer.
+  output_index?: number;
 }
 
 export type MarkerColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
@@ -475,6 +477,7 @@ export const api = {
       starred?: boolean;
       kind?: "vertex" | "manual";
       withOutput?: boolean;
+      uniqueOutputs?: boolean;
     } = {},
   ): Promise<{
     generations: Generation[];
@@ -490,6 +493,7 @@ export const api = {
     if (params.starred) q.set("starred", "true");
     if (params.kind) q.set("kind", params.kind);
     if (params.withOutput) q.set("with_output", "true");
+    if (params.uniqueOutputs) q.set("unique_outputs", "true");
     return handle(await fetch(`/api/generations?${q.toString()}`));
   },
   async generationByOutput(imageId: number): Promise<Generation | null> {

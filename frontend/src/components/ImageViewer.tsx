@@ -24,6 +24,8 @@ export interface ViewerPager {
   // Absolute position of the first item in `list` within the full result set.
   offset: number;
   total: number;
+  // Number of rows to request for each prefetch. Defaults to `list.length`.
+  batchSize?: number;
   // Must use the same filters/sort as the grid that opened the viewer.
   fetch(offset: number, limit: number): Promise<ImageRow[]>;
 }
@@ -144,7 +146,9 @@ export default function ImageViewer({
     totalRef.current = total;
   }, [total]);
 
-  const batchSizeRef = useRef(Math.max(1, list.length || items.length));
+  const batchSizeRef = useRef(
+    Math.max(1, pager?.batchSize ?? (list.length || items.length)),
+  );
   const nextLoad = useRef<Promise<boolean> | null>(null);
   const prevLoad = useRef<Promise<boolean> | null>(null);
   const loadNext = useCallback(() => {

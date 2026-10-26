@@ -212,6 +212,7 @@ def list_generations(
     starred: bool | None = None,
     kind: str | None = None,
     with_output: bool = False,
+    unique_outputs: bool = False,
 ):
     # Filter by the output image's tag (i.e. generations archived into that tag),
     # by a substring of the prompt, by whether the output is starred (the
@@ -240,7 +241,7 @@ def list_generations(
         base_clauses.append("prompt LIKE ?")
         params.append(f"%{q.strip()}%")
     clauses = [*base_clauses]
-    if with_output:
+    if with_output or unique_outputs:
         # Only retain records with a live output image. This deliberately
         # excludes running, blocked, cancelled, failed, and deleted-output
         # records while remaining compatible with all other filters.
@@ -248,34 +249,88 @@ def list_generations(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     base_where = f"WHERE {' AND '.join(base_clauses)}"
     output_where = f"WHERE {' AND '.join([*base_clauses, _LIVE_OUTPUT_CLAUSE])}"
+    # The viewer navigates images, not generation records. Several records may
+    # deliberately point at one output image (manual reuse or SHA-256 dedup),
+    # so rank each live output by the newest matching generation that uses it.
+    output_ranked = f"""
+        SELECT output_image_id, MAX(id) AS representative_id
+        FROM generations
+        {output_where}
+        GROUP BY output_image_id
+    """
+    output_positioned = f"""
+        SELECT output_image_id, representative_id,
+               ROW_NUMBER() OVER (ORDER BY representative_id DESC) - 1 AS output_index
+        FROM ({output_ranked}) ranked
+    """
     with get_conn() as conn:
-        gens = conn.execute(
-            f"SELECT * FROM generations {where} ORDER BY id DESC LIMIT ? OFFSET ?",
-            (*params, limit, offset),
-        ).fetchall()
-        total = conn.execute(
-            f"SELECT COUNT(*) c FROM generations {where}", params
-        ).fetchone()["c"]
         output_total = conn.execute(
-            f"SELECT COUNT(*) c FROM generations {output_where}", params
+            f"SELECT COUNT(*) c FROM ({output_ranked}) ranked", params
         ).fetchone()["c"]
-        output_offset = 0
-        if gens:
-            # Rows are ordered by id DESC. Everything above the first row on
-            # this page precedes it in the output-only viewer list.
-            output_offset = conn.execute(
-                f"SELECT COUNT(*) c FROM generations {output_where} AND id > ?",
-                (*params, gens[0]["id"]),
+        if unique_outputs:
+            base_positioned = f"""
+                SELECT id,
+                       ROW_NUMBER() OVER (ORDER BY id DESC) - 1 AS generation_offset
+                FROM generations
+                {base_where}
+            """
+            rows = conn.execute(
+                f"""
+                WITH output_positioned AS ({output_positioned}),
+                     base_positioned AS ({base_positioned})
+                SELECT g.*, b.generation_offset, p.output_index
+                FROM output_positioned p
+                JOIN generations g ON g.id = p.representative_id
+                JOIN base_positioned b ON b.id = g.id
+                ORDER BY g.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*params, *params, limit, offset),
+            ).fetchall()
+            total = output_total
+            output_offset = offset
+            out = _hydrate(conn, [dict(g) for g in rows])
+        else:
+            gens = conn.execute(
+                f"SELECT * FROM generations {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            ).fetchall()
+            total = conn.execute(
+                f"SELECT COUNT(*) c FROM generations {where}", params
             ).fetchone()["c"]
-        out = _hydrate(conn, [dict(g) for g in gens])
-        generation_offset = offset
-        if with_output and gens:
-            generation_offset = conn.execute(
-                f"SELECT COUNT(*) c FROM generations {base_where} AND id > ?",
-                (*params, gens[0]["id"]),
-            ).fetchone()["c"]
-        for i, g in enumerate(out):
-            g["generation_offset"] = generation_offset + i
+            output_offset = 0
+            if gens:
+                # Everything whose newest matching generation is above this
+                # grid page precedes its outputs in the viewer sequence.
+                output_offset = conn.execute(
+                    f"SELECT COUNT(*) c FROM ({output_ranked}) ranked "
+                    "WHERE representative_id > ?",
+                    (*params, gens[0]["id"]),
+                ).fetchone()["c"]
+            out = _hydrate(conn, [dict(g) for g in gens])
+            for i, g in enumerate(out):
+                g["generation_offset"] = offset + i
+            output_ids = sorted({
+                g["output_image_id"] for g in out if g["output_image_id"]
+            })
+            output_indexes: dict[int, int] = {}
+            if output_ids:
+                ph = ",".join("?" * len(output_ids))
+                output_indexes = {
+                    row["output_image_id"]: row["output_index"]
+                    for row in conn.execute(
+                        f"""
+                        WITH output_positioned AS ({output_positioned})
+                        SELECT output_image_id, output_index
+                        FROM output_positioned
+                        WHERE output_image_id IN ({ph})
+                        """,
+                        (*params, *output_ids),
+                    ).fetchall()
+                }
+            for g in out:
+                if g["output_image_id"]:
+                    g["output_index"] = output_indexes.get(g["output_image_id"])
     return {
         "generations": out,
         "total": total,
