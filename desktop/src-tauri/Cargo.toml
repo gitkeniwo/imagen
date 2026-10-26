@@ -29,3 +29,9 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# Local copy of wry 0.57.0 with a drag-and-drop fix: upstream unwraps the
+# pasteboard file list inside `draggingEntered:`, which aborts the app when a
+# drag carries no readable list. Remove once upstream no longer unwraps.
+[patch.crates-io]
+wry = { path = "vendor/wry" }
