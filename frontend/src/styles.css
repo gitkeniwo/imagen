@@ -338,14 +338,16 @@ label { font-size: var(--fs-md); font-weight: 500; color: var(--text); display: 
 }
 .ws-tab-wrap.active:has(.ws-tab-close) .ws-tab { padding-right: var(--space-1); }
 .ws-tab-close {
-  width: 20px; height: 20px; min-height: 0; padding: 0; margin-right: 4px;
-  display: none; align-items: center; justify-content: center; flex: none;
+  width: 20px; height: 20px; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center; flex: none;
   border: 0; border-radius: var(--radius-xs); background: transparent;
   box-shadow: none; color: inherit;
+  visibility: hidden; pointer-events: none;
 }
 .ws-tab-close .icon { width: 12px; height: 12px; }
+.ws-tab-wrap.active .ws-tab-close,
 .composer-tabs:hover .ws-tab-close,
-.ws-tab-wrap:focus-within .ws-tab-close { display: flex; }
+.ws-tab-wrap:focus-within .ws-tab-close { visibility: visible; pointer-events: auto; }
 .ws-tab-close:hover:not(:disabled) { background: color-mix(in srgb, currentColor 12%, transparent); }
 .ws-tab-input {
   width: 110px; height: 28px; padding: 0 8px; border: 1px solid var(--ui-accent);

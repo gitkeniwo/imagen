@@ -435,13 +435,17 @@ export function useComposerWorkspaces(libraryKey: string | null) {
     return true;
   }, [applyStructure, libraryKey, structureSnapshot]);
 
-  const duplicateWorkspace = useCallback((): boolean => {
+  const duplicateWorkspace = useCallback((id: string): boolean => {
     const snapshot = structureSnapshot();
     if (snapshot.length >= WORKSPACE_LIMIT) return false;
     const source =
       workspacesRef.current.find(
+        (workspace) => workspace.id === id,
+      ) ??
+      workspacesRef.current.find(
         (workspace) => workspace.id === activeIdRef.current,
-      ) ?? snapshot[0];
+      ) ??
+      snapshot[0];
     if (!source) return false;
 
     const copy = emptyWorkspace(nextWorkspaceNumber(snapshot), source);
