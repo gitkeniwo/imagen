@@ -9,7 +9,7 @@ import {
   QueueTask,
   TaskSpec,
 } from "../api";
-import { ComposerDraft } from "../composerDraft";
+import { ComposerDraft, WorkspaceRecord } from "../composerDraft";
 import { useI18n } from "../i18n";
 import Popover from "../components/ui/Popover";
 import ReferenceTray from "../components/ReferenceTray";
@@ -22,12 +22,22 @@ import Sheet from "../components/ui/Sheet";
 import { RemoteChip } from "../components/RemoteIndicator";
 import appIcon from "../assets/app-icon.png";
 import { useRemote } from "../remote";
+import ComposerTabs from "../components/ComposerTabs";
 
 const ATTEMPTS_KEY = "imagen-task-attempts";
 
 export default function Generate({
   tray,
   draft,
+  workspaces,
+  activeId,
+  workspaceLimit,
+  composerUndocked,
+  onSelectWorkspace,
+  onCreateWorkspace,
+  onDuplicateWorkspace,
+  onRenameWorkspace,
+  onCloseWorkspace,
   updateDraft,
   clearComposer,
   prefill,
@@ -54,6 +64,15 @@ export default function Generate({
 }: {
   tray: ImageRow[];
   draft: ComposerDraft;
+  workspaces: WorkspaceRecord[];
+  activeId: string;
+  workspaceLimit: number;
+  composerUndocked: boolean;
+  onSelectWorkspace: (id: string) => void;
+  onCreateWorkspace: () => boolean;
+  onDuplicateWorkspace: (id: string) => boolean;
+  onRenameWorkspace: (id: string, name: string) => void;
+  onCloseWorkspace: (id: string) => boolean;
   updateDraft: (patch: Partial<ComposerDraft>) => void;
   clearComposer: () => void;
   prefill: Prefill | null;
@@ -104,6 +123,13 @@ export default function Generate({
   const [clearOpen, setClearOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const createWorkspaceAndFocus = () => {
+    const created = onCreateWorkspace();
+    if (created) {
+      window.setTimeout(() => promptRef.current?.focus(), 0);
+    }
+    return created;
+  };
   // "Try up to N times": one submit enqueues N copies of the task as a retry
   // group (copies 2..N are auto-skip, so the first success cancels the rest).
   const [attempts, setAttempts] = useState(() => {
@@ -206,8 +232,29 @@ export default function Generate({
           </Popover>
         </header>
       )}
-      <div className={phone ? "phone-body composer-phone-body" : "panel composer"} ref={composerRef}>
+      <div
+        className={
+          phone
+            ? "phone-body composer-phone-body"
+            : `panel composer${composerUndocked ? "" : " docked"}`
+        }
+        ref={composerRef}
+      >
         <div className={phone ? "composer-phone-card" : "composer-input"}>
+          {phone && (
+            <ComposerTabs
+              phone
+              workspaces={workspaces}
+              activeId={activeId}
+              limit={workspaceLimit}
+              undocked={false}
+              onSelect={onSelectWorkspace}
+              onCreate={createWorkspaceAndFocus}
+              onDuplicate={onDuplicateWorkspace}
+              onRename={onRenameWorkspace}
+              onClose={onCloseWorkspace}
+            />
+          )}
           <ReferenceTray
             compact
             phone={phone}

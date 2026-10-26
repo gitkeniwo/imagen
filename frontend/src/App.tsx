@@ -37,6 +37,7 @@ import MoreMenu, { type MorePage } from "./components/MoreMenu";
 import { useIsPhone } from "./useIsPhone";
 import { useBackLayer } from "./backStack";
 import PanelTabs from "./components/ui/PanelTabs";
+import ComposerTabs from "./components/ComposerTabs";
 import { usePanelCounts } from "./usePanelCounts";
 import { useToast } from "./components/Toast";
 import Icon from "./components/ui/Icon";
@@ -44,13 +45,7 @@ import { Button, IconButton } from "./components/ui/Button";
 import appIcon from "./assets/app-icon.png";
 import { isRefDrag } from "./imageDrag";
 import { uuid } from "./uuid";
-import {
-  ComposerDraft,
-  emptyDraft,
-  loadStore,
-  sanitizeDraft,
-  saveStore,
-} from "./composerDraft";
+import { useComposerWorkspaces } from "./useComposerWorkspaces";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
@@ -138,41 +133,28 @@ export default function App() {
     setManagerPanel(panel);
     setManagerOpen(true);
   };
-  const [tray, setTray] = useState<ImageRow[]>([]);
-  // Composer contents live here: one place owns the draft so it can outlive
-  // panel switches and, in the next step, be loaded/saved locally.
-  const [draft, setDraft] = useState<ComposerDraft>(emptyDraft);
-  // Hydration can finish after the user has already started typing; in that
-  // case their input wins and the stored draft is not applied over it.
-  const composerTouched = useRef(false);
-  const updateDraft = useCallback(
-    (patch: Partial<ComposerDraft>) => {
-      composerTouched.current = true;
-      setDraft((prev) => ({ ...prev, ...patch, updatedAt: Date.now() }));
-    },
-    [],
-  );
-  const [prefill, setPrefill] = useState<Prefill | null>(null);
-  // Composer persistence: localStorage only, namespaced by the library key.
-  // `hydrated` stays false until the saved draft has been applied, so the
-  // initial empty render never overwrites what is on disk.
   const [libraryKey, setLibraryKey] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-  // A failed image lookup keeps the saved ids here; the next save writes them
-  // back instead of erasing the references. Any manual change clears it.
-  const pendingInputIds = useRef<number[] | null>(null);
-  // Clear button: prompt and references only; settings and attempts stay.
-  const clearComposer = useCallback(() => {
-    composerTouched.current = true;
-    pendingInputIds.current = null;
-    setDraft((prev) => ({
-      ...prev,
-      prompt: "",
-      inputIds: [],
-      updatedAt: Date.now(),
-    }));
-    setTray([]);
-  }, []);
+  const composer = useComposerWorkspaces(libraryKey);
+  const {
+    workspaces,
+    activeId,
+    draft,
+    tray,
+    updateDraft,
+    clearComposer,
+    addToTray,
+    addManyToTray,
+    removeFromTray,
+    moveInTray,
+    replaceReferences,
+    selectWorkspace,
+    createWorkspace,
+    duplicateWorkspace,
+    renameWorkspace,
+    closeWorkspace,
+    workspaceLimit,
+  } = composer;
+  const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"library" | "remote">("library");
@@ -192,6 +174,8 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const mainColRef = useRef<HTMLDivElement>(null);
+  const [mainScrolled, setMainScrolled] = useState(false);
   const isPhone = useIsPhone();
   const [phoneTab, setPhoneTab] = useState<PhoneTab>(initialPhoneTab);
   const [morePage, setMorePage] = useState<MorePage | null>(null);
@@ -226,73 +210,25 @@ export default function App() {
   const [isDesktopHost, setIsDesktopHost] = useState(false);
 
   // One getLibrary() call serves both desktop-host detection and the composer
-  // key (the LAN branch returns the same key). Then load the draft, resolve
-  // its reference images/tags, and only then allow saving.
+  // key (the LAN branch returns the same key). The composer hook owns loading,
+  // repair and write-through from that point on.
   useEffect(() => {
     let cancelled = false;
-    const hydrate = async () => {
-      let info;
+    const loadLibrary = async () => {
       try {
-        info = await api.getLibrary();
+        const info = await api.getLibrary();
+        if (cancelled) return;
+        setIsDesktopHost(!remote && info.desktop);
+        if (info.key) setLibraryKey(info.key);
       } catch {
         // Offline / unauthorized: keep the memory-only composer this session.
-        return;
       }
-      if (cancelled) return;
-      setIsDesktopHost(!remote && info.desktop);
-      if (!info.key) return; // older backend: no library key, no persistence
-
-      const stored = sanitizeDraft(loadStore(info.key).workspaces[0]);
-      let images: ImageRow[] = [];
-      let pending: number[] | null = null;
-      if (stored.inputIds.length > 0) {
-        try {
-          images = (await api.lookupImages(stored.inputIds)).images;
-        } catch {
-          // Keep the ids; the tray starts empty but the next save preserves
-          // them. A manual reference change drops the pending list.
-          pending = stored.inputIds;
-        }
-      }
-      let tagIds = stored.tagIds;
-      if (tagIds.length > 0) {
-        try {
-          const { tags } = await api.listTags();
-          const alive = new Set(tags.map((tag) => tag.id));
-          tagIds = tagIds.filter((id) => alive.has(id));
-        } catch {
-          // Tag list unavailable: keep the saved ids rather than clearing them.
-        }
-      }
-      if (cancelled) return;
-      if (!composerTouched.current) {
-        pendingInputIds.current = pending;
-        setTray(images);
-        setDraft({ ...stored, tagIds });
-      }
-      setLibraryKey(info.key);
-      setHydrated(true);
     };
-    void hydrate();
+    void loadLibrary();
     return () => {
       cancelled = true;
     };
   }, [remote]);
-
-  // Write-through: raw localStorage, no debounce — a ⌘Q right after a keypress
-  // must not drop the last characters. `tray` is the source of truth for refs.
-  useEffect(() => {
-    if (!hydrated || !libraryKey) return;
-    const inputIds = tray.length
-      ? tray.map((img) => img.id)
-      : pendingInputIds.current ?? [];
-    const next: ComposerDraft = { ...draft, inputIds, updatedAt: Date.now() };
-    saveStore(libraryKey, {
-      version: 1,
-      activeId: next.id,
-      workspaces: [next],
-    });
-  }, [hydrated, libraryKey, draft, tray]);
 
   const queuedCount = queue.filter((task) => task.status === "pending").length;
   const runningCount = queue.filter(
@@ -407,6 +343,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    const main = mainColRef.current;
+    if (!main) return;
+    const onScroll = () => setMainScrolled(main.scrollTop > 0);
+    onScroll();
+    main.addEventListener("scroll", onScroll, { passive: true });
+    return () => main.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(PHONE_TAB_KEY, phoneTab);
@@ -682,61 +627,27 @@ export default function App() {
     });
   }, [queue, dispatchTick, concurrency, remote, conn, reportNetworkError]);
 
-  // Any manual reference change makes a failed-lookup pending list obsolete.
-  const addToTray = useCallback((img: ImageRow) => {
-    composerTouched.current = true;
-    pendingInputIds.current = null;
-    setTray((t) => (t.some((x) => x.id === img.id) ? t : [...t, img]));
-  }, []);
-  const addManyToTray = useCallback((imgs: ImageRow[]) => {
-    composerTouched.current = true;
-    pendingInputIds.current = null;
-    setTray((t) => {
-      const seen = new Set(t.map((x) => x.id));
-      return [...t, ...imgs.filter((i) => !seen.has(i.id))];
-    });
-  }, []);
-  const removeFromTray = useCallback((id: number) => {
-    composerTouched.current = true;
-    pendingInputIds.current = null;
-    setTray((t) => t.filter((x) => x.id !== id));
-  }, []);
-  const moveInTray = useCallback((from: number, to: number) => {
-    composerTouched.current = true;
-    pendingInputIds.current = null;
-    setTray((t) => {
-      const next = [...t];
-      const [m] = next.splice(from, 1);
-      next.splice(to, 0, m);
-      return next;
-    });
-  }, []);
-
-  // Reuse replaces the references, so a failed-lookup pending list is obsolete.
+  // Reuse replaces the current workspace's prompt and references.
   const reuse = useCallback((g: Generation) => {
-    composerTouched.current = true;
-    pendingInputIds.current = null;
-    setTray(g.inputs ?? []);
+    replaceReferences(g.inputs ?? []);
     setPrefill({
       prompt: g.prompt,
       model: g.model,
       aspectRatio: g.aspect_ratio,
       resolution: g.resolution,
     });
-  }, []);
+  }, [replaceReferences]);
 
   // Reuse a queued task's settings (prompt/model/ratio/resolution + inputs).
   const reuseTask = useCallback((task: QueueTask) => {
-    composerTouched.current = true;
-    pendingInputIds.current = null;
-    setTray(task.inputs ?? []);
+    replaceReferences(task.inputs ?? []);
     setPrefill({
       prompt: task.prompt,
       model: task.model,
       aspectRatio: task.aspectRatio,
       resolution: task.resolution,
     });
-  }, []);
+  }, [replaceReferences]);
 
   // Reuse a queued task's settings AND enqueue it immediately (skip the form).
   const reuseGenerateTask = useCallback(
@@ -945,8 +856,31 @@ export default function App() {
         </aside>
 
         {remote && <div className={`rm-topline${conn === "lost" ? " lost" : ""}`} aria-hidden="true" />}
-        <div className="main-col">
+        <div className="main-col" ref={mainColRef}>
           <header className="topbar">
+            <ComposerTabs
+              workspaces={workspaces}
+              activeId={activeId}
+              limit={workspaceLimit}
+              undocked={configured === false || mainScrolled}
+              onSelect={selectWorkspace}
+              onCreate={() => {
+                const created = createWorkspace();
+                if (created) {
+                  window.setTimeout(
+                    () =>
+                      document
+                        .querySelector<HTMLTextAreaElement>(".composer-prompt")
+                        ?.focus(),
+                    0,
+                  );
+                }
+                return created;
+              }}
+              onDuplicate={duplicateWorkspace}
+              onRename={renameWorkspace}
+              onClose={closeWorkspace}
+            />
             <div className="spacer" />
             {remote ? (
               <RemoteChip />
@@ -961,19 +895,31 @@ export default function App() {
             <Button
               className="topbar-btn"
               icon="add"
-              title={t("import_result")}
+              title={t("new_menu")}
+              aria-label={t("new_menu")}
               onClick={() => setShowAddHistory(true)}
             >
-              {t("new_menu")}
+              <span className="topbar-label">{t("new_menu")}</span>
             </Button>
-            <button className="topbar-btn" onClick={() => setDashboardOpen(true)} title={t("usage_title")}>
-              <Icon name="usage" /> {t("usage")}
+            <button
+              className="topbar-btn"
+              onClick={() => setDashboardOpen(true)}
+              title={t("usage_title")}
+              aria-label={t("usage")}
+            >
+              <Icon name="usage" />
+              <span className="topbar-label">{t("usage")}</span>
             </button>
-            <button className="topbar-btn" onClick={() => { setSettingsSection("library"); setShowSettings(true); }}>
+            <button
+              className="topbar-btn"
+              onClick={() => { setSettingsSection("library"); setShowSettings(true); }}
+              title={configured ? t("settings") : t("set_api_key")}
+              aria-label={configured ? t("settings") : t("set_api_key")}
+            >
               {configured ? (
-                <><Icon name="settings" /> {t("settings")}</>
+                <><Icon name="settings" /> <span className="topbar-label">{t("settings")}</span></>
               ) : (
-                <><Icon name="warning" /> {t("set_api_key")}</>
+                <><Icon name="warning" /> <span className="topbar-label">{t("set_api_key")}</span></>
               )}
             </button>
           </header>
@@ -984,6 +930,15 @@ export default function App() {
             <Generate
               tray={tray}
               draft={draft}
+              workspaces={workspaces}
+              activeId={activeId}
+              workspaceLimit={workspaceLimit}
+              composerUndocked={configured === false || mainScrolled}
+              onSelectWorkspace={selectWorkspace}
+              onCreateWorkspace={createWorkspace}
+              onDuplicateWorkspace={duplicateWorkspace}
+              onRenameWorkspace={renameWorkspace}
+              onCloseWorkspace={closeWorkspace}
               updateDraft={updateDraft}
               clearComposer={clearComposer}
               prefill={prefill}
@@ -1055,6 +1010,15 @@ export default function App() {
               <Generate
                 tray={tray}
                 draft={draft}
+                workspaces={workspaces}
+                activeId={activeId}
+                workspaceLimit={workspaceLimit}
+                composerUndocked={false}
+                onSelectWorkspace={selectWorkspace}
+                onCreateWorkspace={createWorkspace}
+                onDuplicateWorkspace={duplicateWorkspace}
+                onRenameWorkspace={renameWorkspace}
+                onCloseWorkspace={closeWorkspace}
                 updateDraft={updateDraft}
                 clearComposer={clearComposer}
                 prefill={prefill}
