@@ -53,7 +53,7 @@ export function useComposerWorkspaces(libraryKey: string | null) {
   ]);
   const [activeId, setActiveId] = useState(memoryWorkspace.current.id);
   const [hydrated, setHydrated] = useState(false);
-  const [, setCacheVersion] = useState(0);
+  const [cacheVersion, setCacheVersion] = useState(0);
   const imageCache = useRef(new Map<number, ImageRow>());
   const composerTouched = useRef(false);
   const workspacesRef = useRef(workspaces);
@@ -78,7 +78,7 @@ export function useComposerWorkspaces(libraryKey: string | null) {
             .filter((image): image is ImageRow => !!image)
         : [],
     // The cache is a ref; this version bump is what invalidates the view.
-    [active, setCacheVersion],
+    [active, cacheVersion],
   );
 
   const bumpCache = useCallback(() => setCacheVersion((version) => version + 1), []);
@@ -478,13 +478,18 @@ export function useComposerWorkspaces(libraryKey: string | null) {
   const renameWorkspace = useCallback(
     (id: string, name: string) => {
       const cleaned = sanitizeWorkspaceName(name);
-      updateWorkspace(id, (workspace) => ({
-        ...workspace,
-        name: cleaned,
-        updatedAt: Date.now(),
-      }));
+      const workspace = workspacesRef.current.find((item) => item.id === id);
+      if (!workspace) return;
+      const next = { ...workspace, name: cleaned, updatedAt: Date.now() };
+      if (libraryKey && storageAvailable.current) {
+        saveWorkspace(libraryKey, next);
+        lastSaved.current.set(id, JSON.stringify(sanitizeWorkspace(next)));
+      }
+      setWorkspaces((current) =>
+        current.map((item) => (item.id === id ? next : item)),
+      );
     },
-    [updateWorkspace],
+    [libraryKey],
   );
 
   const closeWorkspace = useCallback(
