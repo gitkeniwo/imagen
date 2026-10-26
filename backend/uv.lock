@@ -446,7 +446,7 @@ wheels = [
 
 [[package]]
 name = "nano-banana-studio-backend"
-version = "0.2.9"
+version = "0.2.10"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
