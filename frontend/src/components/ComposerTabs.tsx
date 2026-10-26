@@ -70,11 +70,26 @@ export default function ComposerTabs({
     inputRef.current?.select();
   }, [renamingId]);
 
+  const scrollActiveIntoView = useCallback(() => {
+    const list = tablistRef.current;
+    const tab = tabRefs.current.get(activeId);
+    const item = tab?.closest<HTMLElement>(".ws-tab-wrap");
+    if (!list || !item) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    if (itemRect.left < listRect.left) {
+      list.scrollLeft -= listRect.left - itemRect.left;
+    } else if (itemRect.right > listRect.right) {
+      list.scrollLeft += itemRect.right - listRect.right;
+    }
+  }, [activeId]);
+
   const measureOverflow = useCallback(() => {
     const list = tablistRef.current;
     if (!list) return;
     setOverflowing(list.scrollWidth > list.clientWidth + 1);
-  }, []);
+    window.requestAnimationFrame(scrollActiveIntoView);
+  }, [scrollActiveIntoView]);
 
   useEffect(() => {
     const list = tablistRef.current;
@@ -90,11 +105,8 @@ export default function ComposerTabs({
   }, [measureOverflow, workspaces]);
 
   useEffect(() => {
-    tabRefs.current.get(activeId)?.scrollIntoView({
-      block: "nearest",
-      inline: "nearest",
-    });
-  }, [activeId, overflowing]);
+    scrollActiveIntoView();
+  }, [activeId, overflowing, scrollActiveIntoView]);
 
   const startRename = (workspace: WorkspaceRecord) => {
     renameIdRef.current = workspace.id;

@@ -380,6 +380,13 @@ export function loadWorkspaces(libraryKey: string): LoadedWorkspaces {
 
   const storedIds = readWorkspaceKeys(libraryKey);
   const indexed = new Set(order);
+  const orphanIds = storedIds.filter((id) => !indexed.has(id));
+  if (orphanIds.length > 0) {
+    console.warn(
+      "[composer] appending unindexed workspace records",
+      orphanIds.join(", "),
+    );
+  }
   const ids = [...order];
   for (const id of storedIds) {
     if (!indexed.has(id)) {
@@ -393,7 +400,10 @@ export function loadWorkspaces(libraryKey: string): LoadedWorkspaces {
   for (const id of ids) {
     const workspace = readWorkspace(libraryKey, id);
     if (workspace) workspaces.push(workspace);
-    else repaired = true;
+    else {
+      console.warn(`[composer] removing missing workspace ${id}`);
+      repaired = true;
+    }
   }
   if (workspaces.length === 0) {
     workspaces.push(emptyWorkspace(1));
@@ -406,6 +416,7 @@ export function loadWorkspaces(libraryKey: string): LoadedWorkspaces {
       (workspace, index) => workspace.number !== workspaces[index].number,
     )
   ) {
+    console.warn("[composer] repaired duplicate or invalid workspace numbers");
     repaired = true;
   }
 
