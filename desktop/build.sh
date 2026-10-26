@@ -19,6 +19,22 @@ esac
 echo "==> version consistency"
 python3 "$ROOT/desktop/scripts/check_versions.py"
 
+# Cargo.toml patches wry with vendor/wry (drag-and-drop abort fix). If tauri
+# ever needs another wry version, Cargo silently falls back to crates.io and
+# only warns "patch was not used"; fail instead so the fix is ported or dropped.
+check_wry_patch() {
+  if awk '/^\[\[package\]\]/{w=0} /^name = "wry"$/{w=1} w && /^source = /{bad=1} END{exit !bad}' \
+    "$ROOT/desktop/src-tauri/Cargo.lock"; then
+    echo "FAIL: wry comes from crates.io, not desktop/src-tauri/vendor/wry." >&2
+    echo "      Port the collect_paths fix to the new wry version, or remove" >&2
+    echo "      vendor/wry and [patch.crates-io] if upstream no longer unwraps." >&2
+    exit 1
+  fi
+}
+
+echo "==> vendored wry patch in use"
+check_wry_patch
+
 echo "==> frontend dialog check"
 "$ROOT/desktop/scripts/check_frontend.sh"
 
@@ -34,6 +50,7 @@ rm -rf "$ROOT/desktop/src-tauri/resources/imagen-backend"
 
 echo "==> Tauri bundle (aarch64-apple-darwin, app only)"
 (cd "$ROOT/desktop" && npm ci && npx tauri build --target aarch64-apple-darwin --bundles app)
+check_wry_patch
 
 APP="$ROOT/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Imagen.app"
 VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \

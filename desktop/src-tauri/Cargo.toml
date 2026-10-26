@@ -33,5 +33,9 @@ strip = true
 # Local copy of wry 0.57.0 with a drag-and-drop fix: upstream unwraps the
 # pasteboard file list inside `draggingEntered:`, which aborts the app when a
 # drag carries no readable list. Remove once upstream no longer unwraps.
+# The patch only applies while tauri wants wry 0.57.x: after a tauri upgrade
+# that needs a newer wry, Cargo uses crates.io and only warns "patch was not
+# used". desktop/build.sh fails in that case; port the fix to the new
+# version (vendor/wry/src/wkwebview/drag_drop.rs, `collect_paths`) or drop it.
 [patch.crates-io]
 wry = { path = "vendor/wry" }
