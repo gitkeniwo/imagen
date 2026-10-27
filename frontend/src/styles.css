@@ -1073,6 +1073,13 @@ body.resizing-sidebar .side-panel {
   background: rgba(255, 255, 255, 0.1); color: #e2e8f0; font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums; display: flex; align-items: center;
 }
+.viewer-zone {
+  position: absolute; top: 64px; bottom: 0; width: 20%; padding: 0; min-height: 0;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.viewer-zone.prev { left: 0; }
+.viewer-zone.next { right: 0; }
 .viewer-nav {
   position: absolute; top: 50%; transform: translateY(-50%);
   width: 40px; height: 40px; border-radius: 20px;
@@ -3041,21 +3048,6 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   /* Panel toggle doubles as full-screen: hiding the sheet gives the stage the whole window. */
   .viewer-window.phone.panel-hidden .zoom-hud { bottom: calc(14px + env(safe-area-inset-bottom)); }
   .viewer-window.phone .zoom-hud { bottom: 10px; }
-  .viewer-window.phone .viewer-zone {
-    position: absolute;
-    top: 64px;
-    bottom: 0;
-    width: 20%;
-    padding: 0;
-    min-height: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .viewer-window.phone .viewer-zone.prev { left: 0; }
-  .viewer-window.phone .viewer-zone.next { right: 0; }
   .viewer-window.phone .viewer-nav { width: 38px; height: 38px; }
   .viewer-window.phone .viewer-nav.prev { left: 8px; }
   .viewer-window.phone .viewer-nav.next { right: 8px; }
