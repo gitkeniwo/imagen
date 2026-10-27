@@ -31,12 +31,23 @@ export default function ZoomStage({
   panelHidden,
   onTogglePanel,
   onZoomedChange,
+  onNavigate,
+  onInteractionStart,
+  canNavigatePrev = true,
+  canNavigateNext = true,
+  allowZoneDoubleClick = false,
   children,
 }: {
   image: ImageRow;
   panelHidden: boolean;
   onTogglePanel: () => void;
   onZoomedChange: (zoomed: boolean) => void;
+  // Fit only: horizontal swipe/flick to the previous (-1) or next (+1) image.
+  onNavigate?: (delta: -1 | 1) => void;
+  onInteractionStart?: () => void;
+  canNavigatePrev?: boolean;
+  canNavigateNext?: boolean;
+  allowZoneDoubleClick?: boolean;
   // Overlays drawn above the image (counter, prev/next).
   children?: ReactNode;
 }) {
@@ -47,9 +58,23 @@ export default function ZoomStage({
   const [moving, setMoving] = useState(false);
   const [src, setSrc] = useState(() => imgThumbUrl(image.id));
   const viewRef = useRef(view);
+  const atFitRef = useRef(true);
   const pending = useRef<View | null>(null);
   const frame = useRef(0);
   const idle = useRef<number | undefined>(undefined);
+  const wheelSwipe = useRef({ dx: 0, last: 0, lockedUntil: 0 });
+  const gestureActive = useRef(false);
+  const activeTouches = useRef(new Set<number>());
+  const swipe = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    startedAt: number;
+    moved: boolean;
+    captured: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const suppressClickTimer = useRef<number | undefined>(undefined);
 
   const iw = image.width || 1;
   const ih = image.height || 1;
@@ -100,7 +125,10 @@ export default function ZoomStage({
     [clamp, commit, minS, maxS],
   );
 
-  const toFit = useCallback(() => commit(clamp({ s: minS, x: 0, y: 0 })), [clamp, commit, minS]);
+  const toFit = useCallback(() => {
+    atFitRef.current = true;
+    commit(clamp({ s: minS, x: 0, y: 0 }));
+  }, [clamp, commit, minS]);
 
   useLayoutEffect(() => {
     const el = stageRef.current;
@@ -120,12 +148,21 @@ export default function ZoomStage({
   useLayoutEffect(() => {
     if (!size.w) return;
     const cur = viewRef.current;
-    const atFit = lastId.current !== image.id || Math.abs(cur.s - minS) < 1e-3 || cur.s < minS;
+    const atFit =
+      lastId.current !== image.id ||
+      atFitRef.current ||
+      Math.abs(cur.s - minS) < 1e-3 ||
+      cur.s < minS;
     lastId.current = image.id;
     const v = atFit ? clamp({ s: minS, x: 0, y: 0 }) : clamp(cur);
     viewRef.current = v;
     setView(v);
+    atFitRef.current = Math.abs(v.s - minS) < 1e-3;
   }, [image.id, size.w, size.h]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    atFitRef.current = Math.abs(view.s - minS) < 1e-3;
+  }, [view.s, minS]);
 
   // Thumbnail first, then the decoded original.
   useEffect(() => {
@@ -158,13 +195,45 @@ export default function ZoomStage({
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) {
         e.preventDefault();
+        onInteractionStart?.();
         if (inGesture) return;
         nudge();
         const [px, py] = local(e.clientX, e.clientY);
         zoomAt(viewRef.current.s * Math.exp(-e.deltaY * 0.01), px, py);
         return;
       }
-      if (viewRef.current.s <= minS + 1e-3) return;
+      if (viewRef.current.s <= minS + 1e-3) {
+        if (!onNavigate) return;
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
+        const dx = e.deltaX * unit;
+        const dy = e.deltaY * unit;
+        if (Math.abs(dx) <= Math.abs(dy) * 1.15) return;
+
+        // Trackpads report a horizontal two-finger swipe as wheel deltas.
+        const direction = dx > 0 ? 1 : -1;
+        if ((direction > 0 && !canNavigateNext) || (direction < 0 && !canNavigatePrev)) {
+          wheelSwipe.current.dx = 0;
+          return;
+        }
+        onInteractionStart?.();
+        e.preventDefault();
+        const now = performance.now();
+        const s = wheelSwipe.current;
+        if (now < s.lockedUntil) {
+          s.lockedUntil = now + 180;
+          return;
+        }
+        if (now - s.last > 240) s.dx = 0;
+        s.dx += dx;
+        s.last = now;
+        const threshold = Math.max(60, Math.min(120, el.clientWidth * 0.1));
+        if (Math.abs(s.dx) >= threshold) {
+          onNavigate(s.dx > 0 ? 1 : -1);
+          s.dx = 0;
+          s.lockedUntil = now + 220;
+        }
+        return;
+      }
       e.preventDefault();
       nudge();
       const cur = viewRef.current;
@@ -173,6 +242,9 @@ export default function ZoomStage({
     type GestureEvt = UIEvent & { scale: number; clientX: number; clientY: number };
     const onGestureStart = (e: Event) => {
       e.preventDefault();
+      onInteractionStart?.();
+      gestureActive.current = true;
+      swipe.current = null;
       inGesture = true;
       gestureStart = viewRef.current.s;
     };
@@ -185,6 +257,7 @@ export default function ZoomStage({
     };
     const onGestureEnd = (e: Event) => {
       e.preventDefault();
+      gestureActive.current = false;
       inGesture = false;
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -197,7 +270,17 @@ export default function ZoomStage({
       el.removeEventListener("gesturechange", onGestureChange);
       el.removeEventListener("gestureend", onGestureEnd);
     };
-  }, [clamp, commit, minS, nudge, zoomAt]);
+  }, [
+    canNavigateNext,
+    canNavigatePrev,
+    clamp,
+    commit,
+    minS,
+    nudge,
+    onInteractionStart,
+    onNavigate,
+    zoomAt,
+  ]);
 
   useEffect(
     () => () => {
@@ -207,16 +290,106 @@ export default function ZoomStage({
     [],
   );
 
-  // Mouse/pen drag to pan while zoomed.
+  // Mouse/pen drag to pan while zoomed, and horizontal swipe to page while fit.
   const drag = useRef<{ id: number; x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  const armClickSuppression = () => {
+    suppressClick.current = true;
+    window.clearTimeout(suppressClickTimer.current);
+    suppressClickTimer.current = window.setTimeout(() => {
+      suppressClick.current = false;
+    }, 0);
+  };
+
+  const endSwipe = (e: React.PointerEvent) => {
+    const s = swipe.current;
+    if (!s || s.id !== e.pointerId) return;
+    swipe.current = null;
+    if (s.captured && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (s.moved) armClickSuppression();
+    const elapsed = performance.now() - s.startedAt;
+    const threshold = Math.max(42, Math.min(80, size.w * 0.08));
+    const horizontal = Math.abs(dx) > Math.abs(dy) * 1.25;
+    const flicked =
+      Math.abs(dx) >= 24 &&
+      Math.abs(dx) > Math.abs(dy) * 1.5 &&
+      elapsed <= 280;
+    const delta = dx < 0 ? 1 : -1;
+    const canNavigate = delta > 0 ? canNavigateNext : canNavigatePrev;
+    if (
+      onNavigate &&
+      canNavigate &&
+      !gestureActive.current &&
+      activeTouches.current.size <= 1 &&
+      viewRef.current.s <= minS + 1e-3 &&
+      horizontal &&
+      (Math.abs(dx) >= threshold || flicked)
+    ) {
+      onNavigate(delta);
+    }
+  };
+
+  const cancelSwipe = () => {
+    swipe.current = null;
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!zoomed || e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    onInteractionStart?.();
+    if (e.pointerType === "touch") {
+      activeTouches.current.add(e.pointerId);
+      if (activeTouches.current.size > 1) cancelSwipe();
+    }
+    const target = e.target instanceof Element ? e.target : null;
+    const zone = target?.closest(".viewer-zone");
+    const noSwipe = target?.closest(
+      ".viewer-phone-top, .zoom-hud, .viewer-count, .zoom-mini, " +
+        "button:not(.viewer-zone), a, input, textarea, select, " +
+        "[contenteditable='true'], [role='toolbar']",
+    );
+
+    if (viewRef.current.s <= minS + 1e-3) {
+      cancelSwipe();
+      if (
+        !onNavigate ||
+        (e.pointerType === "mouse" && e.button !== 0) ||
+        !e.isPrimary ||
+        gestureActive.current ||
+        noSwipe
+      ) {
+        return;
+      }
+      swipe.current = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        startedAt: performance.now(),
+        moved: false,
+        captured: !zone,
+      };
+      if (!zone) e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    cancelSwipe();
+    if (!zoomed || e.button !== 0 || target?.closest("button")) return;
     drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    const s = swipe.current;
+    if (s && s.id === e.pointerId) {
+      if (Math.abs(e.clientX - s.x) > 8 || Math.abs(e.clientY - s.y) > 8) {
+        s.moved = true;
+      }
+      return;
+    }
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     const cur = viewRef.current;
@@ -229,8 +402,27 @@ export default function ZoomStage({
     drag.current = null;
     setDragging(false);
   };
+  const onPointerUp = (e: React.PointerEvent) => {
+    endSwipe(e);
+    if (e.pointerType === "touch") activeTouches.current.delete(e.pointerId);
+    endDrag();
+  };
+  const onPointerCancel = (e: React.PointerEvent) => {
+    cancelSwipe();
+    if (e.pointerType === "touch") activeTouches.current.delete(e.pointerId);
+    endDrag();
+  };
+  const onClickCapture = (e: React.MouseEvent) => {
+    if (!suppressClick.current) return;
+    suppressClick.current = false;
+    window.clearTimeout(suppressClickTimer.current);
+    e.preventDefault();
+    e.stopPropagation();
+  };
   const onDoubleClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("button")) return;
+    const target = e.target instanceof Element ? e.target : null;
+    const button = target?.closest("button");
+    if (button && !(allowZoneDoubleClick && button.classList.contains("viewer-zone"))) return;
     const r = e.currentTarget.getBoundingClientRect();
     if (zoomed) toFit();
     else zoomAt(minS < 1 ? 1 : minS * 2, e.clientX - r.left, e.clientY - r.top);
@@ -253,14 +445,22 @@ export default function ZoomStage({
   const miniW = 120;
   const miniH = Math.round((miniW * ih) / iw);
 
+  useEffect(
+    () => () => {
+      window.clearTimeout(suppressClickTimer.current);
+    },
+    [],
+  );
+
   return (
     <div
       ref={stageRef}
       className={`viewer-stage${zoomed ? " zoomed" : ""}${dragging ? " dragging" : ""}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onClickCapture={onClickCapture}
       onDoubleClick={onDoubleClick}
     >
       <div

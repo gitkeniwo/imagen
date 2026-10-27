@@ -14,6 +14,11 @@ import ZoomStage from "./ZoomStage";
 import { useIsPhone } from "../useIsPhone";
 import { useBackLayer } from "../backStack";
 
+// The web platform does not expose the OS double-click interval. This delay
+// lets a normal double-click cancel edge paging; unusually slow custom
+// double-clicks can still exceed it and are treated as two single clicks.
+const EDGE_NAV_DELAY_MS = 400;
+
 // Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
 // and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
 // For generated images it also surfaces the prompt behind the image (copy /
@@ -309,8 +314,32 @@ export default function ImageViewer({
 
   const navBusy = useRef(false);
   const [navLoading, setNavLoading] = useState<"prev" | "next" | null>(null);
+  const edgeNavTimer = useRef<number | undefined>(undefined);
+  const cancelEdgeNav = useCallback(() => {
+    window.clearTimeout(edgeNavTimer.current);
+    edgeNavTimer.current = undefined;
+  }, []);
+  const queueEdgeNav = useCallback(
+    (navigate: () => void) => {
+      cancelEdgeNav();
+      if (phone) {
+        navigate();
+        return;
+      }
+      // Keep desktop double-click-to-zoom working in the edge zones.
+      edgeNavTimer.current = window.setTimeout(() => {
+        edgeNavTimer.current = undefined;
+        navigate();
+      }, EDGE_NAV_DELAY_MS);
+    },
+    [cancelEdgeNav, phone],
+  );
+  useEffect(() => cancelEdgeNav, [cancelEdgeNav]);
   const goTo = useCallback(
     async (delta: -1 | 1) => {
+      // Any navigation supersedes a delayed edge click, including Arrow keys,
+      // the visible nav buttons, wheel gestures, and swipes.
+      cancelEdgeNav();
       if (navBusy.current) return;
       const local = idxRef.current;
       if (delta > 0 && local < itemsRef.current.length - 1) {
@@ -345,7 +374,7 @@ export default function ImageViewer({
         setNavLoading(null);
       }
     },
-    [loadNext, loadPrev, setCurrentIndex, t, toast],
+    [cancelEdgeNav, loadNext, loadPrev, setCurrentIndex, t, toast],
   );
 
   useEffect(() => {
@@ -433,6 +462,8 @@ export default function ImageViewer({
   const next = () => void goTo(1);
   const atStart = globalIndex <= 0;
   const atEnd = globalIndex >= total - 1;
+  const edgePrevDisabled = atStart || navLoading !== null;
+  const edgeNextDisabled = atEnd || navLoading !== null;
   const format = (current.mime || "").replace("image/", "").toUpperCase();
   const params = gen
     ? [gen.model.replace("-image", "").replace("-preview", ""), gen.aspect_ratio, gen.resolution, format]
@@ -451,6 +482,11 @@ export default function ImageViewer({
           panelHidden={panelHidden}
           onTogglePanel={() => setPanelHidden((h) => !h)}
           onZoomedChange={onZoomedChange}
+          onNavigate={multi ? goTo : undefined}
+          onInteractionStart={cancelEdgeNav}
+          canNavigatePrev={!atStart}
+          canNavigateNext={!atEnd}
+          allowZoneDoubleClick={!phone}
         >
           {(phone || panelHidden) && (
             <div className="viewer-phone-top">
@@ -462,22 +498,36 @@ export default function ImageViewer({
           {multi && (
             <>
               <span className="viewer-count">{globalPosition} / {total}</span>
-              {/* Phone: the outer fifths of the stage switch images while not zoomed. */}
-              {phone && !zoomed && (
+              {/* The outer fifths of the stage switch images while not zoomed. */}
+              {!zoomed && (
                 <>
                   <button
                     type="button"
                     className="viewer-zone prev"
                     aria-label={t("prev_image")}
-                    disabled={atStart || navLoading === "prev"}
-                    onClick={prev}
+                    aria-disabled={edgePrevDisabled}
+                    tabIndex={phone ? undefined : -1}
+                    aria-hidden={phone ? undefined : true}
+                    onClick={(e) => {
+                      cancelEdgeNav();
+                      if (e.detail > 1 || edgePrevDisabled) return;
+                      queueEdgeNav(prev);
+                    }}
+                    onDoubleClick={cancelEdgeNav}
                   />
                   <button
                     type="button"
                     className="viewer-zone next"
                     aria-label={t("next_image")}
-                    disabled={atEnd || navLoading === "next"}
-                    onClick={next}
+                    aria-disabled={edgeNextDisabled}
+                    tabIndex={phone ? undefined : -1}
+                    aria-hidden={phone ? undefined : true}
+                    onClick={(e) => {
+                      cancelEdgeNav();
+                      if (e.detail > 1 || edgeNextDisabled) return;
+                      queueEdgeNav(next);
+                    }}
+                    onDoubleClick={cancelEdgeNav}
                   />
                 </>
               )}
