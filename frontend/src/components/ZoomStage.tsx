@@ -6,17 +6,17 @@ import Icon from "./ui/Icon";
 
 // Zoomable image stage for the viewer. Zoom stays clipped inside the stage,
 // never over the inspector.
-// - Scale is in image pixels → screen pixels; "fit" is the largest scale that
-//   shows the whole image (never above 1:1), and zoom is capped at 8× fit.
+// - Scale is in image pixels → screen pixels; "fit" shows the whole image and
+//   fills the stage on its limiting axis. Zoom is capped at 8× fit.
 // - Pinch: WebKit `gesture*` events (WKWebView, Safari) and Chromium's
 //   ctrl+wheel; both are cancelled so the app's own page zoom never kicks in.
-//   Two-finger scroll and mouse drag pan; double-click toggles Fit ↔ 1:1.
+//   Two-finger scroll and mouse drag pan; double-click zooms in from Fit and
+//   returns to Fit from any zoomed state.
 // - Only the wrapper's transform changes; updates are batched per frame and
 //   `will-change` is set only while a gesture is running.
 // - The thumbnail paints first; the original is decoded off-screen
 //   (img.decode()) and swapped in so a large file never blocks a frame.
 
-const PAD = 24;
 const MAX_FIT_MULT = 8;
 const STEP = 1.5;
 
@@ -78,9 +78,7 @@ export default function ZoomStage({
 
   const iw = image.width || 1;
   const ih = image.height || 1;
-  const fit = size.w && size.h
-    ? Math.min(1, (size.w - PAD * 2) / iw, (size.h - PAD * 2) / ih)
-    : 1;
+  const fit = size.w && size.h ? Math.min(size.w / iw, size.h / ih) : 1;
   const minS = fit;
   const maxS = Math.max(1, fit * MAX_FIT_MULT);
 
@@ -515,6 +513,7 @@ export default function ZoomStage({
           type="button"
           className="zoom-text"
           aria-pressed={isOne}
+          disabled={minS > 1 + 1e-3}
           onClick={() => zoomAt(1, ...center())}
         >
           1:1
