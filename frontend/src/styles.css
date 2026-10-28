@@ -1153,6 +1153,8 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 @media (max-width: 860px) {
   .viewer-overlay { padding: 0; }
   .viewer-window { border-radius: 0; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 45%); }
+  /* Full screen hides the side panel; don't keep reserving its row. */
+  .viewer-window.panel-hidden { grid-template-rows: minmax(0, 1fr); }
 }
 
 .viewer-phone-top, .viewer-phone-actions, .viewer-phone-tags, .viewer-prompt-more { display: none; }
