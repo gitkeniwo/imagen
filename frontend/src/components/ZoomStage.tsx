@@ -32,10 +32,8 @@ export default function ZoomStage({
   onTogglePanel,
   onZoomedChange,
   onNavigate,
-  onInteractionStart,
   canNavigatePrev = true,
   canNavigateNext = true,
-  allowZoneDoubleClick = false,
   children,
 }: {
   image: ImageRow;
@@ -44,10 +42,8 @@ export default function ZoomStage({
   onZoomedChange: (zoomed: boolean) => void;
   // Fit only: horizontal swipe/flick to the previous (-1) or next (+1) image.
   onNavigate?: (delta: -1 | 1) => void;
-  onInteractionStart?: () => void;
   canNavigatePrev?: boolean;
   canNavigateNext?: boolean;
-  allowZoneDoubleClick?: boolean;
   // Overlays drawn above the image (counter, prev/next).
   children?: ReactNode;
 }) {
@@ -193,7 +189,6 @@ export default function ZoomStage({
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) {
         e.preventDefault();
-        onInteractionStart?.();
         if (inGesture) return;
         nudge();
         const [px, py] = local(e.clientX, e.clientY);
@@ -213,7 +208,6 @@ export default function ZoomStage({
           wheelSwipe.current.dx = 0;
           return;
         }
-        onInteractionStart?.();
         e.preventDefault();
         const now = performance.now();
         const s = wheelSwipe.current;
@@ -240,7 +234,6 @@ export default function ZoomStage({
     type GestureEvt = UIEvent & { scale: number; clientX: number; clientY: number };
     const onGestureStart = (e: Event) => {
       e.preventDefault();
-      onInteractionStart?.();
       gestureActive.current = true;
       swipe.current = null;
       inGesture = true;
@@ -275,7 +268,6 @@ export default function ZoomStage({
     commit,
     minS,
     nudge,
-    onInteractionStart,
     onNavigate,
     zoomAt,
   ]);
@@ -338,7 +330,6 @@ export default function ZoomStage({
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    onInteractionStart?.();
     if (e.pointerType === "touch") {
       activeTouches.current.add(e.pointerId);
       if (activeTouches.current.size > 1) cancelSwipe();
@@ -419,8 +410,7 @@ export default function ZoomStage({
   };
   const onDoubleClick = (e: React.MouseEvent) => {
     const target = e.target instanceof Element ? e.target : null;
-    const button = target?.closest("button");
-    if (button && !(allowZoneDoubleClick && button.classList.contains("viewer-zone"))) return;
+    if (target?.closest("button")) return;
     const r = e.currentTarget.getBoundingClientRect();
     if (zoomed) toFit();
     else zoomAt(minS < 1 ? 1 : minS * 2, e.clientX - r.left, e.clientY - r.top);
