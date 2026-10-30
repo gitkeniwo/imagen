@@ -34,7 +34,7 @@ app.add_middleware(
 )
 
 
-# Outermost: decides trust per listener (loopback shell vs LAN). Desktop only.
+# Outermost: Host + cross-site checks everywhere; LAN trust rules on desktop.
 app.add_middleware(RemoteGate)
 
 
