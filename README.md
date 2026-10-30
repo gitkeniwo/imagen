@@ -180,7 +180,7 @@ Via GHCR (pre-built image):
 ```bash
 mkdir -p ./imagen-data && docker run -d \
   --name imagen \
-  -p 8000:8000 \
+  -p 127.0.0.1:8000:8000 \
   -e IMAGEN_DATA_DIR=/data \
   -e GOOGLE_APPLICATION_CREDENTIALS=/gcloud/adc.json \
   -v ./imagen-data:/data \
@@ -193,6 +193,19 @@ Or build locally with compose:
 ```bash
 docker compose up --build -d     # → http://localhost:8000
 ```
+
+The Docker build has **no login**: anyone who can reach port 8000 can view,
+download and permanently delete every image and spend your Vertex credits.
+Both examples therefore publish the port on `127.0.0.1` only. Plain
+`-p 8000:8000` listens on every network interface, which puts the library on
+your Wi-Fi. If you really want LAN access, use the desktop app's Remote access
+(access code + device sessions) instead.
+
+The backend also rejects requests whose `Host` is a domain name other than
+`localhost` (protection against DNS rebinding). If you put it behind a reverse
+proxy or reach it by a hostname, list that name:
+`-e IMAGEN_ALLOWED_HOSTS=imagen.example.lan` (comma-separated; `*` disables
+the check).
 
 ## Migrating to a New Machine
 

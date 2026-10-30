@@ -4,7 +4,9 @@ services:
     image: nano-banana-studio
     container_name: nano-banana-studio
     ports:
-      - "8000:8000"
+      # Loopback only: the Docker build has no login, so anyone who can reach
+      # the port can read and delete the whole library. See README › Docker.
+      - "127.0.0.1:8000:8000"
     environment:
       IMAGEN_DATA_DIR: /data
       GOOGLE_APPLICATION_CREDENTIALS: /gcloud/adc.json
