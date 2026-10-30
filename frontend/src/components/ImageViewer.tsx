@@ -212,16 +212,18 @@ export default function ImageViewer({
 
   // Warm the browser cache around the current image. On phones this is the
   // difference between a blank frame and an immediate full-resolution swap.
-  const prevImageId = items[idx - 1]?.id;
-  const nextImageId = items[idx + 1]?.id;
+  const prevImage = items[idx - 1];
+  const nextImage = items[idx + 1];
+  const prevSrc = prevImage ? imgFileUrl(prevImage) : null;
+  const nextSrc = nextImage ? imgFileUrl(nextImage) : null;
   useEffect(() => {
-    for (const id of [prevImageId, nextImageId]) {
-      if (id == null) continue;
+    for (const src of [prevSrc, nextSrc]) {
+      if (src == null) continue;
       const preload = new Image();
-      preload.src = imgFileUrl(id);
+      preload.src = src;
       void preload.decode().catch(() => {});
     }
-  }, [prevImageId, nextImageId]);
+  }, [prevSrc, nextSrc]);
 
   // Fetch the next/previous grid page while the user is still 2-3 images away
   // from its boundary, so crossing it only changes the displayed image.
@@ -657,7 +659,7 @@ export default function ImageViewer({
                         {...peekProps(im, t("peek_input", { n: i + 1 }))}
                         onClick={() => onAddToTray(im)}
                       >
-                        <img src={imgThumbUrl(im.id)} alt="" />
+                        <img src={imgThumbUrl(im)} alt="" />
                         <span className="pos">{i + 1}</span>
                       </button>
                     ),

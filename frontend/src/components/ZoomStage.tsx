@@ -52,7 +52,7 @@ export default function ZoomStage({
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ s: 1, x: 0, y: 0 });
   const [moving, setMoving] = useState(false);
-  const [src, setSrc] = useState(() => imgThumbUrl(image.id));
+  const [src, setSrc] = useState(() => imgThumbUrl(image));
   const viewRef = useRef(view);
   const atFitRef = useRef(true);
   const pending = useRef<View | null>(null);
@@ -161,17 +161,17 @@ export default function ZoomStage({
   // Thumbnail first, then the decoded original.
   useEffect(() => {
     let alive = true;
-    setSrc(imgThumbUrl(image.id));
+    setSrc(imgThumbUrl(image));
     const full = new Image();
-    full.src = imgFileUrl(image.id);
+    full.src = imgFileUrl(image);
     full
       .decode()
       .then(() => alive && setSrc(full.src))
-      .catch(() => alive && setSrc(imgFileUrl(image.id)));
+      .catch(() => alive && setSrc(imgFileUrl(image)));
     return () => {
       alive = false;
     };
-  }, [image.id]);
+  }, [image.id, image.sha256]);
 
   const zoomed = view.s > minS + 1e-3;
   useEffect(() => onZoomedChange(zoomed), [zoomed, onZoomedChange]);
@@ -469,7 +469,7 @@ export default function ZoomStage({
 
       {mini && (
         <div className="zoom-mini" style={{ width: miniW, height: Math.min(miniH, 120) }} aria-hidden="true">
-          <img src={imgThumbUrl(image.id)} alt="" />
+          <img src={imgThumbUrl(image)} alt="" />
           <span
             style={{
               left: `${mini.left}%`,

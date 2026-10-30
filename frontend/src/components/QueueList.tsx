@@ -288,7 +288,7 @@ const QueueItem = memo(function QueueItem({
       <div className={`hcard-media${failure ? ` failed ${task.status}` : ""}`}>
         {output ? (
           <img
-            src={imgThumbUrl(output.id)}
+            src={imgThumbUrl(output)}
             alt={output.filename}
             title={t("open_viewer")}
             onClick={() => onOpenViewer(output, [])}
@@ -336,7 +336,7 @@ const QueueItem = memo(function QueueItem({
           {task.inputs.map((im, i) => (
             <img
               key={im.id}
-              src={imgThumbUrl(im.id)}
+              src={imgThumbUrl(im)}
               alt={im.filename}
               {...peekProps(im, t("peek_input", { n: i + 1 }))}
               onClick={() => onOpenViewer(im, task.inputs)}

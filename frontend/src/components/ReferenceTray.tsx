@@ -199,7 +199,7 @@ export default function ReferenceTray({
               dragIdx.current = null;
             }}
           >
-            <img src={imgThumbUrl(img.id)} alt={img.filename} draggable={false} />
+            <img src={imgThumbUrl(img)} alt={img.filename} draggable={false} />
             <span className="pos">{i + 1}</span>
             <IconButton
               className="x"

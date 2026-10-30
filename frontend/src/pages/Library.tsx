@@ -165,7 +165,7 @@ export default function Library({
 
   const download = (img: ImageRow) => {
     const a = document.createElement("a");
-    a.href = imgFileUrl(img.id);
+    a.href = imgFileUrl(img);
     a.download = downloadName(img);
     a.click();
   };
@@ -699,7 +699,7 @@ export default function Library({
                 onPointerLeave={phone ? endLongPress : undefined}
               >
                 <img
-                  src={imgThumbUrl(img.id)}
+                  src={imgThumbUrl(img)}
                   alt={img.filename}
                   draggable={false}
                   title={[img.filename, ...tagNames].join(" · ")}
