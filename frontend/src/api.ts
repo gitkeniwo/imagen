@@ -681,7 +681,7 @@ export const remoteApi = {
   async session(): Promise<SessionInfo> {
     return handle(await fetch("/api/session", { cache: "no-store" }));
   },
-  async hello(): Promise<{ host_name: string; require_code: boolean }> {
+  async hello(): Promise<{ host_name: string; require_code: boolean; server?: boolean }> {
     return handle(await fetch("/api/remote/hello", { cache: "no-store" }));
   },
   async login(code: string, name: string, remember: boolean): Promise<RemoteLoginResult> {

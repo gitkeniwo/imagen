@@ -16,6 +16,8 @@ from .routes import drafts, generate, generations, images, settings, stats, tags
 from .routes import desktop as desktop_routes
 from .routes import remote as remote_routes
 
+remote.check_server_code()
+
 app = FastAPI(title="Imagen")
 
 # Suppress uvicorn access logs for noisy progress-poll requests.
@@ -75,6 +77,8 @@ app.include_router(drafts.router)
 if remote.is_desktop():
     app.include_router(remote_routes.router)
     app.include_router(desktop_routes.router)
+elif remote.is_server_auth():
+    app.include_router(remote_routes.router)
 
 # Serve the production build of the frontend if present.
 def _resolve_dist() -> Path:

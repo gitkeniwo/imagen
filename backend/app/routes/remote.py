@@ -1,7 +1,9 @@
-"""Remote (LAN) access API. Registered only in the desktop build.
+"""Remote (LAN) access API. Registered in the desktop build and in server mode.
 
 Split by listener: login/hello/session answer on both; everything that
-manages remote access is loopback-only and 404s on the LAN port.
+manages remote access is loopback-only and 404s on the LAN port. Server mode
+(Docker with IMAGEN_ACCESS_CODE) has no loopback listener, so it gets only
+login/hello/session; the code comes from the environment.
 """
 import asyncio
 
@@ -16,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["remote"])
 
 
 def loopback_only(request: Request) -> None:
-    if is_lan(request.scope):
+    if is_lan(request.scope) or remote.is_server_auth():
         raise HTTPException(status_code=404, detail="Not found")
 
 
@@ -36,7 +38,11 @@ class ConfigPatch(BaseModel):
 @router.get("/remote/hello")
 def hello():
     cfg = remote.config()
-    return {"host_name": remote.host_name(), "require_code": cfg["require_code"]}
+    return {
+        "host_name": remote.host_name(),
+        "require_code": cfg["require_code"],
+        "server": remote.is_server_auth(),
+    }
 
 
 @router.post("/remote/login")

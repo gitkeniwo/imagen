@@ -104,6 +104,9 @@ class RemoteGate:
             if not _allowed_host(host):
                 await _deny(scope, receive, send, "bad_host")
                 return
+            if remote.is_server_auth():
+                await self._login_required(scope, receive, send, host, lan=False)
+                return
             if unsafe and _foreign_origin(scope, host, _DEV_ORIGINS):
                 await _deny(scope, receive, send, "bad_origin")
                 return
@@ -126,14 +129,20 @@ class RemoteGate:
             await self.app(scope, receive, send)
             return
 
-        await self._lan(scope, receive, send, host)
+        await self._login_required(scope, receive, send, host, lan=True)
 
-    async def _lan(self, scope, receive, send, host: str) -> None:
+    async def _login_required(self, scope, receive, send, host: str, lan: bool) -> None:
+        """The LAN listener's rules; also every request in server mode.
+
+        Server-mode sessions are not marked `remote`: they are the owner's own
+        devices and keep full access (Vertex settings etc.).
+        """
         method = scope["method"]
         path = scope["path"]
         client = scope.get("client") or ("", 0)
         ip = client[0]
-        scope["state"]["remote"] = True
+        scope.setdefault("state", {})
+        scope["state"]["remote"] = lan
 
         if method not in _SAFE_METHODS:
             origin = _header(scope, b"origin")
@@ -148,6 +157,8 @@ class RemoteGate:
         public = (
             (method in ("GET", "HEAD") and (path in _PUBLIC_GET or path.startswith("/assets/")))
             or (method == "POST" and path in _PUBLIC_POST)
+            # Docker HEALTHCHECK; without the desktop token it says nothing.
+            or (not lan and method in ("GET", "HEAD") and path == "/api/health")
         )
         if not (public or session or not cfg["require_code"]):
             if path.startswith("/api/"):
