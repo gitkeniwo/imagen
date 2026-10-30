@@ -1,6 +1,6 @@
 [project]
 name = "nano-banana-studio-backend"
-version = "0.2.14"
+version = "0.2.15"
 description = "Backend for Imagen (image-to-image studio over the Gemini API)"
 requires-python = ">=3.11"
 dependencies = [
