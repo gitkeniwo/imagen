@@ -4,10 +4,13 @@ services:
     image: nano-banana-studio
     container_name: nano-banana-studio
     ports:
-      # Loopback only: the Docker build has no login, so anyone who can reach
-      # the port can read and delete the whole library. See README › Docker.
+      # Loopback only: without an access code there is no login, so anyone who
+      # can reach the port can read and delete the whole library. To use it
+      # from other devices, set IMAGEN_ACCESS_CODE below and publish
+      # "8000:8000" instead. See README › Docker.
       - "127.0.0.1:8000:8000"
     environment:
+      # IMAGEN_ACCESS_CODE: "24680"   # 5 digits; every browser must sign in
       IMAGEN_DATA_DIR: /data
       GOOGLE_APPLICATION_CREDENTIALS: /gcloud/adc.json
     volumes:

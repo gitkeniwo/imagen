@@ -194,12 +194,36 @@ Or build locally with compose:
 docker compose up --build -d     # → http://localhost:8000
 ```
 
-The Docker build has **no login**: anyone who can reach port 8000 can view,
-download and permanently delete every image and spend your Vertex credits.
-Both examples therefore publish the port on `127.0.0.1` only. Plain
-`-p 8000:8000` listens on every network interface, which puts the library on
-your Wi-Fi. If you really want LAN access, use the desktop app's Remote access
-(access code + device sessions) instead.
+Without an access code the Docker build has **no login**: anyone who can
+reach port 8000 can view, download and permanently delete every image and
+spend your Vertex credits. Both examples therefore publish the port on
+`127.0.0.1` only.
+
+### Opening it to other devices
+
+Set a 5-digit access code and publish the port on every interface
+(`IMAGEN_HOST_NAME` is optional and only shown on the login page):
+
+```bash
+mkdir -p ./imagen-data && docker run -d \
+  --name imagen \
+  -p 8000:8000 \
+  -e IMAGEN_ACCESS_CODE=24680 \
+  -e IMAGEN_HOST_NAME="Imagen NAS" \
+  -e IMAGEN_DATA_DIR=/data \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/gcloud/adc.json \
+  -v ./imagen-data:/data \
+  -v ~/.config/gcloud/application_default_credentials.json:/gcloud/adc.json:ro \
+  ghcr.io/gitkeniwo/imagen:latest
+```
+
+Every browser, the host's own included, then signs in at `/login` with that
+code (the desktop app's LAN login: cookie sessions for 30 days, 5 wrong tries
+lock an IP with growing delays, 50 wrong tries in an hour stop all sign-ins
+until the container restarts). There is no device list: sessions are kept in
+memory, so restarting the container, for example with a new code, signs
+every device out. The code must be exactly 5 digits or the server refuses to
+start. Traffic is plain HTTP, so use this on a network you trust.
 
 The backend also rejects requests whose `Host` is a domain name other than
 `localhost` (protection against DNS rebinding). If you put it behind a reverse
