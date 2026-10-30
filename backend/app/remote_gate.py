@@ -1,8 +1,12 @@
-"""ASGI gate that applies the remote-access trust rules per listener.
+"""ASGI gate that applies the trust rules per listener.
 
 Pure ASGI (no BaseHTTPMiddleware) so StreamingResponse bodies such as
-/api/generate pass through unbuffered. Only active in the desktop build.
+/api/generate pass through unbuffered. The desktop build adds the LAN rules;
+every build rejects DNS-rebinding hosts and cross-site writes, because any
+web page open in the user's browser can send "simple" POSTs to localhost.
 """
+import ipaddress
+import os
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 
@@ -14,6 +18,8 @@ from . import remote
 _PUBLIC_GET = {"/login", "/api/remote/hello"}
 _PUBLIC_POST = {"/api/remote/login"}
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# The Vite dev server (separate origin) proxies /api here; see CORS in main.py.
+_DEV_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
 
 
 def _header(scope, name: bytes) -> str:
@@ -36,6 +42,46 @@ def _cookie_token(scope) -> str | None:
     return morsel.value if morsel else None
 
 
+def _foreign_origin(scope, host: str, extra: set[str] = frozenset()) -> bool:
+    """True when a browser sent this request from another site.
+
+    Browsers attach Origin to every non-GET request, cross-site no-cors ones
+    included (sandboxed pages send "null"). A missing header means a non-browser
+    client such as curl or the desktop shell, which is not a CSRF vector.
+    """
+    origin = _header(scope, b"origin")
+    if not origin:
+        return False
+    return urlsplit(origin).netloc.lower() != host and origin.lower() not in extra
+
+
+def _allowed_host(host: str) -> bool:
+    """Host header check for the non-desktop server (Docker / dev).
+
+    DNS rebinding needs a domain name that resolves to this machine, so IP
+    literals and localhost are always fine. Other names (a reverse proxy, a
+    .local name) must be listed in IMAGEN_ALLOWED_HOSTS; "*" turns this off.
+    """
+    name = urlsplit(f"//{host}").hostname or ""
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    allowed = {
+        h.strip().lower()
+        for h in os.environ.get("IMAGEN_ALLOWED_HOSTS", "").split(",")
+        if h.strip()
+    }
+    return "*" in allowed or name in allowed
+
+
+async def _deny(scope, receive, send, detail: str) -> None:
+    await JSONResponse({"detail": detail}, status_code=403)(scope, receive, send)
+
+
 def is_lan(scope) -> bool:
     """True when the request arrived on the LAN listener (anything but loopback)."""
     return bool((scope.get("state") or {}).get("remote"))
@@ -47,19 +93,35 @@ class RemoteGate:
         self.enabled = remote.is_desktop()
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or not self.enabled:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        host = _header(scope, b"host").lower()
+        unsafe = scope["method"] not in _SAFE_METHODS
+
+        if not self.enabled:
+            if not _allowed_host(host):
+                await _deny(scope, receive, send, "bad_host")
+                return
+            if unsafe and _foreign_origin(scope, host, _DEV_ORIGINS):
+                await _deny(scope, receive, send, "bad_origin")
+                return
             await self.app(scope, receive, send)
             return
 
         server = scope.get("server") or (None, None)
         port = server[1]
         scope.setdefault("state", {})
-        host = _header(scope, b"host").lower()
 
         if port == remote.loopback_port():
             # DNS rebinding: a hostile page can point its own name at 127.0.0.1.
             if host not in (f"127.0.0.1:{port}", f"localhost:{port}"):
-                await JSONResponse({"detail": "bad_host"}, status_code=403)(scope, receive, send)
+                await _deny(scope, receive, send, "bad_host")
+                return
+            # CSRF: a page on another site can still POST here by IP.
+            if unsafe and _foreign_origin(scope, host):
+                await _deny(scope, receive, send, "bad_origin")
                 return
             await self.app(scope, receive, send)
             return
@@ -76,7 +138,7 @@ class RemoteGate:
         if method not in _SAFE_METHODS:
             origin = _header(scope, b"origin")
             if not origin or urlsplit(origin).netloc.lower() != host:
-                await JSONResponse({"detail": "bad_origin"}, status_code=403)(scope, receive, send)
+                await _deny(scope, receive, send, "bad_origin")
                 return
 
         cfg = remote.config()
