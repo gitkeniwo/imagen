@@ -4,7 +4,7 @@ import io
 import zipfile
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from .. import storage, tagging
@@ -148,7 +148,10 @@ def batch_download(ids: str = Query(...)):
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=images.zip"},
+        headers={
+            "Content-Disposition": "attachment; filename=images.zip",
+            "Cache-Control": "private, no-store",
+        },
     )
 
 
@@ -188,13 +191,13 @@ def empty_bin():
 
 
 @router.get("/{image_id}/file")
-def get_file(image_id: int):
-    return _serve(image_id, "file_path")
+def get_file(image_id: int, request: Request):
+    return _serve(image_id, "file_path", request)
 
 
 @router.get("/{image_id}/thumb")
-def get_thumb(image_id: int):
-    return _serve(image_id, "thumb_path")
+def get_thumb(image_id: int, request: Request):
+    return _serve(image_id, "thumb_path", request)
 
 
 # Canonical extension for the MIME types storage accepts, plus one alias so a
@@ -239,26 +242,38 @@ def download_name(row: dict) -> str:
     return name.replace(":", "-")
 
 
-def _serve(image_id: int, col: str):
+def _serve(image_id: int, col: str, request: Request):
     with get_conn() as conn:
         row = storage.get_image(conn, image_id)
     if not row:
         raise HTTPException(status_code=404, detail="Image not found")
-    path = storage.file_on_disk(row, thumb=col == "thumb_path")
+    thumb = col == "thumb_path"
+    path = storage.file_on_disk(row, thumb=thumb)
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing on disk")
-    if col == "thumb_path":
+    # IDs restart at 1 in every library and the desktop origin never changes,
+    # so a cached /api/images/7/thumb from one library used to show up in the
+    # next one. The frontend now adds ?v=<sha256 prefix>: such a URL names
+    # exactly these bytes, so it may be cached for good (a phone keeps working
+    # through a dropped connection). Anything else must revalidate against a
+    # content-derived ETag. A revoked LAN device gets 401 from every list
+    # endpoint and is sent to /login, so it can no longer browse the library.
+    v = request.query_params.get("v", "")
+    if len(v) >= 16 and row["sha256"].startswith(v):
+        cache = "private, max-age=31536000, immutable"
+    else:
+        cache = "private, no-cache"
+    etag = f'"{row["sha256"]}-t{path.stat().st_size}"' if thumb else f'"{row["sha256"]}"'
+    headers = {"Cache-Control": cache, "ETag": etag}
+    if etag in request.headers.get("if-none-match", ""):
+        return Response(status_code=304, headers=headers)
+    if thumb:
         # Thumbnails are always WebP (storage._make_thumb), regardless of the
         # original image's MIME type.
-        return FileResponse(path, media_type="image/webp")
+        return FileResponse(path, media_type="image/webp", headers=headers)
     filename = download_name(row)
-    return FileResponse(
-        path,
-        media_type=row["mime"],
-        headers={
-            "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename, safe='')}"
-        },
-    )
+    headers["Content-Disposition"] = f"inline; filename*=UTF-8''{quote(filename, safe='')}"
+    return FileResponse(path, media_type=row["mime"], headers=headers)
 
 
 @router.patch("/{image_id}")

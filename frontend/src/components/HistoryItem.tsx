@@ -170,7 +170,7 @@ export default function HistoryItem({
       {output ? (
         <>
           <img
-            src={imgThumbUrl(output.id)}
+            src={imgThumbUrl(output)}
             alt={output.filename}
             draggable={false}
             title={t("open_viewer")}
@@ -245,7 +245,7 @@ export default function HistoryItem({
             ) : (
               <img
                 key={im.id}
-                src={imgThumbUrl(im.id)}
+                src={imgThumbUrl(im)}
                 alt={im.filename}
                 {...peekProps(im, t("peek_input", { n: inputs.indexOf(im) + 1 }))}
                 onClick={() => onOpenInput(im)}

@@ -14,6 +14,7 @@ export interface Tag extends TagRef {
 
 export interface ImageRow {
   id: number;
+  sha256?: string;
   filename: string;
   mime: string;
   width: number;
@@ -229,8 +230,12 @@ export interface Stats {
   last_at: string | null;
 }
 
-export const imgFileUrl = (id: number) => `/api/images/${id}/file`;
-export const imgThumbUrl = (id: number) => `/api/images/${id}/thumb`;
+// Row IDs restart at 1 in every library, so the URL carries the content hash:
+// an old library's cached bytes for the same ID can never be reused here.
+type MediaRef = Pick<ImageRow, "id" | "sha256">;
+const mediaVersion = (img: MediaRef) => (img.sha256 ?? "").slice(0, 16);
+export const imgFileUrl = (img: MediaRef) => `/api/images/${img.id}/file?v=${mediaVersion(img)}`;
+export const imgThumbUrl = (img: MediaRef) => `/api/images/${img.id}/thumb?v=${mediaVersion(img)}`;
 export const batchDownloadUrl = (ids: number[]) =>
   `/api/images/batch-download?ids=${ids.join(",")}`;
 

@@ -104,7 +104,7 @@ export default function HoverPeek() {
 
   return createPortal(
     <div className="hover-peek" style={{ left, top, width: cardW }} aria-hidden="true">
-      <img src={imgThumbUrl(img.id)} alt="" style={{ height: imgH }} />
+      <img src={imgThumbUrl(img)} alt="" style={{ height: imgH }} />
       <div className="hover-peek-text">
         <span className="hover-peek-name">{label ? `${label} · ${img.filename}` : img.filename}</span>
         {dims && <span className="hover-peek-dims">{dims}</span>}

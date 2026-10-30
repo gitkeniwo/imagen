@@ -151,7 +151,7 @@ export default function DraftEditorModal({
           <div className="tray dropzone-wrap">
             {outputs.map((img) => (
               <div className="chip" key={img.id} title={img.filename}>
-                <img src={imgThumbUrl(img.id)} alt={img.filename} />
+                <img src={imgThumbUrl(img)} alt={img.filename} />
                 <IconButton
                   className="x"
                   variant="overlay"

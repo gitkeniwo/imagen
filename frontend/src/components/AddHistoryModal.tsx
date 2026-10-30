@@ -284,7 +284,7 @@ export default function AddHistoryModal({
               >
                 {outputImages.map((im) => (
                   <div className="chip" key={im.id} title={im.filename}>
-                    <img src={imgThumbUrl(im.id)} alt={im.filename} draggable={false} />
+                    <img src={imgThumbUrl(im)} alt={im.filename} draggable={false} />
                     <IconButton
                       className="x"
                       variant="overlay"

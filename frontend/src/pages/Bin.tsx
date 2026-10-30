@@ -138,7 +138,7 @@ export default function Bin({
             <div className="card" key={img.id}>
               <div className="card-img-wrap">
                 <img
-                  src={imgThumbUrl(img.id)}
+                  src={imgThumbUrl(img)}
                   alt={img.filename}
                   title={t("open_viewer")}
                   onClick={() => onOpenViewer(img, images)}

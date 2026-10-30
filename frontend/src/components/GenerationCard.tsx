@@ -158,7 +158,7 @@ export default function GenerationCard({
         <div className="gcard-media" style={{ aspectRatio: ratio }}>
           {media.kind === "image" ? (
             <img
-              src={imgThumbUrl(media.image.id)}
+              src={imgThumbUrl(media.image)}
               alt={media.image.filename}
               title={t("open_viewer")}
               onClick={media.onOpen}
@@ -200,7 +200,7 @@ export default function GenerationCard({
               ) : (
                 <img
                   key={im.id}
-                  src={imgThumbUrl(im.id)}
+                  src={imgThumbUrl(im)}
                   alt={im.filename}
                   title={im.filename}
                   onClick={onOpenInput ? () => onOpenInput(im) : undefined}
@@ -280,7 +280,7 @@ export function MarkerSwatches({
 
 export function downloadImage(img: ImageRow) {
   const a = document.createElement("a");
-  a.href = imgFileUrl(img.id);
+  a.href = imgFileUrl(img);
   a.download = downloadName(img);
   a.click();
 }
