@@ -528,6 +528,7 @@ const zh: Dict = {
   remote_sign_out_this: "登出本设备",
   login_title: "输入访问码",
   login_sub: "5 位访问码显示在运行 Imagen 的 Mac 上。",
+  login_sub_server: "输入这台服务器设置的 5 位访问码（IMAGEN_ACCESS_CODE）。",
   login_code_aria: "访问码",
   login_device_line: "Mac 上会显示为 {name}",
   login_rename: "重命名",
@@ -539,6 +540,7 @@ const zh: Dict = {
   login_wrong_last: "访问码不对，下次输错将暂停登录 1 分钟。",
   login_locked: "这台设备输错次数过多。请在 {time} 后重试。",
   login_network: "连不上 Mac。请确认在同一网络下。",
+  login_network_server: "连不上服务器。请确认在同一网络下。",
   login_foot: "在 Mac 上：顶栏的「远程」图标，或 设置 › 远程访问。",
 
   // phone layout
@@ -1088,6 +1090,7 @@ const en: Dict = {
   remote_sign_out_this: "Sign out of this device",
   login_title: "Enter the access code",
   login_sub: "The 5-digit code is shown on the Mac running Imagen.",
+  login_sub_server: "Enter the 5-digit access code set for this server (IMAGEN_ACCESS_CODE).",
   login_code_aria: "Access code",
   login_device_line: "The Mac will list this as {name}",
   login_rename: "Rename",
@@ -1099,6 +1102,7 @@ const en: Dict = {
   login_wrong_last: "That code didn’t match. One more wrong try pauses sign-in for a minute.",
   login_locked: "Too many wrong tries from this device. Try again in {time}.",
   login_network: "Can’t reach the Mac. Check that you’re on the same network.",
+  login_network_server: "Can’t reach the server. Check that you’re on the same network.",
   login_foot: "On the Mac: the Remote icon in the top bar, or Settings › Remote access.",
 
   // phone layout

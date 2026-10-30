@@ -129,6 +129,31 @@ def is_desktop() -> bool:
     return bool(os.environ.get("IMAGEN_LIBRARY_MODE"))
 
 
+def server_code() -> str | None:
+    """Docker/dev "server mode": the access code from IMAGEN_ACCESS_CODE.
+
+    Inside a container every request, the host's own browser included, comes
+    from the Docker gateway, so there is no trusted loopback listener. Server
+    mode instead puts every request behind the desktop LAN login (same code,
+    cookie sessions and rate limits). Sessions live in memory only: restarting
+    the container, e.g. with a new code, signs every device out.
+    """
+    if is_desktop():
+        return None
+    return os.environ.get("IMAGEN_ACCESS_CODE") or None
+
+
+def is_server_auth() -> bool:
+    return server_code() is not None
+
+
+def check_server_code() -> None:
+    """Refuse to start with a code the login page cannot type."""
+    code = server_code()
+    if code is not None and not re.fullmatch(rf"\d{{{CODE_LENGTH}}}", code):
+        raise SystemExit(f"IMAGEN_ACCESS_CODE must be exactly {CODE_LENGTH} digits")
+
+
 def loopback_port() -> int:
     try:
         return int(os.environ.get("IMAGEN_PORT") or 47860)
@@ -139,6 +164,8 @@ def loopback_port() -> int:
 # --- config persistence -----------------------------------------------------
 
 def _path() -> Path | None:
+    if is_server_auth():
+        return None
     raw = os.environ.get("IMAGEN_REMOTE_PATH")
     return Path(raw) if raw else None
 
@@ -189,6 +216,8 @@ def _load() -> dict:
                 }
         _sessions = sessions
         cfg["sessions"] = []
+        if is_server_auth():
+            cfg.update(enabled=True, require_code=True, code=server_code())
         _cfg = cfg
         return cfg
 
@@ -357,6 +386,10 @@ def verify_code(code: str, ip: str) -> dict:
     global _global_failures
     with _lock:
         cfg = _load()
+        if _disabled_reason and is_server_auth():
+            # Server mode has no owner UI to switch logins back on; the
+            # global lock holds until the container restarts.
+            return {"error": "locked", "retry_after": int(LOCK_MAX_S)}
         wait = check_locked(ip)
         if wait > 0:
             return {"error": "locked", "retry_after": int(wait) + 1}
@@ -495,6 +528,9 @@ def network_info() -> dict:
 
 
 def host_name() -> str:
+    if is_server_auth():
+        # networksetup/scutil don't exist in a Linux container.
+        return os.environ.get("IMAGEN_HOST_NAME") or "Imagen"
     return network_info()["host_name"]
 
 

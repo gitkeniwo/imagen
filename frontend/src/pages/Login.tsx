@@ -25,6 +25,8 @@ export default function Login() {
   const { t } = useI18n();
   const [hostName, setHostName] = useState("");
   const [requireCode, setRequireCode] = useState(true);
+  // Docker server mode: no Mac, no device list; the code is set by env var.
+  const [server, setServer] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState(guessDeviceName);
   const [editing, setEditing] = useState(false);
@@ -42,6 +44,7 @@ export default function Login() {
       .then((h) => {
         setHostName(h.host_name);
         setRequireCode(h.require_code);
+        setServer(!!h.server);
       })
       .catch(() => {});
   }, []);
@@ -104,7 +107,7 @@ export default function Login() {
         </div>
         <div className="rm-login-head">
           <h1>{t("login_title")}</h1>
-          <p className="muted small m-0">{t("login_sub")}</p>
+          <p className="muted small m-0">{t(server ? "login_sub_server" : "login_sub")}</p>
         </div>
 
         {requireCode && (
@@ -132,7 +135,7 @@ export default function Login() {
           </div>
         )}
         {error === "network" && (
-          <div className="rm-login-msg err" role="alert"><Icon name="wifiOff" size="sm" /><span>{t("login_network")}</span></div>
+          <div className="rm-login-msg err" role="alert"><Icon name="wifiOff" size="sm" /><span>{t(server ? "login_network_server" : "login_network")}</span></div>
         )}
         {locked && (
           <div className="rm-login-msg warn" role="alert">
@@ -141,7 +144,7 @@ export default function Login() {
           </div>
         )}
 
-        {editing ? (
+        {server ? null : editing ? (
           <div>
             <label className="rm-lbl" htmlFor="dev-name">
               {t("login_device_label")} <span className="muted" style={{ fontWeight: 400 }}>{t("login_device_hint")}</span>
@@ -175,7 +178,7 @@ export default function Login() {
           {t("login_connect")}
         </Button>
       </form>
-      <p className="rm-login-foot"><Icon name="radio" size="sm" />{t("login_foot")}</p>
+      {!server && <p className="rm-login-foot"><Icon name="radio" size="sm" />{t("login_foot")}</p>}
     </div>
   );
 }
