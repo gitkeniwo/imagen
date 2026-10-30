@@ -142,7 +142,9 @@ def batch_download(ids: str = Query(...)):
                 path = storage.file_on_disk(row)
                 if not path.exists():
                     continue
-                zf.write(path, f"{image_id}_{row['filename']}")
+                # download_name drops directory parts, so a crafted upload
+                # name like "../../x" cannot escape the folder on unzip.
+                zf.write(path, f"{image_id}_{download_name(row)}")
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
