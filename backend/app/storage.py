@@ -18,6 +18,7 @@ _EXT = {
     "image/webp": "webp",
     "image/gif": "gif",
 }
+_FORMATS = ("PNG", "JPEG", "WEBP", "GIF")
 
 
 def _now() -> str:
@@ -66,9 +67,11 @@ def store_image(conn, data: bytes, filename: str, mime: str, source: str) -> dic
             return get_image(conn, existing["id"])
         return _row_to_dict(existing)
 
-    # Decode to learn dimensions + normalize mime/extension.
+    # Decode to learn dimensions + normalize mime/extension. Only the formats
+    # we store are tried: Pillow's other plugins include EPS, which shells out
+    # to Ghostscript, and uploads are untrusted bytes.
     try:
-        img = Image.open(io.BytesIO(data))
+        img = Image.open(io.BytesIO(data), formats=_FORMATS)
         img.load()
         width, height = img.size
         if img.format:
