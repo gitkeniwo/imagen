@@ -1,10 +1,12 @@
-import { ASPECT_RATIOS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "../api";
+import { MODEL_LABELS, OUTPUT_FORMATS, ProviderId } from "../api";
+import { useProviders } from "../useProviders";
 import { useI18n } from "../i18n";
 import CustomSelect from "./CustomSelect";
 import Segmented from "./ui/Segmented";
 import { AspectShape } from "./ComposerControls";
 
 export default function OptionBar({
+  provider,
   model,
   setModel,
   aspectRatio,
@@ -14,6 +16,7 @@ export default function OptionBar({
   format,
   setFormat,
 }: {
+  provider: ProviderId;
   model: string;
   setModel: (v: string) => void;
   aspectRatio: string;
@@ -24,7 +27,14 @@ export default function OptionBar({
   setFormat: (v: string) => void;
 }) {
   const { t } = useI18n();
-  const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
+  const { info, spec: specOf, providers } = useProviders();
+  const models = info(provider)?.models ?? [];
+  const spec = specOf(provider, model);
+  const isPro = (spec?.resolutions.length ?? 0) > 0;
+  const resolutions = isPro
+    ? spec!.resolutions
+    : [...new Set(providers.flatMap((p) => p.models.flatMap((m) => m.resolutions)))];
+  const formats = OUTPUT_FORMATS.filter((f) => spec?.outputFormats.includes(f.id) ?? true);
 
   return (
     <div>
@@ -34,7 +44,7 @@ export default function OptionBar({
           <CustomSelect
             value={model}
             onChange={setModel}
-            options={MODELS.map((m) => ({ id: m.id, label: m.label }))}
+            options={models.map((m) => ({ id: m.id, label: MODEL_LABELS[m.id] ?? m.label }))}
           />
         </div>
         <div>
@@ -46,7 +56,7 @@ export default function OptionBar({
             value={resolution}
             onChange={setResolution}
             disabled={!isPro}
-            options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+            options={resolutions.map((r) => ({ value: r, label: r }))}
           />
         </div>
         <div>
@@ -54,7 +64,7 @@ export default function OptionBar({
           <Segmented
             value={format}
             onChange={setFormat}
-            options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
+            options={formats.map((f) => ({ value: f.id, label: f.label }))}
           />
         </div>
       </div>
@@ -62,7 +72,7 @@ export default function OptionBar({
       <div className="mt-4">
         <label>{t("aspect")}</label>
         <div className="aspect-row">
-          {ASPECT_RATIOS.map((r) => {
+          {(spec?.aspectRatios ?? []).map((r) => {
             return (
               <button
                 key={r}

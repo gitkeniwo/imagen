@@ -2,15 +2,16 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import {
   api,
-  ASPECT_RATIOS,
+  DEFAULT_MODEL,
   Draft,
   DraftBody,
   ImageRow,
-  MODELS,
-  RESOLUTIONS,
   imgThumbUrl,
+  providerOf,
+  ProviderId,
 } from "../api";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import LibraryPickerModal from "./LibraryPickerModal";
 import OptionBar from "./OptionBar";
 import ReferenceTray from "./ReferenceTray";
@@ -32,12 +33,18 @@ export default function DraftEditorModal({
 }) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState(existing?.prompt ?? seed?.prompt ?? "");
-  const [model, setModel] = useState(existing?.model ?? seed?.model ?? MODELS[0].id);
+  const { enabled: enabledProviders, spec: specOf } = useProviders();
+  // A draft keeps its provider even if that provider is off; it can be
+  // edited, just not queued (Drafts checks readiness per draft).
+  const [provider] = useState<ProviderId>(
+    existing ? providerOf(existing) : seed?.provider ?? enabledProviders[0]?.id ?? "vertex",
+  );
+  const [model, setModel] = useState(existing?.model ?? seed?.model ?? DEFAULT_MODEL);
   const [aspectRatio, setAspectRatio] = useState(
-    existing?.aspect_ratio ?? seed?.aspectRatio ?? ASPECT_RATIOS[0],
+    existing?.aspect_ratio ?? seed?.aspectRatio ?? "1:1",
   );
   const [resolution, setResolution] = useState(
-    existing?.resolution ?? seed?.resolution ?? RESOLUTIONS[0],
+    existing?.resolution ?? seed?.resolution ?? "1K",
   );
   const [format, setFormat] = useState(
     existing?.output_format ?? seed?.outputFormat ?? "image/jpeg",
@@ -91,9 +98,10 @@ export default function DraftEditorModal({
     setErr(null);
     const body: DraftBody = {
       prompt,
+      provider,
       model,
       aspectRatio,
-      resolution: MODELS.find((item) => item.id === model)?.pro ? resolution : null,
+      resolution: specOf(provider, model)?.resolutions.length ? resolution : null,
       outputFormat: format,
       skipIfPrecedingSucceeds: skip,
       pinned,
@@ -187,6 +195,7 @@ export default function DraftEditorModal({
 
         <div className="mt-4">
           <OptionBar
+            provider={provider}
             model={model}
             setModel={setModel}
             aspectRatio={aspectRatio}

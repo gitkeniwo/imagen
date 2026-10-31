@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, CostBasisRow, MODELS, StatPeriod, Stats } from "../api";
+import { api, CostBasisRow, MODEL_LABELS, StatPeriod, Stats } from "../api";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
 import { IconButton } from "./ui/Button";
@@ -84,7 +84,7 @@ function fmtBytes(n: number): string {
 }
 
 const modelShort = (id: string) =>
-  MODELS.find((m) => m.id === id)?.label ?? id.replace("-image", "").replace("-preview", "");
+  MODEL_LABELS[id] ?? id.replace("-image", "").replace("-preview", "");
 
 export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const { t, reason } = useI18n();

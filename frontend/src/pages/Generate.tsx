@@ -3,7 +3,7 @@ import { Prefill } from "../App";
 import {
   ImageRow,
   MAX_TASK_ATTEMPTS,
-  MODELS,
+  MODEL_LABELS,
   normalizeModelId,
   OUTPUT_FORMATS,
   QueueTask,
@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { ComposerDraft, WorkspaceRecord } from "../composerDraft";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import Popover from "../components/ui/Popover";
 import ReferenceTray from "../components/ReferenceTray";
 import QueueList from "../components/QueueList";
@@ -100,9 +101,11 @@ export default function Generate({
   const { t } = useI18n();
   const [saveOpen, setSaveOpen] = useState(false);
   const { conn, remote } = useRemote();
+  const { enabled: enabledProviders, info: providerInfo, spec: specOf } = useProviders();
   // The draft itself lives in App so one place owns loading/saving it.
   const {
     prompt,
+    provider,
     model,
     aspectRatio,
     resolution,
@@ -148,6 +151,7 @@ export default function Generate({
     if (prefill) {
       updateDraft({
         prompt: prefill.prompt,
+        provider: prefill.provider,
         model: normalizeModelId(prefill.model),
         ...(prefill.aspectRatio ? { aspectRatio: prefill.aspectRatio } : {}),
         ...(prefill.resolution ? { resolution: prefill.resolution } : {}),
@@ -156,22 +160,33 @@ export default function Generate({
     }
   }, [prefill, consumePrefill, updateDraft]);
 
-  const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
+  const spec = specOf(provider, model);
+  const hasResolution = (spec?.resolutions.length ?? 0) > 0;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
 
-  // Phone summary line: "Pro · 1K · JPG · 1:1" (resolution only for Pro).
-  const modelShort = (MODELS.find((m) => m.id === model)?.label ?? model)
+  // Phone summary line: "Pro · 1K · JPG · 1:1" (resolution only when the model
+  // has one), prefixed with the provider once more than one is on.
+  const modelShort = (spec?.label ?? MODEL_LABELS[model] ?? model)
     .replace(/\s*\(.*\)$/, "");
   const formatLabel = OUTPUT_FORMATS.find((f) => f.id === format)?.label ?? format;
-  const optionsSummary = [modelShort, isPro ? resolution : null, formatLabel, aspectRatio]
+  const providerShort =
+    enabledProviders.length > 1 ? providerInfo(provider)?.label ?? provider : null;
+  const optionsSummary = [
+    providerShort,
+    modelShort,
+    hasResolution ? resolution : null,
+    formatLabel,
+    aspectRatio,
+  ]
     .filter(Boolean)
     .join(" · ");
 
   const currentTask = (): TaskSpec => ({
     prompt,
+    provider,
     model,
     aspectRatio,
-    resolution: isPro ? resolution : null,
+    resolution: hasResolution ? resolution : null,
     format,
     inputs: [...tray],
     outputImages: [],
@@ -340,6 +355,7 @@ export default function Generate({
         {!phone && (
           <>
             <ComposerParams
+              provider={provider}
               model={model}
               setModel={setModel}
               aspectRatio={aspectRatio}
@@ -429,6 +445,7 @@ export default function Generate({
               }
             >
               <ComposerParams
+                provider={provider}
                 model={model}
                 setModel={setModel}
                 aspectRatio={aspectRatio}

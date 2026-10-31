@@ -1,4 +1,5 @@
-import { ASPECT_RATIOS, MAX_TASK_ATTEMPTS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "../api";
+import { MAX_TASK_ATTEMPTS, MODEL_LABELS, OUTPUT_FORMATS, ProviderId } from "../api";
+import { useProviders } from "../useProviders";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
 import Segmented from "./ui/Segmented";
@@ -18,6 +19,7 @@ export function AspectShape({ ratio, size = 22 }: { ratio: string; size?: number
 // Every generation parameter laid out flat — one click each, no popovers:
 // a label column on the left, one row per group.
 export function ComposerParams({
+  provider,
   model,
   setModel,
   aspectRatio,
@@ -29,6 +31,7 @@ export function ComposerParams({
   tagIds,
   setTagIds,
 }: {
+  provider: ProviderId;
   model: string;
   setModel: (v: string) => void;
   aspectRatio: string;
@@ -41,7 +44,15 @@ export function ComposerParams({
   setTagIds: (ids: number[]) => void;
 }) {
   const { t } = useI18n();
-  const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
+  const { info, spec: specOf, providers } = useProviders();
+  const models = info(provider)?.models ?? [];
+  const spec = specOf(provider, model);
+  const hasResolution = (spec?.resolutions.length ?? 0) > 0;
+  // A model without resolutions still shows the choices (disabled), as before.
+  const resolutions = hasResolution
+    ? spec!.resolutions
+    : [...new Set(providers.flatMap((p) => p.models.flatMap((m) => m.resolutions)))];
+  const formats = OUTPUT_FORMATS.filter((f) => spec?.outputFormats.includes(f.id) ?? true);
 
   return (
     <div className="composer-params">
@@ -50,7 +61,11 @@ export function ComposerParams({
         <Segmented
           value={model}
           onChange={setModel}
-          options={MODELS.map((m) => ({ value: m.id, label: shortModelLabel(m.label), title: m.label }))}
+          options={models.map((m) => ({
+            value: m.id,
+            label: shortModelLabel(m.label),
+            title: MODEL_LABELS[m.id] ?? m.label,
+          }))}
         />
       </div>
 
@@ -62,21 +77,21 @@ export function ComposerParams({
         <Segmented
           value={resolution}
           onChange={setResolution}
-          disabled={!isPro}
-          title={isPro ? t("resolution") : `${t("resolution")}${t("pro_only")}`}
-          options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+          disabled={!hasResolution}
+          title={hasResolution ? t("resolution") : `${t("resolution")}${t("pro_only")}`}
+          options={resolutions.map((r) => ({ value: r, label: r }))}
         />
         <Segmented
           value={format}
           onChange={setFormat}
           title={t("format_short")}
-          options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
+          options={formats.map((f) => ({ value: f.id, label: f.label }))}
         />
       </div>
 
       <span className="param-label">{t("aspect_short")}</span>
       <div className="aspect-row" role="group" aria-label={t("aspect")}>
-        {ASPECT_RATIOS.map((r) => (
+        {(spec?.aspectRatios ?? []).map((r) => (
           <button
             key={r}
             type="button"

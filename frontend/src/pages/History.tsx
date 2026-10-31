@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, Generation, ImageRow, Tag } from "../api";
+import { api, Generation, ImageRow, providerOf, Tag } from "../api";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import AddHistoryModal from "../components/AddHistoryModal";
 import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
@@ -57,6 +58,7 @@ export default function History({
   phone?: boolean;
 }) {
   const { t } = useI18n();
+  const { isReady } = useProviders();
   const toast = useToast();
   const { remote } = useRemote();
   const [gens, setGens] = useState<Generation[]>([]);
@@ -392,7 +394,7 @@ export default function History({
                 onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
                 tags={genTags(g)}
                 onReuse={() => onReuse(g)}
-                onRerun={onRerun ? () => onRerun(g) : undefined}
+                onRerun={onRerun && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
                 onUseAsRef={onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined}
                 onEdit={() => setEditingGen(g)}
                 onDuplicate={() => setDuplicatingGen(g)}

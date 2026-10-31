@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import Login from "./pages/Login";
 import { RemoteProvider } from "./remote";
+import { ProvidersProvider } from "./useProviders";
 import { I18nProvider } from "./i18n";
 import { ToastProvider } from "./components/Toast";
 import { ConfirmProvider } from "./components/ConfirmDialog";
@@ -18,7 +19,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Login />
           ) : (
             <RemoteProvider>
-              <App />
+              <ProvidersProvider>
+                <App />
+              </ProvidersProvider>
             </RemoteProvider>
           )}
         </ConfirmProvider>

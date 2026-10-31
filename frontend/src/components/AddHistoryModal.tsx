@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   api,
-  ASPECT_RATIOS,
+  DEFAULT_MODEL,
   Generation,
   ImageRow,
-  MODELS,
-  RESOLUTIONS,
   imgThumbUrl,
+  MODEL_LABELS,
+  providerOf,
+  ProviderId,
 } from "../api";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import CustomSelect from "./CustomSelect";
 import { AspectShape } from "./ComposerControls";
 import LibraryPickerModal from "./LibraryPickerModal";
@@ -65,9 +67,19 @@ export default function AddHistoryModal({
   // createdAt is only carried over in true edit mode, not when duplicating.
   const src = existing ?? duplicate;
   const [prompt, setPrompt] = useState(src?.prompt ?? "");
-  const [model, setModel] = useState(src?.model ?? MODELS[0].id);
-  const [aspectRatio, setAspectRatio] = useState(src?.aspect_ratio ?? ASPECT_RATIOS[0]);
-  const [resolution, setResolution] = useState(src?.resolution ?? RESOLUTIONS[0]);
+  const { providers, enabled: enabledProviders } = useProviders();
+  // Logged records may belong to any provider, on or off, so the choices
+  // come from the whole catalog rather than the enabled ones.
+  const [provider] = useState<ProviderId>(
+    src ? providerOf(src) : enabledProviders[0]?.id ?? "vertex",
+  );
+  const providerModels = providers.find((p) => p.id === provider)?.models ?? [];
+  const allModels = providers.flatMap((p) => p.models);
+  const aspectRatios = [...new Set(allModels.flatMap((m) => m.aspectRatios))];
+  const resolutions = [...new Set(allModels.flatMap((m) => m.resolutions))];
+  const [model, setModel] = useState(src?.model ?? DEFAULT_MODEL);
+  const [aspectRatio, setAspectRatio] = useState(src?.aspect_ratio ?? "1:1");
+  const [resolution, setResolution] = useState(src?.resolution ?? "1K");
   const [kind, setKind] = useState<Kind>(
     src ? src.source : "manual",
   );
@@ -184,6 +196,7 @@ export default function AddHistoryModal({
     try {
       const base = {
         prompt,
+        provider,
         model,
         aspectRatio,
         resolution,
@@ -354,7 +367,7 @@ export default function AddHistoryModal({
                 <CustomSelect
                   value={model}
                   onChange={setModel}
-                  options={MODELS.map((m) => ({ id: m.id, label: m.label }))}
+                  options={providerModels.map((m) => ({ id: m.id, label: MODEL_LABELS[m.id] ?? m.label }))}
                 />
               </div>
               <div>
@@ -362,7 +375,7 @@ export default function AddHistoryModal({
                 <Segmented
                   value={resolution}
                   onChange={setResolution}
-                  options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+                  options={resolutions.map((r) => ({ value: r, label: r }))}
                 />
               </div>
             </div>
@@ -370,7 +383,7 @@ export default function AddHistoryModal({
             <div>
               <label>{t("aspect")}</label>
               <div className="aspect-row">
-                {ASPECT_RATIOS.map((r) => (
+                {aspectRatios.map((r) => (
                   <button
                     key={r}
                     type="button"

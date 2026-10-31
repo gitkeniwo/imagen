@@ -14,9 +14,14 @@ import {
   Generation,
   MarkerColor,
   MAX_TASK_ATTEMPTS,
+  PROVIDER_LABELS,
+  ProviderId,
+  providerOf,
   QueueTask,
   TaskSpec,
 } from "./api";
+import type { ComposerDraft } from "./composerDraft";
+import { fitSettings, useProviders } from "./useProviders";
 import { useI18n } from "./i18n";
 import Generate from "./pages/Generate";
 import Library from "./pages/Library";
@@ -51,6 +56,7 @@ export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
 export interface Prefill {
   prompt: string;
+  provider: ProviderId;
   model: string;
   aspectRatio: string | null;
   resolution: string | null;
@@ -141,6 +147,7 @@ export default function App() {
     draft,
     tray,
     updateDraft,
+    fitDraft,
     clearComposer,
     addToTray,
     addManyToTray,
@@ -155,7 +162,17 @@ export default function App() {
     workspaceLimit,
   } = composer;
   const [prefill, setPrefill] = useState<Prefill | null>(null);
-  const [configured, setConfigured] = useState<boolean | null>(null);
+  const {
+    anyReady,
+    fit: fitProvider,
+    info: providerInfo,
+    isReady,
+    loaded: catalogLoaded,
+    reload: reloadProviders,
+    spec: specOf,
+  } = useProviders();
+  // The composer can generate when *its* provider is usable.
+  const composerReady = isReady(draft.provider);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"library" | "remote">("library");
   const { remote, conn, reportNetworkError } = useRemote();
@@ -276,12 +293,40 @@ export default function App() {
     return () => window.removeEventListener("imagen:open-settings", onOpenSettings);
   }, []);
 
-  const refreshConfig = () =>
-    api.getVertex().then((r) => setConfigured(r.configured));
-
+  // Once the catalog is known, move the active workspace off a provider that
+  // is turned off and onto values its model accepts. Runs again whenever the
+  // workspace or the catalog changes; a no-op patch writes nothing.
   useEffect(() => {
-    refreshConfig();
-  }, []);
+    if (!catalogLoaded) return;
+    const choice = fitProvider({ provider: draft.provider, model: draft.model });
+    const patch: Partial<ComposerDraft> = {};
+    if (choice.provider !== draft.provider) patch.provider = choice.provider;
+    if (choice.model !== draft.model) patch.model = choice.model;
+    const spec = specOf(choice.provider, choice.model);
+    if (spec) {
+      const fitted = fitSettings(spec, draft);
+      if (fitted.aspectRatio !== draft.aspectRatio) patch.aspectRatio = fitted.aspectRatio;
+      if (fitted.resolution !== draft.resolution) patch.resolution = fitted.resolution;
+      if (fitted.format !== draft.format) patch.format = fitted.format;
+    }
+    if (Object.keys(patch).length > 0) fitDraft(patch);
+  }, [catalogLoaded, fitProvider, specOf, fitDraft, draft]);
+
+  // Reusing a record whose provider is off lands on the first enabled one;
+  // say so, since the result may differ from the original.
+  const fitReused = useCallback(
+    (provider: ProviderId, model: string) => {
+      const fitted = fitProvider({ provider, model });
+      if (fitted.fellBack) {
+        toast(t("provider_fell_back", {
+          from: providerInfo(provider)?.label ?? PROVIDER_LABELS[provider],
+          to: providerInfo(fitted.provider)?.label ?? PROVIDER_LABELS[fitted.provider],
+        }));
+      }
+      return { provider: fitted.provider, model: fitted.model };
+    },
+    [fitProvider, providerInfo, t, toast],
+  );
 
   // Drag guard. A file dropped where nothing takes it would make the webview
   // navigate to that file and lose the composer, so unhandled file drags are
@@ -547,6 +592,7 @@ export default function App() {
       api
         .generate({
           prompt: task.prompt,
+          provider: task.provider,
           model: task.model,
           aspectRatio: task.aspectRatio,
           resolution: task.resolution,
@@ -640,29 +686,29 @@ export default function App() {
     replaceReferences(g.inputs ?? []);
     setPrefill({
       prompt: g.prompt,
-      model: g.model,
+      ...fitReused(providerOf(g), g.model),
       aspectRatio: g.aspect_ratio,
       resolution: g.resolution,
     });
-  }, [replaceReferences]);
+  }, [replaceReferences, fitReused]);
 
   // Reuse a queued task's settings (prompt/model/ratio/resolution + inputs).
   const reuseTask = useCallback((task: QueueTask) => {
     replaceReferences(task.inputs ?? []);
     setPrefill({
       prompt: task.prompt,
-      model: task.model,
+      ...fitReused(task.provider, task.model),
       aspectRatio: task.aspectRatio,
       resolution: task.resolution,
     });
-  }, [replaceReferences]);
+  }, [replaceReferences, fitReused]);
 
   // Reuse a queued task's settings AND enqueue it immediately (skip the form).
   const reuseGenerateTask = useCallback(
     (task: QueueTask) =>
       enqueue({
         prompt: task.prompt,
-        model: task.model,
+        ...fitReused(task.provider, task.model),
         aspectRatio: task.aspectRatio,
         resolution: task.resolution,
         format: task.format,
@@ -671,14 +717,16 @@ export default function App() {
         tagIds: task.tagIds,
         skipIfPrecedingSucceeds: task.skipIfPrecedingSucceeds,
       }),
-    [enqueue],
+    [enqueue, fitReused],
   );
 
   // Re-run a history record as-is (its live inputs, default format/no tags).
+  // Lists only offer it while the record's own provider is ready.
   const rerunGeneration = useCallback(
     (g: Generation) =>
       enqueue({
         prompt: g.prompt,
+        provider: providerOf(g),
         model: g.model,
         aspectRatio: g.aspect_ratio ?? "1:1",
         resolution: g.resolution,
@@ -691,6 +739,7 @@ export default function App() {
 
   const taskToDraftBody = useCallback((task: TaskSpec): DraftBody => ({
     prompt: task.prompt,
+    provider: task.provider,
     model: task.model,
     aspectRatio: task.aspectRatio,
     resolution: task.resolution,
@@ -797,7 +846,7 @@ export default function App() {
             ) : sidebarPanel === "history" ? (
               <History
                 onReuse={reuse}
-                onRerun={configured ? rerunGeneration : undefined}
+                onRerun={rerunGeneration}
                 onUseAsRef={addToTray}
                 compact
                 refreshKey={completedRefreshKey}
@@ -807,7 +856,7 @@ export default function App() {
             ) : sidebarPanel === "favorites" ? (
               <Favorites
                 onReuse={reuse}
-                onRerun={configured ? rerunGeneration : undefined}
+                onRerun={rerunGeneration}
                 onUseAsRef={addToTray}
                 compact
                 refreshKey={completedRefreshKey}
@@ -819,7 +868,6 @@ export default function App() {
                 compact
                 onChanged={bumpCounts}
                 refreshKey={draftVersion}
-                canQueue={!!configured}
                 onQueue={enqueue}
                 onOpenViewer={openViewer}
               />
@@ -870,7 +918,7 @@ export default function App() {
               workspaces={workspaces}
               activeId={activeId}
               limit={workspaceLimit}
-              undocked={configured === false || mainScrolled}
+              undocked={anyReady === false || mainScrolled}
               onSelect={selectWorkspace}
               onCreate={() => {
                 const created = createWorkspace();
@@ -921,10 +969,10 @@ export default function App() {
             <button
               className="topbar-btn"
               onClick={() => { setSettingsSection("library"); setShowSettings(true); }}
-              title={configured ? t("settings") : t("set_api_key")}
-              aria-label={configured ? t("settings") : t("set_api_key")}
+              title={anyReady !== false ? t("settings") : t("set_api_key")}
+              aria-label={anyReady !== false ? t("settings") : t("set_api_key")}
             >
-              {configured ? (
+              {anyReady !== false ? (
                 <><Icon name="settings" /> <span className="topbar-label">{t("settings")}</span></>
               ) : (
                 <><Icon name="warning" /> <span className="topbar-label">{t("set_api_key")}</span></>
@@ -932,7 +980,7 @@ export default function App() {
             </button>
           </header>
           <main className="main-panel">
-            {configured === false && (
+            {anyReady === false && (
               <div className="panel notice error">{t("no_key_warning")}</div>
             )}
             <Generate
@@ -941,7 +989,7 @@ export default function App() {
               workspaces={workspaces}
               activeId={activeId}
               workspaceLimit={workspaceLimit}
-              composerUndocked={configured === false || mainScrolled}
+              composerUndocked={anyReady === false || mainScrolled}
               onSelectWorkspace={selectWorkspace}
               onCreateWorkspace={createWorkspace}
               onDuplicateWorkspace={duplicateWorkspace}
@@ -954,7 +1002,7 @@ export default function App() {
               addManyToTray={addManyToTray}
               removeFromTray={removeFromTray}
               moveInTray={moveInTray}
-              keyConfigured={!!configured}
+              keyConfigured={composerReady}
               queue={queue}
               enqueue={enqueue}
               onSaveDraft={saveTaskAsDraft}
@@ -1002,7 +1050,7 @@ export default function App() {
                 <div className="side-scroll phone-island-scroll">
                   <History
                     onReuse={reuse}
-                    onRerun={configured ? rerunGeneration : undefined}
+                    onRerun={rerunGeneration}
                     onUseAsRef={addToTray}
                     compact
                     phone
@@ -1034,7 +1082,7 @@ export default function App() {
                 addManyToTray={addManyToTray}
                 removeFromTray={removeFromTray}
                 moveInTray={moveInTray}
-                keyConfigured={!!configured}
+                keyConfigured={composerReady}
                 queue={queue}
                 enqueue={enqueue}
                 onSaveDraft={saveTaskAsDraft}
@@ -1074,7 +1122,7 @@ export default function App() {
                     {morePage === "favorites" ? (
                       <Favorites
                         onReuse={reuse}
-                        onRerun={configured ? rerunGeneration : undefined}
+                        onRerun={rerunGeneration}
                         onUseAsRef={addToTray}
                         compact
                         phone
@@ -1088,7 +1136,6 @@ export default function App() {
                         phone
                         onChanged={bumpCounts}
                         refreshKey={draftVersion}
-                        canQueue={!!configured}
                         onQueue={enqueue}
                         onOpenViewer={openViewer}
                       />
@@ -1129,7 +1176,7 @@ export default function App() {
         <SettingsModal
           initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
-          onSaved={refreshConfig}
+          onSaved={() => void reloadProviders()}
           undoSeconds={undoSeconds}
           setUndoSeconds={setUndoSeconds}
         />
@@ -1151,11 +1198,10 @@ export default function App() {
           addToTray={addToTray}
           onOpenViewer={openViewer}
           onReuse={reuse}
-          onRerun={configured ? rerunGeneration : undefined}
+          onRerun={rerunGeneration}
           refreshKey={completedRefreshKey}
           onChanged={bumpData}
           draftRefreshKey={draftVersion}
-          canQueue={!!configured}
           onQueueDraft={enqueue}
           historyLive={runningKey !== ""}
         />

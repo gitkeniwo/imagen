@@ -4,13 +4,15 @@
 // tabs never overwrite each other. The index and the last-active ids are shared
 // per library; the window's current workspace lives in sessionStorage.
 
-import { ASPECT_RATIOS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "./api";
+import { DEFAULT_MODEL, isProviderId, OUTPUT_FORMATS, ProviderId } from "./api";
 import { uuid } from "./uuid";
 
 export interface ComposerDraft {
   id: string;
   prompt: string;
   inputIds: number[];
+  // Records saved before providers existed have none; sanitizeDraft fills it.
+  provider: ProviderId;
   model: string;
   aspectRatio: string;
   resolution: string;
@@ -48,7 +50,7 @@ export const WORKSPACE_NAME_LIMIT = 40;
 const V1_PREFIX = "imagen-composer:v1:";
 const V2_PREFIX = "imagen-composer:v2:";
 const VERSION = 2 as const;
-const DEFAULT_MODEL = MODELS[0].id;
+const DEFAULT_PROVIDER: ProviderId = "vertex";
 const DEFAULT_ASPECT_RATIO = "1:1";
 const DEFAULT_RESOLUTION = "1K";
 const DEFAULT_FORMAT = "image/jpeg";
@@ -96,6 +98,7 @@ export function emptyDraft(): ComposerDraft {
     id: uuid(),
     prompt: "",
     inputIds: [],
+    provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
     aspectRatio: DEFAULT_ASPECT_RATIO,
     resolution: DEFAULT_RESOLUTION,
@@ -113,6 +116,7 @@ export function emptyWorkspace(
 ): WorkspaceRecord {
   return {
     ...emptyDraft(),
+    provider: settings?.provider ?? DEFAULT_PROVIDER,
     model: settings?.model ?? DEFAULT_MODEL,
     aspectRatio: settings?.aspectRatio ?? DEFAULT_ASPECT_RATIO,
     resolution: settings?.resolution ?? DEFAULT_RESOLUTION,
@@ -172,21 +176,22 @@ function isLegacyStore(value: unknown): value is LegacyComposerStore {
   );
 }
 
-/** Coerce persisted values to something the UI can render. */
+/**
+ * Coerce persisted values to something the UI can render. Only the shape is
+ * checked here: whether the provider is on and serves this model/ratio is
+ * decided once the provider catalog loads (App), so a slow catalog can't
+ * reset a saved choice.
+ */
 export function sanitizeDraft(draft: ComposerDraft): ComposerDraft {
-  const model = MODELS.some((m) => m.id === draft.model)
-    ? draft.model
-    : DEFAULT_MODEL;
   return {
     ...draft,
     inputIds: positiveIds(draft.inputIds),
-    model,
-    aspectRatio: ASPECT_RATIOS.includes(draft.aspectRatio)
+    provider: isProviderId(draft.provider) ? draft.provider : DEFAULT_PROVIDER,
+    model: draft.model || DEFAULT_MODEL,
+    aspectRatio: /^\d+:\d+$/.test(draft.aspectRatio)
       ? draft.aspectRatio
       : DEFAULT_ASPECT_RATIO,
-    resolution: RESOLUTIONS.includes(draft.resolution)
-      ? draft.resolution
-      : DEFAULT_RESOLUTION,
+    resolution: draft.resolution || DEFAULT_RESOLUTION,
     format: OUTPUT_FORMATS.some((f) => f.id === draft.format)
       ? draft.format
       : DEFAULT_FORMAT,

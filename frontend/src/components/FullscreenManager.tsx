@@ -26,7 +26,6 @@ export default function FullscreenManager({
   refreshKey,
   onChanged,
   draftRefreshKey,
-  canQueue,
   onQueueDraft,
   historyLive,
   counts,
@@ -41,7 +40,6 @@ export default function FullscreenManager({
   refreshKey: number;
   onChanged?: () => void;
   draftRefreshKey: number;
-  canQueue: boolean;
   onQueueDraft: (task: TaskSpec) => void;
   historyLive: boolean;
   counts: PanelCounts;
@@ -128,7 +126,6 @@ export default function FullscreenManager({
             <Drafts
               onChanged={onCountsChanged}
               refreshKey={draftRefreshKey}
-              canQueue={canQueue}
               onQueue={onQueueDraft}
               onOpenViewer={onOpenViewer}
             />
