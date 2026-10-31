@@ -121,7 +121,7 @@ def _mark_output_generated(conn, output_image_id) -> None:
 
 @router.post("/manual")
 def create_manual_generation(body: ManualGenerationRequest):
-    """Record a generation that happened elsewhere (no Vertex call) so it shows
+    """Record a generation that happened elsewhere (no provider call) so it shows
     up in History alongside real generations."""
     _validate_manual_body(body)
     created_at = body.createdAt or _now()

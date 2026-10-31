@@ -21,7 +21,7 @@ class GenerateRequest(BaseModel):
 
 
 class ManualGenerationRequest(BaseModel):
-    """A generation row created/edited from results produced elsewhere (no Vertex call)."""
+    """A generation row created/edited from results produced elsewhere (no provider call)."""
     prompt: str = ""
     provider: str = "vertex"
     model: str

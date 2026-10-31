@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, CostBasisRow, MODEL_LABELS, StatPeriod, Stats } from "../api";
+import {
+  api,
+  CostBasisRow,
+  isProviderId,
+  MODEL_LABELS,
+  ProviderId,
+  PROVIDER_IDS,
+  PROVIDER_LABELS,
+  StatPeriod,
+  Stats,
+} from "../api";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import Icon from "./ui/Icon";
 import { IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
@@ -27,17 +38,25 @@ const STACK = ["success", "blocked", "error"] as const;
 
 interface PriceRow {
   key: string;
+  provider: ProviderId;
   model: string;
   resolution: string | null;
   label: string;
   defaultPrice: number;
 }
-const PRICE_ROWS: PriceRow[] = [
+const BASE_PRICE_ROWS = [
   { key: "flash", model: "gemini-2.5-flash-image", resolution: null, label: "Nano Banana", defaultPrice: 0.039 },
   { key: "pro-1K", model: "gemini-3-pro-image", resolution: "1K", label: "Pro · 1K", defaultPrice: 0.134 },
   { key: "pro-2K", model: "gemini-3-pro-image", resolution: "2K", label: "Pro · 2K", defaultPrice: 0.134 },
   { key: "pro-4K", model: "gemini-3-pro-image", resolution: "4K", label: "Pro · 4K", defaultPrice: 0.24 },
 ];
+const PRICE_ROWS: PriceRow[] = PROVIDER_IDS.flatMap((provider) =>
+  BASE_PRICE_ROWS.map((row) => ({
+    ...row,
+    provider,
+    key: `${provider}:${row.key}`,
+  })),
+);
 
 // Keep the totals for generations made before the Preview model was retired.
 const PRO_IMAGE_MODEL_IDS = new Set(["gemini-3-pro-image", "gemini-3-pro-image-preview"]);
@@ -45,12 +64,24 @@ const PRO_IMAGE_MODEL_IDS = new Set(["gemini-3-pro-image", "gemini-3-pro-image-p
 function loadPrices(): { currency: string; prices: Record<string, number> } {
   try {
     const saved = JSON.parse(localStorage.getItem(PRICES_KEY) || "{}");
+    const raw = saved.prices ?? {};
     const prices: Record<string, number> = {};
+    let migrated = false;
     for (const r of PRICE_ROWS) {
-      const v = Number(saved.prices?.[r.key]);
+      let v = Number(raw[r.key]);
+      if (!Number.isFinite(v) && r.provider === "vertex") {
+        // Prices saved before providers existed belong to Vertex.
+        const legacyKey = r.key.slice(r.key.indexOf(":") + 1);
+        v = Number(raw[legacyKey]);
+        migrated = migrated || Number.isFinite(v);
+      }
       prices[r.key] = Number.isFinite(v) ? v : r.defaultPrice;
     }
-    return { currency: typeof saved.currency === "string" ? saved.currency : "$", prices };
+    const currency = typeof saved.currency === "string" ? saved.currency : "$";
+    if (migrated) {
+      localStorage.setItem(PRICES_KEY, JSON.stringify({ currency, prices }));
+    }
+    return { currency, prices };
   } catch {
     return { currency: "$", prices: Object.fromEntries(PRICE_ROWS.map((r) => [r.key, r.defaultPrice])) };
   }
@@ -61,11 +92,13 @@ function countsByPriceRow(rows: CostBasisRow[] | undefined): Record<string, numb
   const counts: Record<string, number> = Object.fromEntries(PRICE_ROWS.map((r) => [r.key, 0]));
   for (const cb of rows ?? []) {
     const res = cb.resolution ?? "1K";
-    const key = cb.model === "gemini-2.5-flash-image"
+    const provider = isProviderId(cb.provider) ? cb.provider : "vertex";
+    const baseKey = cb.model === "gemini-2.5-flash-image"
       ? "flash"
       : PRO_IMAGE_MODEL_IDS.has(cb.model)
-        ? PRICE_ROWS.find((r) => r.resolution === res)?.key
+        ? BASE_PRICE_ROWS.find((r) => r.resolution === res)?.key
         : undefined;
+    const key = baseKey ? `${provider}:${baseKey}` : undefined;
     if (key) counts[key] = (counts[key] ?? 0) + cb.count;
   }
   return counts;
@@ -88,6 +121,7 @@ const modelShort = (id: string) =>
 
 export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const { t, reason } = useI18n();
+  const { enabled } = useProviders();
   const [stats, setStats] = useState<Stats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [currency, setCurrency] = useState("$");
@@ -134,6 +168,21 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
 
   const p = stats?.periods[period];
   const library = stats?.periods.all.images;
+  const usedProviders = PROVIDER_IDS.filter(
+    (provider) => (p?.by_provider[provider] ?? 0) > 0,
+  );
+  // Until a provider has records this period, use the enabled providers so a
+  // fresh library still shows useful defaults.
+  const priceProviders = usedProviders.length
+    ? usedProviders
+    : enabled.length
+      ? enabled.map((provider) => provider.id)
+      : ["vertex" as const];
+  const priceGroups = priceProviders.map((provider) => ({
+    provider,
+    rows: PRICE_ROWS.filter((row) => row.provider === provider),
+  }));
+  const showProviderHeadings = priceProviders.length > 1;
 
   // Successful generations per price-row (model + resolution; null res → 1K).
   const successCounts = useMemo(() => countsByPriceRow(p?.cost_basis), [p]);
@@ -348,29 +397,40 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
               />
             </div>
             <div className="usage-prices">
-              {PRICE_ROWS.map((r) => {
-                const count = successCounts[r.key] ?? 0;
-                const price = prices[r.key] ?? 0;
-                return (
-                  <div key={r.key} className="usage-price">
-                    <span className="usage-price-label">{r.label}</span>
-                    <label className="usage-price-input">
-                      <span className="muted">{currency}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.001"
-                        aria-label={`${r.label} ${t("cost_prices")}`}
-                        value={price}
-                        onChange={(e) => setPrice(r.key, Math.max(0, Number(e.target.value) || 0))}
-                      />
-                    </label>
-                    <span className="muted small tabular">
-                      {t("cost_row_sub", { n: count, sub: money(count * price) })}
-                    </span>
-                  </div>
-                );
-              })}
+              {priceGroups.map((group) => (
+                <div key={group.provider} className="usage-price-group">
+                  {showProviderHeadings && (
+                    <div className="usage-price-group-head">
+                      {PROVIDER_LABELS[group.provider]}
+                    </div>
+                  )}
+                  {group.rows.map((r) => {
+                    const count = successCounts[r.key] ?? 0;
+                    const price = prices[r.key] ?? 0;
+                    return (
+                      <div key={r.key} className="usage-price">
+                        <span className="usage-price-label">{r.label}</span>
+                        <label className="usage-price-input">
+                          <span className="muted">{currency}</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.001"
+                            aria-label={`${r.label} ${t("cost_prices")}`}
+                            value={price}
+                            onChange={(e) =>
+                              setPrice(r.key, Math.max(0, Number(e.target.value) || 0))
+                            }
+                          />
+                        </label>
+                        <span className="muted small tabular">
+                          {t("cost_row_sub", { n: count, sub: money(count * price) })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
             <p className="muted small m-0">{t("cost_example_note")}</p>
           </aside>

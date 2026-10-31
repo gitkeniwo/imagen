@@ -21,14 +21,14 @@ const zh: Dict = {
   favorites_empty:
     "还没有收藏。在生成的图片上（查看器或图库里）点 ☆，它的提示词就会出现在这里。",
   settings: "设置",
-  set_api_key: "设置 Vertex",
+  set_api_key: "设置生成服务",
   resize_sidebar: "拖动调整侧栏宽度；双击重置；方向键微调",
   no_key_warning:
-    "尚未设置 Vertex 项目。点击右上角“设置 Vertex”并填入你的 Project ID 即可开始生成。",
+    "尚未配置任何可用的生成服务。点击右上角“设置生成服务”即可开始。",
 
   settings_title: "设置",
   settings_desc:
-    "本应用使用 ADC（应用默认凭据）进行认证，不存储任何密钥——仅保存非敏感的 Project ID 与 Location。",
+    "为生成服务选择认证方式：Vertex AI 使用 ADC（应用默认凭据），Gemini API 使用 API key。",
   settings_project: "Project ID",
   settings_location: "Location",
   settings_adc_hint:
@@ -67,7 +67,7 @@ const zh: Dict = {
   generate: "生成",
   generating: "生成中…",
   ref_count: "{n} 张参考图",
-  need_key_inline: " · 请先设置 Vertex 项目",
+  need_key_inline: " · 请先配置生成服务",
 
   gen_success: "成功",
   use_as_ref: "用作参考图",
@@ -145,10 +145,10 @@ const zh: Dict = {
   when_yesterday: "昨天",
   when_days_ago: "{n} 天前",
   settings_section_library: "图库",
-  settings_section_vertex: "Vertex AI",
+  settings_section_vertex: "生成服务",
   settings_section_prefs: "偏好",
   settings_prefs_instant: "偏好修改即时生效。",
-  settings_save_vertex: "保存 Vertex 设置",
+  settings_save_vertex: "保存生成服务设置",
   settings_language: "界面语言",
   filter_source: "来源",
   filter_kind: "记录类型",
@@ -229,7 +229,7 @@ const zh: Dict = {
   queue_title: "队列",
   concurrency: "并行",
   concurrency_hint:
-    "同时进行的生成数量。Pro（预览模型）建议设为 1：并行请求会耗尽较低的配额，导致全部因 429 卡住。",
+    "同时进行的生成数量。Pro 模型建议设为 1：并行请求会耗尽较低的配额，导致全部因 429 卡住。",
   undo_send: "撤销发送（{n}）",
   undo_send_hint: "在倒计时内取消——请求尚未发送，不会计费。",
   cancel_running: "取消",
@@ -299,8 +299,8 @@ const zh: Dict = {
   bucket_all: "全部",
   cost_estimate: "预估花费",
   cost_estimate_note:
-    "预估 · 按你设定的单价 · 仅统计成功。注意：被拦截的结果，以及已生成完毕后才取消的尝试，也可能被 Vertex 计费，这里未计入——因此这只是下限。应用无法看到你的真实账单。",
-  cost_example_note: "示例价格，按你的 Vertex 实际价格修改，改完立即生效。",
+    "预估 · 按你设定的单价 · 仅统计成功。注意：被拦截的结果，以及已生成完毕后才取消的尝试，也可能被生成服务计费，这里未计入——因此这只是下限。应用无法看到你的真实账单。",
+  cost_example_note: "示例价格，按你的实际单价修改，改完立即生效。",
   cost_currency: "货币",
   cost_unit_price: "每张价格",
   cost_count: "成功次数",
@@ -344,7 +344,7 @@ const zh: Dict = {
   ws_meta: "{count} 张参考图 · {ago}",
   ws_closed_elsewhere: "当前工作区已在另一个窗口中关闭",
   draft_saved: "已保存到草稿箱",
-  draft_editor_desc: "草稿不会调用 Vertex；输入图会用于将来的生成，输出图仅作为附件保存。",
+  draft_editor_desc: "草稿不会调用生成服务；输入图会用于将来的生成，输出图仅作为附件保存。",
   drafts_empty: "草稿箱是空的。可以保存当前编辑内容，或者从队列移入任务。",
   search_placeholder_drafts: "搜索草稿提示词…",
   draft_inputs: "输入",
@@ -360,7 +360,7 @@ const zh: Dict = {
   queue_and_delete_hint: "加入生成队列，并从草稿箱移除",
   save_copy_to_drafts: "保存副本到草稿箱",
   move_to_drafts: "移到草稿箱",
-  draft_need_config: "请先配置 Vertex 项目，再将草稿放入队列。",
+  draft_need_config: "请先配置可用的生成服务，再将草稿放入队列。",
   provider_fell_back: "{from} 已关闭，已改用 {to}。",
   draft_need_content: "草稿需要至少包含提示词或一张输入图片才能入队。",
   draft_deleted_input: "草稿包含已删除的输入图片；请先恢复或移除它。",
@@ -371,7 +371,7 @@ const zh: Dict = {
   draft_outputs_n: "{n} 个附件",
 
   // Backend reason codes (block reasons + HTTP statuses)
-  reason_SAFETY: "被 Vertex AI 安全策略拦截（SAFETY）。",
+  reason_SAFETY: "被安全策略拦截（SAFETY）。",
   reason_IMAGE_SAFETY: "图片被安全策略拦截（IMAGE_SAFETY）。",
   reason_PROHIBITED_CONTENT: "被标记为违禁内容（PROHIBITED_CONTENT）。",
   reason_IMAGE_PROHIBITED_CONTENT:
@@ -387,10 +387,14 @@ const zh: Dict = {
   reason_JAILBREAK: "请求被标记为越狱尝试（JAILBREAK）。",
   reason_MODEL_ARMOR: "被 Model Armor 策略拦截（MODEL_ARMOR）。",
   reason_400: "请求参数有误（400）。",
-  reason_401: "凭据无效或未授权（401）。",
+  reason_401: "凭据或 API key 无效、未授权（401）。",
   reason_403: "权限被拒（403）：请确认账号具备 Vertex AI User 角色且已启用 aiplatform API。",
   reason_404: "模型不存在或在该区域不可用（404）。",
   reason_429: "已达配额 / 速率限制（429）。",
+  reason_gemini_400: "API key 或请求参数无效（400）。",
+  reason_gemini_403:
+    "权限被拒（403）：这把 API key 不能使用该模型，或尚未启用 Generative Language API。",
+  reason_gemini_404: "该 API key 无法使用此模型（404）。",
 
   add_history: "添加",
   add_history_title: "导入外部结果",
@@ -490,7 +494,7 @@ const zh: Dict = {
   remote_require_code: "需要访问码",
   remote_code_help: "新访问码会让所有设备登出。同一设备连错 5 次后会暂停登录 1 分钟；最近一小时失败 {n} 次。",
   remote_nocode_t: "没有访问码。",
-  remote_nocode_b: "这个网络里的任何人都能打开你的图库、删除图片、花掉你的 Vertex 额度。只适合你信任的网络。",
+  remote_nocode_b: "这个网络里的任何人都能打开你的图库、删除图片、花掉你的生成额度。只适合你信任的网络。",
   remote_nocode_confirm_t: "关闭访问码？",
   remote_nocode_confirm_ok: "关闭访问码",
   remote_new_code_confirm: "换新访问码会让所有已登录设备登出。",
@@ -519,7 +523,7 @@ const zh: Dict = {
   remote_interrupted_msg: "连接中断；Mac 上的任务仍在运行，结果会出现在历史中。",
   remote_on_host: "在 {host} 上",
   remote_lib_lock: "图库保存在 Mac 的磁盘上，只能在 Mac 上打开或切换。文件夹路径不会显示给远程设备。",
-  remote_vertex_lock: "由 Mac 管理。这台设备的生成使用 Mac 的 Vertex 项目、凭据和额度。",
+  remote_vertex_lock: "由 Mac 管理。这台设备的生成使用 Mac 的生成服务、凭据和额度。",
   remote_prefs_note: "仅保存在本设备——Mac 有自己的偏好设置。",
   remote_connected: "已连接",
   remote_device_this: "本设备",
@@ -584,6 +588,8 @@ const zh: Dict = {
   provider_check_missing: "密钥可用，但以下模型不在列表中：{models}",
   check_connection: "检查连接",
   checking_connection: "检查中…",
+  provider_check_ok: "连接成功。",
+  provider_check_failed: "检查失败：{message}",
   gemini_api_key: "API key",
   gemini_key_placeholder: "粘贴 aistudio.google.com 的密钥",
   gemini_key_set_by_env: "由 IMAGEN_GEMINI_API_KEY 提供",
@@ -621,14 +627,14 @@ const en: Dict = {
   favorites_empty:
     "No favorites yet. Hit ☆ on a generated image (in the viewer or library) and its prompt shows up here.",
   settings: "Settings",
-  set_api_key: "Set Vertex",
+  set_api_key: "Set up providers",
   resize_sidebar: "Drag to resize sidebar; double-click to reset; arrow keys to nudge",
   no_key_warning:
-    "Vertex project is not set. Click “Set Vertex” in the top-right and enter your Project ID to start generating.",
+    "No generation provider is set up. Click “Set up providers” in the top-right to get started.",
 
   settings_title: "Settings",
   settings_desc:
-    "This app authenticates with ADC (Application Default Credentials) and stores no secrets — only the non-sensitive Project ID and Location.",
+    "Choose how generation providers authenticate: Vertex AI uses ADC (Application Default Credentials), while Gemini API uses an API key.",
   settings_project: "Project ID",
   settings_location: "Location",
   settings_adc_hint:
@@ -667,7 +673,7 @@ const en: Dict = {
   generate: "Generate",
   generating: "Generating…",
   ref_count: "{n} reference image(s)",
-  need_key_inline: " · set Vertex project first",
+  need_key_inline: " · set up a provider first",
 
   gen_success: "Success",
   use_as_ref: "Use as reference",
@@ -745,10 +751,10 @@ const en: Dict = {
   when_yesterday: "Yesterday",
   when_days_ago: "{n} days ago",
   settings_section_library: "Library",
-  settings_section_vertex: "Vertex AI",
+  settings_section_vertex: "Providers",
   settings_section_prefs: "Preferences",
   settings_prefs_instant: "Preferences apply immediately.",
-  settings_save_vertex: "Save Vertex settings",
+  settings_save_vertex: "Save provider settings",
   settings_language: "Language",
   filter_source: "Source",
   filter_kind: "Record type",
@@ -829,7 +835,7 @@ const en: Dict = {
   queue_title: "Queue",
   concurrency: "Parallel",
   concurrency_hint:
-    "Number of generations run at once. For Pro (a preview model), 1 is recommended: parallel requests starve the low quota and all stall on 429.",
+    "Number of generations run at once. For Pro models, 1 is recommended: parallel requests starve the low quota and all stall on 429.",
   undo_send: "Undo send ({n})",
   undo_send_hint: "Cancel within the countdown — the request hasn't been sent, so no charge.",
   cancel_running: "Cancel",
@@ -837,7 +843,7 @@ const en: Dict = {
     "Finishes the current attempt (saved to the library if it succeeds), then stops retrying. The in-flight attempt may still be billed if it already finished generating.",
   undo_send_seconds: "Send delay (seconds)",
   undo_send_seconds_hint:
-    "Counts down before actually calling Vertex; cancelling within the window = no charge. 0 = send immediately.",
+    "Counts down before calling the generation service; cancelling within the window = no charge. 0 = send immediately.",
   aborted_fallback: "Cancelled.",
   phase_delaying: "Delaying send…",
   phase_queued: "Queued · waiting for a slot",
@@ -900,8 +906,8 @@ const en: Dict = {
   bucket_all: "All",
   cost_estimate: "Estimated cost",
   cost_estimate_note:
-    "Estimate · at your unit prices · counts successes only. Note: blocked results, and an attempt cancelled after it already finished generating, may also be billed by Vertex and are not counted here — so this is a lower bound. The app cannot see your real bill.",
-  cost_example_note: "Example prices. Change them to your actual Vertex rates; totals update right away.",
+    "Estimate · at your unit prices · counts successes only. Note: blocked results, and an attempt cancelled after it already finished generating, may also be billed by the provider and are not counted here — so this is a lower bound. The app cannot see your real bill.",
+  cost_example_note: "Example prices. Change them to your actual provider rates; totals update right away.",
   cost_currency: "Currency",
   cost_unit_price: "Price / image",
   cost_count: "Successes",
@@ -945,7 +951,7 @@ const en: Dict = {
   ws_meta: "{count} reference images · {ago}",
   ws_closed_elsewhere: "This workspace was closed in another window",
   draft_saved: "Saved to Drafts",
-  draft_editor_desc: "Drafts never call Vertex. Inputs are used for future generation; outputs are attachments only.",
+  draft_editor_desc: "Drafts never call a provider. Inputs are used for future generation; outputs are attachments only.",
   drafts_empty: "No drafts yet. Save the composer or move a queued task here.",
   search_placeholder_drafts: "Search draft prompts…",
   draft_inputs: "Inputs",
@@ -961,7 +967,7 @@ const en: Dict = {
   queue_and_delete_hint: "Add to the generation queue and remove from Drafts",
   save_copy_to_drafts: "Save a copy to Drafts",
   move_to_drafts: "Move to Drafts",
-  draft_need_config: "Set the Vertex project before queueing this draft.",
+  draft_need_config: "Set up an available provider before queueing this draft.",
   provider_fell_back: "{from} is turned off, so {to} is used instead.",
   draft_need_content: "A draft needs a prompt or at least one input image before it can be queued.",
   draft_deleted_input: "This draft contains a deleted input image. Restore or remove it first.",
@@ -971,7 +977,7 @@ const en: Dict = {
   confirm_delete_draft_q: "Delete this draft? Its images are kept.",
   draft_outputs_n: "{n} attachments",
 
-  reason_SAFETY: "Blocked by Vertex AI’s safety policy (SAFETY).",
+  reason_SAFETY: "Blocked by the safety policy (SAFETY).",
   reason_IMAGE_SAFETY: "Image blocked by the safety policy (IMAGE_SAFETY).",
   reason_PROHIBITED_CONTENT: "Flagged as prohibited content (PROHIBITED_CONTENT).",
   reason_IMAGE_PROHIBITED_CONTENT:
@@ -987,10 +993,14 @@ const en: Dict = {
   reason_JAILBREAK: "Request flagged as a jailbreak attempt (JAILBREAK).",
   reason_MODEL_ARMOR: "Blocked by the Model Armor policy (MODEL_ARMOR).",
   reason_400: "Bad request parameters (400).",
-  reason_401: "Invalid or unauthorized credentials (401).",
+  reason_401: "Invalid or unauthorized credentials or API key (401).",
   reason_403: "Permission denied (403): ensure the account has the Vertex AI User role and the aiplatform API is enabled.",
   reason_404: "Model not found or unavailable in this region (404).",
   reason_429: "Quota / rate limit reached (429).",
+  reason_gemini_400: "Invalid API key or request parameters (400).",
+  reason_gemini_403:
+    "Permission denied (403): this API key cannot use the model, or the Generative Language API is not enabled.",
+  reason_gemini_404: "Model not available for this API key (404).",
 
   add_history: "Add",
   add_history_title: "Import external result",
@@ -1090,7 +1100,7 @@ const en: Dict = {
   remote_require_code: "Require code",
   remote_code_help: "A new code signs out every device. After 5 wrong tries from one device, sign-in pauses for a minute; {n} failed tries in the last hour.",
   remote_nocode_t: "No access code.",
-  remote_nocode_b: "Anyone on this network can open your library, delete images and spend your Vertex credits. Only for a network you trust.",
+  remote_nocode_b: "Anyone on this network can open your library, delete images and spend your generation credits. Only for a network you trust.",
   remote_nocode_confirm_t: "Turn off the access code?",
   remote_nocode_confirm_ok: "Turn off code",
   remote_new_code_confirm: "A new code signs out every signed-in device.",
@@ -1119,7 +1129,7 @@ const en: Dict = {
   remote_interrupted_msg: "Connection lost; the task keeps running on the Mac and its result will appear in History.",
   remote_on_host: "On {host}",
   remote_lib_lock: "Libraries live on the Mac’s disk, so they can only be opened or switched on the Mac. Folder paths are hidden from remote devices.",
-  remote_vertex_lock: "Managed on the Mac. Generations from this device use the Mac’s Vertex project, credentials and credits.",
+  remote_vertex_lock: "Managed on the Mac. Generations from this device use the Mac’s provider credentials and credits.",
   remote_prefs_note: "Saved on this device only — the Mac keeps its own preferences.",
   remote_connected: "Connected",
   remote_device_this: "This device",
@@ -1187,6 +1197,8 @@ const en: Dict = {
   provider_check_missing: "Key works, but these models are not listed: {models}",
   check_connection: "Check connection",
   checking_connection: "Checking…",
+  provider_check_ok: "Connection works.",
+  provider_check_failed: "Check failed: {message}",
   gemini_api_key: "API key",
   gemini_key_placeholder: "Paste a key from aistudio.google.com",
   gemini_key_set_by_env: "Set by IMAGEN_GEMINI_API_KEY",
@@ -1219,7 +1231,10 @@ interface I18nValue {
   lang: Lang;
   setLang: (l: Lang) => void;
   t: (key: string, vars?: Record<string, string | number>) => string;
-  reason: (code: string | null | undefined) => string | null;
+  reason: (
+    code: string | null | undefined,
+    provider?: string | null,
+  ) => string | null;
 }
 
 const I18nContext = createContext<I18nValue | null>(null);
@@ -1249,10 +1264,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   };
 
   // Localize a backend reason code; null when unknown (caller falls back).
-  const reason = (code: string | null | undefined) => {
+  const reason = (code: string | null | undefined, provider?: string | null) => {
     if (!code) return null;
-    const key = `reason_${code}`;
-    return DICTS[lang][key] ?? null;
+    const providerKey = provider ? `reason_${provider}_${code}` : null;
+    return (
+      (providerKey ? DICTS[lang][providerKey] : null) ??
+      DICTS[lang][`reason_${code}`] ??
+      null
+    );
   };
 
   return (

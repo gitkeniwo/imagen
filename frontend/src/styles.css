@@ -1309,7 +1309,12 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 .usage-cost-head { display: flex; align-items: center; gap: var(--space-2); }
 .usage-cost-head h4 { font-size: var(--fs-md); font-weight: 600; }
 input.usage-currency { width: 48px; height: 28px; padding: 0 var(--space-2); text-align: center; }
-.usage-prices { display: flex; flex-direction: column; gap: var(--space-2); }
+.usage-prices { display: flex; flex-direction: column; gap: var(--space-3); }
+.usage-price-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.usage-price-group-head {
+  font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+}
 .usage-price {
   display: grid; grid-template-columns: 1fr 96px; grid-template-rows: auto auto; gap: 2px var(--space-2_5);
   align-items: center; padding: var(--space-2_5) var(--space-3);

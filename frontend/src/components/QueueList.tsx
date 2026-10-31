@@ -248,7 +248,7 @@ const QueueItem = memo(function QueueItem({
   const output = task.status === "success" ? task.outputImage ?? null : null;
   const failure =
     task.status === "blocked" || task.status === "error"
-      ? reason(task.rawFinish) ||
+      ? reason(task.rawFinish, task.provider) ||
         task.message ||
         (task.status === "blocked" ? t("blocked_fallback") : t("error_fallback"))
       : task.status === "aborted"

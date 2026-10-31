@@ -374,7 +374,9 @@ export default function ProvidersSettings({
                         ? t("provider_check_missing", {
                             models: expectedMissing.join(", "),
                           })
-                        : check.message}
+                        : check.ok
+                          ? t("provider_check_ok")
+                          : t("provider_check_failed", { message: check.message })}
                     </span>
                   )}
                 </div>

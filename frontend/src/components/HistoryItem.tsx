@@ -144,7 +144,9 @@ export default function HistoryItem({
   const failed = !output && !missing && !running;
   const kind = g.status === "blocked" || g.status === "aborted" || g.status === "note" ? g.status : "error";
   const errorText =
-    g.status === "note" ? t("note_no_output") : reason(g.raw_finish) || g.error_message || t("no_output");
+    g.status === "note"
+      ? t("note_no_output")
+      : reason(g.raw_finish, providerOf(g)) || g.error_message || t("no_output");
   const meta = [g.model.replace("-image", "").replace("-preview", ""), g.aspect_ratio, g.resolution]
     .filter(Boolean)
     .join(" · ");

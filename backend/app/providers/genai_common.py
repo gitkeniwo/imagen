@@ -43,7 +43,7 @@ BLOCK_FINISH = {
 # localizes these by code (raw_finish) for zh/en — keep the codes in sync with
 # frontend/src/i18n.tsx reason_* keys.
 _HUMAN_BLOCK = {
-    "SAFETY": "Blocked by Vertex AI safety policy (SAFETY).",
+    "SAFETY": "Blocked by safety policy (SAFETY).",
     "IMAGE_SAFETY": "Image blocked by safety policy (IMAGE_SAFETY).",
     "PROHIBITED_CONTENT": "Flagged as prohibited content (PROHIBITED_CONTENT).",
     "IMAGE_PROHIBITED_CONTENT": "Image flagged as prohibited content (IMAGE_PROHIBITED_CONTENT).",

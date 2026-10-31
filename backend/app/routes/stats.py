@@ -5,7 +5,7 @@ whole dashboard — counts, status & model breakdowns, storage AND the cost
 estimate — switches together. All windows are precomputed in one response
 (single-user scale is tiny) so the UI can toggle instantly without refetching.
 
-Cost is NOT computed here — the app cannot see real Vertex billing, so the
+Cost is NOT computed here — the app cannot see real provider billing, so the
 frontend multiplies the per-period success counts (cost_basis) by
 user-configurable unit prices and labels it an estimate.
 """
