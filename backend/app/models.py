@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class GenerateRequest(BaseModel):
     prompt: str = ""
+    provider: str = "vertex"  # "vertex" | "gemini"
     model: str
     aspectRatio: Optional[str] = None
     resolution: Optional[str] = None  # "1K" | "2K" | "4K"
@@ -22,6 +23,7 @@ class GenerateRequest(BaseModel):
 class ManualGenerationRequest(BaseModel):
     """A generation row created/edited from results produced elsewhere (no Vertex call)."""
     prompt: str = ""
+    provider: str = "vertex"
     model: str
     aspectRatio: Optional[str] = None
     resolution: Optional[str] = None
@@ -36,6 +38,7 @@ class ManualGenerationRequest(BaseModel):
 
 class DraftCreate(BaseModel):
     prompt: str = ""
+    provider: str = "vertex"
     model: str = "gemini-3-pro-image"
     aspectRatio: Optional[str] = None
     resolution: Optional[str] = None
@@ -49,6 +52,7 @@ class DraftCreate(BaseModel):
 
 class DraftUpdate(BaseModel):
     prompt: Optional[str] = None
+    provider: Optional[str] = None
     model: Optional[str] = None
     aspectRatio: Optional[str] = None
     resolution: Optional[str] = None
@@ -85,6 +89,14 @@ class BatchTag(BaseModel):
 class VertexConfig(BaseModel):
     project: str
     location: Optional[str] = None  # defaults to "global" on the server
+
+
+class ProviderToggle(BaseModel):
+    enabled: bool
+
+
+class GeminiKeyBody(BaseModel):
+    key: str
 
 
 class ImagePatch(BaseModel):

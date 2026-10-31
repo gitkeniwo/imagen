@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from . import remote
 from .db import init_storage
 from .remote_gate import RemoteGate, is_lan
-from .routes import drafts, generate, generations, images, settings, stats, tags
+from .routes import drafts, generate, generations, images, providers, settings, stats, tags
 from .routes import desktop as desktop_routes
 from .routes import remote as remote_routes
 
@@ -68,6 +68,7 @@ def health(request: Request):
 
 
 app.include_router(settings.router)
+app.include_router(providers.router)
 app.include_router(images.router)
 app.include_router(generate.router)
 app.include_router(generations.router)

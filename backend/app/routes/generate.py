@@ -1,4 +1,4 @@
-"""Generation entry point: assemble inputs, call Gemini, persist lineage."""
+"""Generation entry point: assemble inputs, call a provider, persist lineage."""
 import asyncio
 import json
 import logging
@@ -7,11 +7,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from .. import gemini, remote, storage, tagging
+from .. import provider_config, providers, remote, storage, tagging
 from ..db import get_conn
 from ..models import GenerateRequest
 from ..remote_gate import is_lan
-from .settings import read_vertex
 
 router = APIRouter(prefix="/api", tags=["generate"])
 logger = logging.getLogger("imagen.generate")
@@ -65,6 +64,36 @@ def cancel_generate(cid: str):
     return {"ok": True}
 
 
+_NOT_CONFIGURED = {
+    "vertex": "Vertex project not set. Please enter your Project ID in Settings.",
+    "gemini": "Gemini API key not set. Add it in Settings › Providers.",
+}
+
+
+def _validate_provider(body: GenerateRequest) -> tuple:
+    """Resolve (provider module, model spec, resolution) or raise a 4xx.
+
+    Runs before the stream starts so every failure is plain JSON.
+    """
+    mod = providers.get(body.provider)
+    if mod is None:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {body.provider}")
+    if not provider_config.is_enabled(body.provider):
+        raise HTTPException(status_code=400, detail=f"{mod.LABEL} is turned off in Settings.")
+    if not mod.status().get("configured"):
+        raise HTTPException(status_code=400, detail=_NOT_CONFIGURED[body.provider])
+    spec = providers.model_spec(body.provider, body.model)
+    if spec is None:
+        raise HTTPException(
+            status_code=400, detail=f"Model {body.model} is not available on {mod.LABEL}."
+        )
+    if body.outputFormat not in spec.output_formats:
+        raise HTTPException(status_code=400, detail=f"Unsupported output format: {body.outputFormat}")
+    # Models without a resolution knob store NULL, as Flash always has.
+    resolution = body.resolution if spec.resolutions else None
+    return mod, spec, resolution
+
+
 def _payload(
     status: str,
     message: str | None,
@@ -87,16 +116,14 @@ def _payload(
 async def generate(body: GenerateRequest, request: Request):
     """Run one generation and stream its result.
 
-    Validation, the Vertex project check and input existence checks all happen
+    Validation, the provider checks and input existence checks all happen
     before the response starts, so failures still return plain 4xx JSON. The
     success path is a StreamingResponse: the heavy work runs in a detached task
     (strong-referenced in ``_ACTIVE_TASKS``) while this generator emits a
     keep-alive space every 15 s and finally the same JSON body as before.
     """
-    project, location = read_vertex()
-    if not project:
-        raise HTTPException(status_code=400, detail="Vertex project not set. Please enter your Project ID in Settings.")
-    model = gemini.normalize_model(body.model)
+    provider, spec, resolution = _validate_provider(body)
+    model = spec.id
     if body.markerColor is not None and body.markerColor not in _MARKER_COLORS:
         raise HTTPException(status_code=400, detail="Invalid marker color")
 
@@ -116,9 +143,9 @@ async def generate(body: GenerateRequest, request: Request):
                 raise HTTPException(status_code=404, detail=f"Input image {img_id} does not exist.")
             input_rows.append(row)
 
-    def _read_inputs() -> list[gemini.InputImage]:
+    def _read_inputs() -> list[providers.InputImage]:
         return [
-            gemini.InputImage(data=storage.file_on_disk(r).read_bytes(), mime=r["mime"])
+            providers.InputImage(data=storage.file_on_disk(r).read_bytes(), mime=r["mime"])
             for r in input_rows
         ]
 
@@ -127,16 +154,18 @@ async def generate(body: GenerateRequest, request: Request):
     # Persist a History placeholder only once the request is ready to be sent.
     # Pending client-side queue items never reach this endpoint, so they remain
     # session-only. A crash/closed window can no longer lose the task prompt.
+    # source='vertex' means "a real call from this app" for every provider;
+    # the provider itself is its own column.
     def _create_running() -> int:
         with get_conn() as conn:
             cur = conn.execute(
                 """INSERT INTO generations
                    (prompt, model, aspect_ratio, resolution, status, error_message,
                     raw_finish, output_image_id, created_at, source,
-                    client_task_id, marker_color)
-                   VALUES (?, ?, ?, ?, 'running', NULL, NULL, NULL, ?, 'vertex', ?, ?)""",
-                (body.prompt, model, body.aspectRatio, body.resolution, _now(),
-                 body.clientTaskId, body.markerColor),
+                    client_task_id, marker_color, provider)
+                   VALUES (?, ?, ?, ?, 'running', NULL, NULL, NULL, ?, 'vertex', ?, ?, ?)""",
+                (body.prompt, model, body.aspectRatio, resolution, _now(),
+                 body.clientTaskId, body.markerColor, provider.ID),
             )
             gen_id = cur.lastrowid
             for pos, img_id in enumerate(ordered_ids):
@@ -153,7 +182,7 @@ async def generate(body: GenerateRequest, request: Request):
     # (CANCELLED) — the request stays open so we can return the true result.
     # A client disconnect is the fallback (tab closed / the window navigated
     # away): StreamingResponse cancels this generator, which sets the flag
-    # below. gemini.generate checks should_abort at retry boundaries, so it
+    # below. The provider's generate checks should_abort at retry boundaries, so it
     # finishes the current in-flight attempt (keeping a completed/billable
     # result) but skips all further retries. The work task is NEVER cancelled
     # on disconnect — it must run to completion so the history row is honest.
@@ -174,7 +203,7 @@ async def generate(body: GenerateRequest, request: Request):
     # Persist in a worker thread (Pillow decode + thumbnail are CPU-bound and
     # would otherwise stall the event loop). The thread opens its own
     # connection — sqlite3 connections are bound to their creating thread.
-    def _persist(result: gemini.GeminiResult, explicitly_cancelled: bool) -> tuple[str, str | None, dict | None, dict | None]:
+    def _persist(result: providers.GenResult, explicitly_cancelled: bool) -> tuple[str, str | None, dict | None, dict | None]:
         status, message = result.status, result.message
         output_image = None
         with get_conn() as conn:
@@ -218,7 +247,7 @@ async def generate(body: GenerateRequest, request: Request):
         return status, message, generation, output_image
 
     async def _run_generation() -> dict:
-        """Detached worker: call Gemini, persist the row, return the payload.
+        """Detached worker: call the provider, persist the row, return the payload.
 
         Runs in its own task so a client disconnect (which cancels the response
         generator) does not cancel the generation. Never raises: any crash is
@@ -226,13 +255,11 @@ async def generate(body: GenerateRequest, request: Request):
         finish with parseable JSON.
         """
         try:
-            result = await gemini.generate(
-                project=project,
-                location=location,
+            result = await provider.generate(
+                model=spec,
                 prompt=body.prompt,
-                model=model,
                 aspect_ratio=body.aspectRatio,
-                resolution=body.resolution,
+                resolution=resolution,
                 images=input_images,
                 output_mime=body.outputFormat,
                 on_event=on_event,
@@ -242,7 +269,7 @@ async def generate(body: GenerateRequest, request: Request):
             raise
         except Exception as exc:  # noqa: BLE001 — last-resort guard for the row
             logger.exception("generation task crashed (gen_id=%s)", gen_id)
-            result = gemini.GeminiResult(
+            result = providers.GenResult(
                 status="error", message=f"Unexpected backend error: {exc}"
             )
 

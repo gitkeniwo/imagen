@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import storage, tagging
+from .. import providers, storage, tagging
 from ..db import get_conn
 from ..models import ManualGenerationRequest, MarkerPatch
 
@@ -89,6 +89,9 @@ def _validate_manual_body(body: ManualGenerationRequest) -> None:
         raise HTTPException(status_code=400, detail=f"Invalid status: {body.status}")
     if body.source not in _SOURCES:
         raise HTTPException(status_code=400, detail=f"Invalid source: {body.source}")
+    # History may belong to a provider that is off or not set up.
+    if providers.get(body.provider) is None:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {body.provider}")
     if body.createdAt:
         try:
             datetime.fromisoformat(body.createdAt)
@@ -129,11 +132,11 @@ def create_manual_generation(body: ManualGenerationRequest):
         cur = conn.execute(
             """INSERT INTO generations
                (prompt, model, aspect_ratio, resolution, status, error_message,
-                raw_finish, output_image_id, created_at, source)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                raw_finish, output_image_id, created_at, source, provider)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.prompt, body.model, body.aspectRatio, body.resolution,
              body.status, body.errorMessage, None, body.outputImageId, created_at,
-             _resolved_source(body)),
+             _resolved_source(body), body.provider),
         )
         gen_id = cur.lastrowid
         _mark_output_generated(conn, body.outputImageId)
@@ -177,11 +180,11 @@ def update_generation(gen_id: int, body: ManualGenerationRequest):
             """UPDATE generations
                SET prompt = ?, model = ?, aspect_ratio = ?, resolution = ?,
                    status = ?, error_message = ?, output_image_id = ?, created_at = ?,
-                   source = ?
+                   source = ?, provider = ?
                WHERE id = ?""",
             (body.prompt, body.model, body.aspectRatio, body.resolution,
              body.status, body.errorMessage, body.outputImageId, created_at,
-             _resolved_source(body), gen_id),
+             _resolved_source(body), body.provider, gen_id),
         )
         _mark_output_generated(conn, body.outputImageId)
         conn.execute("DELETE FROM generation_inputs WHERE generation_id = ?", (gen_id,))

@@ -51,24 +51,29 @@ def _series_from(rows, ordered_keys, keyfn):
     """
     agg = {k: {"total": 0, "success": 0, "blocked": 0, "error": 0} for k, _ in ordered_keys}
     cost = {k: {} for k, _ in ordered_keys}
-    for dt, st, model, res, *_ in rows:
+    for dt, st, model, res, _rf, _msg, provider in rows:
         k = keyfn(dt)
         if k in agg:
             agg[k]["total"] += 1
             if st in ("success", "blocked", "error"):
                 agg[k][st] += 1
             if st == "success":
-                cost[k][(model, res)] = cost[k].get((model, res), 0) + 1
+                ck = (provider, model, res)
+                cost[k][ck] = cost[k].get(ck, 0) + 1
     return [
         {
             "label": lbl,
             **agg[k],
-            "cost_basis": [
-                {"model": m, "resolution": r, "count": c}
-                for (m, r), c in cost[k].items()
-            ],
+            "cost_basis": _cost_rows(cost[k]),
         }
         for k, lbl in ordered_keys
+    ]
+
+
+def _cost_rows(cost: dict) -> list[dict]:
+    return [
+        {"provider": p, "model": m, "resolution": r, "count": c}
+        for (p, m, r), c in cost.items()
     ]
 
 
@@ -76,7 +81,7 @@ def _failure_reasons(rows, limit: int = 5):
     """Most common blocked/error causes, keyed by raw_finish (a code the
     frontend localizes) and falling back to the stored message."""
     counts = {}
-    for _, st, _m, _r, raw_finish, message in rows:
+    for _, st, _m, _r, raw_finish, message, _p in rows:
         if st not in ("blocked", "error"):
             continue
         key = (raw_finish or None, None if raw_finish else (message or "").strip()[:200] or None)
@@ -127,10 +132,10 @@ def get_stats():
         gens = [
             (
                 _parse_dt(r["created_at"]), r["status"], r["model"], r["resolution"],
-                r["raw_finish"], r["error_message"],
+                r["raw_finish"], r["error_message"], r["provider"],
             )
             for r in conn.execute(
-                "SELECT created_at, status, model, resolution, raw_finish, error_message "
+                "SELECT created_at, status, model, resolution, raw_finish, error_message, provider "
                 "FROM generations "
                 "WHERE status NOT IN ('note', 'running')"
             )
@@ -152,12 +157,14 @@ def get_stats():
         gsub = [g for g in gens if _in_window(g[0].date(), p, today)]
         isub = [i for i in imgs if _in_window(i[0].date(), p, today)]
 
-        by_status, by_model, cost = {}, {}, {}
-        for _, st, model, res, *_ in gsub:
+        by_status, by_model, by_provider, cost = {}, {}, {}, {}
+        for _, st, model, res, _rf, _msg, provider in gsub:
             by_status[st] = by_status.get(st, 0) + 1
             by_model[model] = by_model.get(model, 0) + 1
+            by_provider[provider] = by_provider.get(provider, 0) + 1
             if st == "success":
-                cost[(model, res)] = cost.get((model, res), 0) + 1
+                ck = (provider, model, res)
+                cost[ck] = cost.get(ck, 0) + 1
 
         by_source, bytes_sum = {}, 0
         for _, bs, src in isub:
@@ -168,10 +175,8 @@ def get_stats():
             "total": len(gsub),
             "by_status": by_status,
             "by_model": by_model,
-            "cost_basis": [
-                {"model": m, "resolution": r, "count": c}
-                for (m, r), c in cost.items()
-            ],
+            "by_provider": by_provider,
+            "cost_basis": _cost_rows(cost),
             "images": {"total": len(isub), "by_source": by_source, "bytes": bytes_sum},
             "chart": _chart(gsub, p, today),
             "failures": _failure_reasons(gsub),
