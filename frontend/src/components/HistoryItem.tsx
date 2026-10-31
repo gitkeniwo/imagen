@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { Generation, ImageRow, TagRef, imgThumbUrl } from "../api";
+import { Generation, ImageRow, TagRef, imgThumbUrl, providerOf } from "../api";
 import { copyText } from "../clipboard";
 import { useI18n } from "../i18n";
 import { peekProps } from "./HoverPeek";
@@ -10,6 +10,7 @@ import { Button, IconButton } from "./ui/Button";
 import Popover from "./ui/Popover";
 import { useToast } from "./Toast";
 import { downloadImage, markerHex } from "./GenerationCard";
+import ProviderBadge from "./ProviderBadge";
 
 export type HistoryLayout = "grid" | "list";
 
@@ -232,6 +233,7 @@ export default function HistoryItem({
           )}
           {g.source === "manual" && <span className="hcard-flag">{t("imported_badge")}</span>}
           {running && <span className="hcard-flag running">{t("status_running")}</span>}
+          <ProviderBadge provider={providerOf(g)} />
           <span className="hcard-meta-text">{listFailure ? errorText : meta}</span>
           {listFailure && <FullTextButton label={t("details")} title={t(`status_${g.status}`)} text={errorText} />}
         </div>

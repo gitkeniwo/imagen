@@ -6,13 +6,11 @@ import {
   Generation,
   ImageRow,
   imgThumbUrl,
-  MODEL_LABELS,
   providerOf,
   ProviderId,
 } from "../api";
 import { useI18n } from "../i18n";
 import { useProviders } from "../useProviders";
-import CustomSelect from "./CustomSelect";
 import { AspectShape } from "./ComposerControls";
 import LibraryPickerModal from "./LibraryPickerModal";
 import ReferenceTray from "./ReferenceTray";
@@ -22,6 +20,7 @@ import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
 import { useBackLayer } from "../backStack";
+import ModelMenu from "./ModelMenu";
 
 // Drafts have their own editor (DraftEditorModal); this form only logs results.
 type Kind = "vertex" | "manual";
@@ -70,10 +69,9 @@ export default function AddHistoryModal({
   const { providers, enabled: enabledProviders } = useProviders();
   // Logged records may belong to any provider, on or off, so the choices
   // come from the whole catalog rather than the enabled ones.
-  const [provider] = useState<ProviderId>(
+  const [provider, setProvider] = useState<ProviderId>(
     src ? providerOf(src) : enabledProviders[0]?.id ?? "vertex",
   );
-  const providerModels = providers.find((p) => p.id === provider)?.models ?? [];
   const allModels = providers.flatMap((p) => p.models);
   const aspectRatios = [...new Set(allModels.flatMap((m) => m.aspectRatios))];
   const resolutions = [...new Set(allModels.flatMap((m) => m.resolutions))];
@@ -364,10 +362,14 @@ export default function AddHistoryModal({
             <div className="import-pair">
               <div>
                 <label>{t("model")}</label>
-                <CustomSelect
-                  value={model}
-                  onChange={setModel}
-                  options={providerModels.map((m) => ({ id: m.id, label: MODEL_LABELS[m.id] ?? m.label }))}
+                <ModelMenu
+                  provider={provider}
+                  model={model}
+                  providers={providers}
+                  onChange={(choice) => {
+                    setProvider(choice.provider);
+                    setModel(choice.model);
+                  }}
                 />
               </div>
               <div>

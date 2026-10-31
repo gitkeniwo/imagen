@@ -1,12 +1,10 @@
-import { MAX_TASK_ATTEMPTS, MODEL_LABELS, OUTPUT_FORMATS, ProviderId } from "../api";
+import { MAX_TASK_ATTEMPTS, OUTPUT_FORMATS, ProviderId } from "../api";
 import { useProviders } from "../useProviders";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
 import Segmented from "./ui/Segmented";
 import TagPicker from "./TagPicker";
-
-// "Nano Banana Pro (3 Pro)" → "Nano Banana Pro"; the full name stays as tooltip.
-const shortModelLabel = (label: string) => label.replace(/\s*\(.*\)$/, "");
+import ModelMenu from "./ModelMenu";
 
 // Outline of the ratio, its long side fitted to `size` px.
 export function AspectShape({ ratio, size = 22 }: { ratio: string; size?: number }) {
@@ -21,6 +19,7 @@ export function AspectShape({ ratio, size = 22 }: { ratio: string; size?: number
 export function ComposerParams({
   provider,
   model,
+  setProvider,
   setModel,
   aspectRatio,
   setAspectRatio,
@@ -33,6 +32,7 @@ export function ComposerParams({
 }: {
   provider: ProviderId;
   model: string;
+  setProvider: (provider: ProviderId) => void;
   setModel: (v: string) => void;
   aspectRatio: string;
   setAspectRatio: (v: string) => void;
@@ -44,8 +44,7 @@ export function ComposerParams({
   setTagIds: (ids: number[]) => void;
 }) {
   const { t } = useI18n();
-  const { info, spec: specOf, providers } = useProviders();
-  const models = info(provider)?.models ?? [];
+  const { spec: specOf, providers } = useProviders();
   const spec = specOf(provider, model);
   const hasResolution = (spec?.resolutions.length ?? 0) > 0;
   // A model without resolutions still shows the choices (disabled), as before.
@@ -58,14 +57,13 @@ export function ComposerParams({
     <div className="composer-params">
       <span className="param-label param-label-model">{t("model")}</span>
       <div className="param-model">
-        <Segmented
-          value={model}
-          onChange={setModel}
-          options={models.map((m) => ({
-            value: m.id,
-            label: shortModelLabel(m.label),
-            title: MODEL_LABELS[m.id] ?? m.label,
-          }))}
+        <ModelMenu
+          provider={provider}
+          model={model}
+          onChange={(choice) => {
+            setProvider(choice.provider);
+            setModel(choice.model);
+          }}
         />
       </div>
 
@@ -87,6 +85,12 @@ export function ComposerParams({
           title={t("format_short")}
           options={formats.map((f) => ({ value: f.id, label: f.label }))}
         />
+        {spec?.transcodes.includes(format) && (
+          <span className="model-transcode" title={t("jpg_transcode_hint")}>
+            <Icon name="info" size="sm" />
+            {t("jpg_converted_locally")}
+          </span>
+        )}
       </div>
 
       <span className="param-label">{t("aspect_short")}</span>

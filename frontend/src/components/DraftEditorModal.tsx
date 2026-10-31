@@ -36,7 +36,7 @@ export default function DraftEditorModal({
   const { enabled: enabledProviders, spec: specOf } = useProviders();
   // A draft keeps its provider even if that provider is off; it can be
   // edited, just not queued (Drafts checks readiness per draft).
-  const [provider] = useState<ProviderId>(
+  const [provider, setProvider] = useState<ProviderId>(
     existing ? providerOf(existing) : seed?.provider ?? enabledProviders[0]?.id ?? "vertex",
   );
   const [model, setModel] = useState(existing?.model ?? seed?.model ?? DEFAULT_MODEL);
@@ -197,6 +197,7 @@ export default function DraftEditorModal({
           <OptionBar
             provider={provider}
             model={model}
+            setProvider={setProvider}
             setModel={setModel}
             aspectRatio={aspectRatio}
             setAspectRatio={setAspectRatio}

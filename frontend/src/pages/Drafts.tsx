@@ -275,6 +275,7 @@ export default function Drafts({
                     </button>
                   )
                 }
+                provider={providerOf(draft)}
                 meta={[draft.model.replace("-image", ""), draft.aspect_ratio, draft.resolution]}
                 prompt={draft.prompt}
                 promptLines={compact ? 3 : 4}

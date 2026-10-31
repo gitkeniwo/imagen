@@ -565,6 +565,43 @@ const zh: Dict = {
   phone_page_status: "{page} / {pages}",
   phone_batch_tags: "批量标签",
   phone_more_title: "更多",
+
+  // providers
+  settings_section_providers: "生成服务",
+  provider_short_vertex: "Vertex",
+  provider_short_gemini: "Gemini",
+  provider_ready: "就绪",
+  provider_not_set_up: "未配置",
+  provider_off: "已关闭",
+  provider_use: "启用 {provider}",
+  provider_keep_one: "至少保留一个开启",
+  providers_off_note: "关闭只会从生成页隐藏该服务。设置和历史记录都会保留。",
+  providers_lan_lock: "由 Mac 管理。这台设备可以查看生成服务设置，但不能修改。",
+  provider_vertex_subtitle: "Google Cloud · ADC",
+  provider_gemini_subtitle: "Google AI Studio · API key",
+  provider_off_banner: "已关闭——不会出现在生成页。下面的设置仍会保留。",
+  provider_not_set_up_link: "{provider} 未配置",
+  provider_check_missing: "密钥可用，但以下模型不在列表中：{models}",
+  check_connection: "检查连接",
+  checking_connection: "检查中…",
+  gemini_api_key: "API key",
+  gemini_key_placeholder: "粘贴 aistudio.google.com 的密钥",
+  gemini_key_set_by_env: "由 IMAGEN_GEMINI_API_KEY 提供",
+  gemini_key_saved: "已保存 · 末 4 位 …{last4}",
+  gemini_key_saved_plain: "已保存",
+  gemini_key_replace: "替换",
+  gemini_key_remove: "移除",
+  gemini_remove_title: "移除 Gemini API 密钥？",
+  gemini_remove_confirm: "Gemini API 将变为未配置，直到你保存另一个密钥。",
+  gemini_key_memory_note: "当前为内存模式：密钥会在 Imagen 重启后丢失。",
+  gemini_key_env_only_note: "Docker 服务器模式只读取 IMAGEN_GEMINI_API_KEY，不能在这里保存密钥。",
+  gemini_storage_hint:
+    "保存在 Imagen 的配置目录（~/.config/imagen/secrets.json），不会进入图库目录或其备份。Docker 读取环境变量 IMAGEN_GEMINI_API_KEY。JPG 由本地转换（该 API 不支持选择输出格式）。",
+  jpg_converted_locally: "JPG 由本地转换",
+  jpg_transcode_hint: "Gemini API 返回 PNG；应用会在本地将其保存为 JPG。",
+  provider_error_last_provider: "至少保留一个生成服务开启。",
+  provider_error_key_from_env: "密钥由 IMAGEN_GEMINI_API_KEY 提供，不能在应用内修改。",
+  provider_error_key_env_only: "Docker 服务器模式不能保存密钥，请使用 IMAGEN_GEMINI_API_KEY。",
 };
 
 const en: Dict = {
@@ -1128,6 +1165,52 @@ const en: Dict = {
   phone_page_status: "{page} / {pages}",
   phone_batch_tags: "Batch tags",
   phone_more_title: "More",
+
+  // providers
+  settings_section_providers: "Providers",
+  provider_short_vertex: "Vertex",
+  provider_short_gemini: "Gemini",
+  provider_ready: "Ready",
+  provider_not_set_up: "Not set up",
+  provider_off: "Off",
+  provider_use: "Use {provider}",
+  provider_keep_one: "At least one provider stays on",
+  providers_off_note:
+    "Off hides a provider from the composer. Its settings and history stay.",
+  providers_lan_lock:
+    "Managed on the Mac. This device can view provider settings but cannot change them.",
+  provider_vertex_subtitle: "Google Cloud · ADC",
+  provider_gemini_subtitle: "Google AI Studio · API key",
+  provider_off_banner:
+    "Turned off — not offered in the composer. Settings below are kept.",
+  provider_not_set_up_link: "{provider} not set up",
+  provider_check_missing: "Key works, but these models are not listed: {models}",
+  check_connection: "Check connection",
+  checking_connection: "Checking…",
+  gemini_api_key: "API key",
+  gemini_key_placeholder: "Paste a key from aistudio.google.com",
+  gemini_key_set_by_env: "Set by IMAGEN_GEMINI_API_KEY",
+  gemini_key_saved: "Saved · ends in …{last4}",
+  gemini_key_saved_plain: "Saved",
+  gemini_key_replace: "Replace",
+  gemini_key_remove: "Remove",
+  gemini_remove_title: "Remove the Gemini API key?",
+  gemini_remove_confirm:
+    "Gemini API will be unavailable until you save another key.",
+  gemini_key_memory_note:
+    "Memory only: the key is lost when Imagen restarts.",
+  gemini_key_env_only_note:
+    "Docker server mode only reads IMAGEN_GEMINI_API_KEY; a key cannot be saved here.",
+  gemini_storage_hint:
+    "Stored in Imagen's config folder (~/.config/imagen/secrets.json), never in the library folder or its backups. Docker reads IMAGEN_GEMINI_API_KEY. JPG output is converted locally (the API has no format option).",
+  jpg_converted_locally: "JPG converted locally",
+  jpg_transcode_hint:
+    "Gemini API returns PNG; the app converts and saves the output as JPG locally.",
+  provider_error_last_provider: "At least one provider must stay on.",
+  provider_error_key_from_env:
+    "The key is provided by IMAGEN_GEMINI_API_KEY and cannot be changed in the app.",
+  provider_error_key_env_only:
+    "Docker server mode cannot save a key; use IMAGEN_GEMINI_API_KEY.",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };

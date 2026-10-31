@@ -16,6 +16,7 @@ import { type IconName } from "./ui/Icon";
 import { imgThumbUrl } from "../api";
 import { peekProps } from "./HoverPeek";
 import { pressable } from "../a11y";
+import ProviderBadge from "./ProviderBadge";
 
 // v2: the old key held the pre-card horizontal layout's 1-column default.
 const QUEUE_COLUMNS_KEY = "imagen-queue-columns-v2";
@@ -329,6 +330,7 @@ const QueueItem = memo(function QueueItem({
           {task.markerColor && (
             <span className="hcard-marker" style={{ background: markerHex(task.markerColor) }} title={t("marker_label")} />
           )}
+          <ProviderBadge provider={task.provider} />
           <span className="hcard-meta-text">{meta}</span>
         </div>
         <PromptClamp text={task.prompt} lines={2} />

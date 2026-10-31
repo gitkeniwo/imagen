@@ -27,7 +27,9 @@ import Generate from "./pages/Generate";
 import Library from "./pages/Library";
 import History from "./pages/History";
 import Favorites from "./pages/Favorites";
-import SettingsModal from "./components/SettingsModal";
+import SettingsModal, {
+  type SettingsSection,
+} from "./components/SettingsModal";
 import RemoteIndicator, { RemoteChip } from "./components/RemoteIndicator";
 import { useRemote } from "./remote";
 import AddHistoryModal from "./components/AddHistoryModal";
@@ -174,7 +176,8 @@ export default function App() {
   // The composer can generate when *its* provider is usable.
   const composerReady = isReady(draft.provider);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"library" | "remote">("library");
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("library");
   const { remote, conn, reportNetworkError } = useRemote();
   const [showAddHistory, setShowAddHistory] = useState(false);
   // Bumped by panels whose item totals change without a data refresh (drafts).
@@ -285,8 +288,18 @@ export default function App() {
   useEffect(() => {
     const onOpenSettings = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
-      if (detail !== "library" && detail !== "remote") return;
-      setSettingsSection(detail);
+      if (typeof detail !== "string") return;
+      const providerMatch = /^providers:(vertex|gemini)$/.test(detail);
+      if (
+        detail !== "library" &&
+        detail !== "remote" &&
+        detail !== "providers" &&
+        detail !== "vertex" &&
+        !providerMatch
+      ) {
+        return;
+      }
+      setSettingsSection(detail as SettingsSection);
       setShowSettings(true);
     };
     window.addEventListener("imagen:open-settings", onOpenSettings);
@@ -968,7 +981,10 @@ export default function App() {
             </button>
             <button
               className="topbar-btn"
-              onClick={() => { setSettingsSection("library"); setShowSettings(true); }}
+              onClick={() => {
+                setSettingsSection(anyReady === false ? "providers" : "library");
+                setShowSettings(true);
+              }}
               title={anyReady !== false ? t("settings") : t("set_api_key")}
               aria-label={anyReady !== false ? t("settings") : t("set_api_key")}
             >

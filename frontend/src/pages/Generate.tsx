@@ -101,7 +101,13 @@ export default function Generate({
   const { t } = useI18n();
   const [saveOpen, setSaveOpen] = useState(false);
   const { conn, remote } = useRemote();
-  const { enabled: enabledProviders, info: providerInfo, spec: specOf } = useProviders();
+  const {
+    enabled: enabledProviders,
+    info: providerInfo,
+    isReady,
+    loaded: catalogLoaded,
+    spec: specOf,
+  } = useProviders();
   // The draft itself lives in App so one place owns loading/saving it.
   const {
     prompt,
@@ -114,6 +120,7 @@ export default function Generate({
     skipIfPrecedingSucceeds,
   } = draft;
   const setPrompt = (v: string) => updateDraft({ prompt: v });
+  const setProvider = (v: TaskSpec["provider"]) => updateDraft({ provider: v });
   const setModel = (v: string) => updateDraft({ model: v });
   const setAspectRatio = (v: string) => updateDraft({ aspectRatio: v });
   const setResolution = (v: string) => updateDraft({ resolution: v });
@@ -163,6 +170,14 @@ export default function Generate({
   const spec = specOf(provider, model);
   const hasResolution = (spec?.resolutions.length ?? 0) > 0;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
+  const providerLabel = t(`provider_short_${provider}`);
+  const openProviderSettings = () => {
+    window.dispatchEvent(
+      new CustomEvent("imagen:open-settings", {
+        detail: `providers:${provider}`,
+      }),
+    );
+  };
 
   // Phone summary line: "Pro · 1K · JPG · 1:1" (resolution only when the model
   // has one), prefixed with the provider once more than one is on.
@@ -357,6 +372,7 @@ export default function Generate({
             <ComposerParams
               provider={provider}
               model={model}
+              setProvider={setProvider}
               setModel={setModel}
               aspectRatio={aspectRatio}
               setAspectRatio={setAspectRatio}
@@ -376,7 +392,15 @@ export default function Generate({
                 title={t("skip_if_preceding_succeeds_title")}
               />
               <div className="spacer" />
-              {!keyConfigured && <span className="muted small">{t("need_key_inline").replace(/^ · /, "")}</span>}
+              {catalogLoaded && !isReady(provider) && (
+                <button
+                  type="button"
+                  className="provider-missing-link"
+                  onClick={openProviderSettings}
+                >
+                  {t("provider_not_set_up_link", { provider: providerLabel })}
+                </button>
+              )}
               <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
                 {t("save_draft")}
               </Button>
@@ -417,7 +441,15 @@ export default function Generate({
       {phone && (
         <>
           <div className="phone-dock">
-            {!keyConfigured && <div className="phone-dock-note">{t("no_key_warning")}</div>}
+            {catalogLoaded && !isReady(provider) && (
+              <button
+                type="button"
+                className="phone-dock-note provider-missing-link"
+                onClick={openProviderSettings}
+              >
+                {t("provider_not_set_up_link", { provider: providerLabel })}
+              </button>
+            )}
             <AttemptsStepper attempts={attempts} setAttempts={setAttempts} />
             <button
               type="button"
@@ -447,6 +479,7 @@ export default function Generate({
               <ComposerParams
                 provider={provider}
                 model={model}
+                setProvider={setProvider}
                 setModel={setModel}
                 aspectRatio={aspectRatio}
                 setAspectRatio={setAspectRatio}

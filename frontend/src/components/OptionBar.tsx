@@ -1,13 +1,14 @@
-import { MODEL_LABELS, OUTPUT_FORMATS, ProviderId } from "../api";
+import { OUTPUT_FORMATS, ProviderId } from "../api";
 import { useProviders } from "../useProviders";
 import { useI18n } from "../i18n";
-import CustomSelect from "./CustomSelect";
 import Segmented from "./ui/Segmented";
 import { AspectShape } from "./ComposerControls";
+import ModelMenu from "./ModelMenu";
 
 export default function OptionBar({
   provider,
   model,
+  setProvider,
   setModel,
   aspectRatio,
   setAspectRatio,
@@ -18,6 +19,7 @@ export default function OptionBar({
 }: {
   provider: ProviderId;
   model: string;
+  setProvider: (provider: ProviderId) => void;
   setModel: (v: string) => void;
   aspectRatio: string;
   setAspectRatio: (v: string) => void;
@@ -27,9 +29,9 @@ export default function OptionBar({
   setFormat: (v: string) => void;
 }) {
   const { t } = useI18n();
-  const { info, spec: specOf, providers } = useProviders();
-  const models = info(provider)?.models ?? [];
+  const { spec: specOf, providers } = useProviders();
   const spec = specOf(provider, model);
+  const choices = providers.filter((info) => info.enabled || info.id === provider);
   const isPro = (spec?.resolutions.length ?? 0) > 0;
   const resolutions = isPro
     ? spec!.resolutions
@@ -41,10 +43,14 @@ export default function OptionBar({
       <div className="row">
         <div>
           <label>{t("model")}</label>
-          <CustomSelect
-            value={model}
-            onChange={setModel}
-            options={models.map((m) => ({ id: m.id, label: MODEL_LABELS[m.id] ?? m.label }))}
+          <ModelMenu
+            provider={provider}
+            model={model}
+            providers={choices}
+            onChange={(choice) => {
+              setProvider(choice.provider);
+              setModel(choice.model);
+            }}
           />
         </div>
         <div>
