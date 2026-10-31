@@ -1,4 +1,4 @@
-import { MAX_TASK_ATTEMPTS, OUTPUT_FORMATS, ProviderId } from "../api";
+import { FALLBACK_ASPECT_RATIOS, FALLBACK_RESOLUTIONS, MAX_TASK_ATTEMPTS, OUTPUT_FORMATS, ProviderId } from "../api";
 import { useProviders } from "../useProviders";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
@@ -44,13 +44,13 @@ export function ComposerParams({
   setTagIds: (ids: number[]) => void;
 }) {
   const { t } = useI18n();
-  const { spec: specOf, providers } = useProviders();
+  const { spec: specOf } = useProviders();
   const spec = specOf(provider, model);
   const hasResolution = (spec?.resolutions.length ?? 0) > 0;
   // A model without resolutions still shows the choices (disabled), as before.
   const resolutions = hasResolution
     ? spec!.resolutions
-    : [...new Set(providers.flatMap((p) => p.models.flatMap((m) => m.resolutions)))];
+    : FALLBACK_RESOLUTIONS;
   const formats = OUTPUT_FORMATS.filter((f) => spec?.outputFormats.includes(f.id) ?? true);
 
   return (
@@ -95,7 +95,7 @@ export function ComposerParams({
 
       <span className="param-label">{t("aspect_short")}</span>
       <div className="aspect-row" role="group" aria-label={t("aspect")}>
-        {(spec?.aspectRatios ?? []).map((r) => (
+        {(spec?.aspectRatios ?? FALLBACK_ASPECT_RATIOS).map((r) => (
           <button
             key={r}
             type="button"

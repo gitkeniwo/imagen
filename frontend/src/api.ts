@@ -657,6 +657,11 @@ export const api = {
 // accepts. These are display fallbacks only: full names for tooltips, and
 // labels for records whose provider is off or whose catalog hasn't loaded.
 export const DEFAULT_MODEL = "gemini-3-pro-image";
+// Shown while the catalog loads, so the option rows don't jump in later.
+export const FALLBACK_ASPECT_RATIOS = [
+  "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9",
+];
+export const FALLBACK_RESOLUTIONS = ["1K", "2K", "4K"];
 
 export const MODEL_LABELS: Record<string, string> = {
   "gemini-3-pro-image": "Nano Banana Pro (3 Pro)",

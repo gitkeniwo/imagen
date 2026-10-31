@@ -1821,14 +1821,17 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 }
 .provider-switch {
   width: 40px; height: 24px; min-height: 24px; flex: none; padding: 0; position: relative;
-  border: 0; border-radius: var(--radius-full); background: var(--border); box-shadow: none;
+  border: 0; border-radius: var(--radius-full); background: var(--hover-border); box-shadow: none;
 }
+/* Beat the generic button:hover, which would grey out the "on" track. */
+.provider-switch:hover:not(:disabled) { background: var(--hover-border); }
 .provider-switch > span {
   position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
   border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
   transition: left 0.15s ease;
 }
-.provider-switch.on { background: var(--ui-accent); }
+.provider-switch.on,
+.provider-switch.on:hover:not(:disabled) { background: var(--ui-accent); }
 .provider-switch.on > span { left: 19px; }
 .provider-switch:disabled { opacity: 0.55; cursor: not-allowed; }
 .provider-switch:focus-visible { outline: 2px solid var(--ui-accent-line); outline-offset: 2px; }
@@ -1862,7 +1865,7 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 }
 .provider-fields { display: flex; flex-direction: column; gap: var(--space-4); }
 .provider-key-field { display: flex; flex-direction: column; gap: var(--space-1_5); }
-.provider-field-label { color: var(--text); font-size: var(--fs-md); font-weight: 600; }
+.provider-field-label { margin: 0; color: var(--text); font-size: var(--fs-md); font-weight: 600; }
 .provider-key-env, .provider-key-saved {
   min-height: 40px; padding: 0 var(--space-2) 0 var(--space-3);
   display: flex; align-items: center; gap: var(--space-2);

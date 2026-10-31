@@ -169,10 +169,19 @@ export default function ProvidersSettings({
     keyStorage !== "env_only" &&
     (!source || replacingKey);
 
+  // Unsaved edits: Save needs some, and Check waits until they're saved
+  // (it tests the stored settings, not the fields).
+  const dirty =
+    selected === "vertex"
+      ? project.trim() !== (detail?.project ?? "") ||
+        (location.trim() || "global") !== (detail?.location || "global")
+      : !!keyInput.trim();
+
   const canSave =
     !remote &&
     !saving &&
     !!info &&
+    dirty &&
     (selected === "vertex"
       ? !!project.trim()
       : keyStorage !== "env" &&
@@ -287,7 +296,13 @@ export default function ProvidersSettings({
             ) : (
               <div className="provider-fields">
                 <div className="provider-key-field">
-                  <span className="provider-field-label">{t("gemini_api_key")}</span>
+                  {showKeyInput ? (
+                    <label htmlFor="settings-gemini-key" className="provider-field-label">
+                      {t("gemini_api_key")}
+                    </label>
+                  ) : (
+                    <span className="provider-field-label">{t("gemini_api_key")}</span>
+                  )}
                   {source === "env" ? (
                     <div className="provider-key-env">
                       <Icon name="check" size="sm" />
@@ -325,6 +340,7 @@ export default function ProvidersSettings({
                     </div>
                   ) : (
                     <input
+                      id="settings-gemini-key"
                       type="password"
                       value={keyInput}
                       placeholder={t("gemini_key_placeholder")}
@@ -351,7 +367,10 @@ export default function ProvidersSettings({
                 {keyStorage === "memory" && (
                   <div className="settings-callout">{t("gemini_key_memory_note")}</div>
                 )}
-                <div className="settings-callout">{t("gemini_storage_hint")}</div>
+                <div className="settings-callout">
+                  {keyStorage === "file" && <>{t("gemini_storage_file")} </>}
+                  {t("gemini_jpg_note")}
+                </div>
               </div>
             )}
 
@@ -360,6 +379,9 @@ export default function ProvidersSettings({
             {!remote && (
               <footer className="provider-detail-actions">
                 <div className="provider-check-result" aria-live="polite">
+                  {dirty && !check && (
+                    <span className="muted">{t("provider_check_saved_note")}</span>
+                  )}
                   {check && (
                     <span
                       className={
@@ -380,7 +402,11 @@ export default function ProvidersSettings({
                     </span>
                   )}
                 </div>
-                <Button disabled={checking} onClick={() => void runCheck()}>
+                <Button
+                  disabled={checking || dirty}
+                  title={dirty ? t("provider_check_saved_note") : undefined}
+                  onClick={() => void runCheck()}
+                >
                   {checking ? t("checking_connection") : t("check_connection")}
                 </Button>
                 <Button

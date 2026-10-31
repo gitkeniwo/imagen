@@ -718,10 +718,18 @@ export default function App() {
 
   // Reuse a queued task's settings AND enqueue it immediately (skip the form).
   const reuseGenerateTask = useCallback(
-    (task: QueueTask) =>
+    (task: QueueTask) => {
+      const fitted = fitReused(task.provider, task.model);
+      // Same rule as queueing a draft: never queue for a provider that can't run.
+      if (!isReady(fitted.provider)) {
+        toast(t("queue_need_config", {
+          provider: providerInfo(fitted.provider)?.label ?? PROVIDER_LABELS[fitted.provider],
+        }));
+        return;
+      }
       enqueue({
         prompt: task.prompt,
-        ...fitReused(task.provider, task.model),
+        ...fitted,
         aspectRatio: task.aspectRatio,
         resolution: task.resolution,
         format: task.format,
@@ -729,8 +737,9 @@ export default function App() {
         outputImages: task.outputImages ?? [],
         tagIds: task.tagIds,
         skipIfPrecedingSucceeds: task.skipIfPrecedingSucceeds,
-      }),
-    [enqueue, fitReused],
+      });
+    },
+    [enqueue, fitReused, isReady, providerInfo, t, toast],
   );
 
   // Re-run a history record as-is (its live inputs, default format/no tags).

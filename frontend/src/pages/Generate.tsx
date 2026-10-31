@@ -103,7 +103,6 @@ export default function Generate({
   const { conn, remote } = useRemote();
   const {
     enabled: enabledProviders,
-    info: providerInfo,
     isReady,
     loaded: catalogLoaded,
     spec: specOf,
@@ -182,10 +181,10 @@ export default function Generate({
   // Phone summary line: "Pro · 1K · JPG · 1:1" (resolution only when the model
   // has one), prefixed with the provider once more than one is on.
   const modelShort = (spec?.label ?? MODEL_LABELS[model] ?? model)
-    .replace(/\s*\(.*\)$/, "");
+    .replace(/\s*\(.*\)$/, "")
+    .replace(/^Nano Banana (?=\S)/, "");
   const formatLabel = OUTPUT_FORMATS.find((f) => f.id === format)?.label ?? format;
-  const providerShort =
-    enabledProviders.length > 1 ? providerInfo(provider)?.label ?? provider : null;
+  const providerShort = enabledProviders.length > 1 ? providerLabel : null;
   const optionsSummary = [
     providerShort,
     modelShort,

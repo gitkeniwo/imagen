@@ -1,4 +1,4 @@
-import { OUTPUT_FORMATS, ProviderId } from "../api";
+import { FALLBACK_ASPECT_RATIOS, FALLBACK_RESOLUTIONS, OUTPUT_FORMATS, ProviderId } from "../api";
 import { useProviders } from "../useProviders";
 import { useI18n } from "../i18n";
 import Segmented from "./ui/Segmented";
@@ -35,7 +35,7 @@ export default function OptionBar({
   const isPro = (spec?.resolutions.length ?? 0) > 0;
   const resolutions = isPro
     ? spec!.resolutions
-    : [...new Set(providers.flatMap((p) => p.models.flatMap((m) => m.resolutions)))];
+    : FALLBACK_RESOLUTIONS;
   const formats = OUTPUT_FORMATS.filter((f) => spec?.outputFormats.includes(f.id) ?? true);
 
   return (
@@ -78,7 +78,7 @@ export default function OptionBar({
       <div className="mt-4">
         <label>{t("aspect")}</label>
         <div className="aspect-row">
-          {(spec?.aspectRatios ?? []).map((r) => {
+          {(spec?.aspectRatios ?? FALLBACK_ASPECT_RATIOS).map((r) => {
             return (
               <button
                 key={r}

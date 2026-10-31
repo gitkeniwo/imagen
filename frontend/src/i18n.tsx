@@ -599,10 +599,14 @@ const zh: Dict = {
   gemini_key_remove: "移除",
   gemini_remove_title: "移除 Gemini API 密钥？",
   gemini_remove_confirm: "Gemini API 将变为未配置，直到你保存另一个密钥。",
-  gemini_key_memory_note: "当前为内存模式：密钥会在 Imagen 重启后丢失。",
+  gemini_key_memory_note:
+    "当前为内存模式：密钥会在 Imagen 重启后丢失。要长期保存，请设置环境变量 IMAGEN_GEMINI_API_KEY。",
   gemini_key_env_only_note: "Docker 服务器模式只读取 IMAGEN_GEMINI_API_KEY，不能在这里保存密钥。",
-  gemini_storage_hint:
-    "保存在 Imagen 的配置目录（~/.config/imagen/secrets.json），不会进入图库目录或其备份。Docker 读取环境变量 IMAGEN_GEMINI_API_KEY。JPG 由本地转换（该 API 不支持选择输出格式）。",
+  gemini_storage_file:
+    "保存在 Imagen 的配置目录（~/.config/imagen/secrets.json），不会进入图库目录或其备份。",
+  gemini_jpg_note: "JPG 由本地转换（该 API 不支持选择输出格式）。",
+  provider_check_saved_note: "“检查连接”检查的是已保存的设置，请先保存修改。",
+  queue_need_config: "{provider} 尚未配置，无法重新加入队列。",
   jpg_converted_locally: "JPG 由本地转换",
   jpg_transcode_hint: "Gemini API 返回 PNG；应用会在本地将其保存为 JPG。",
   provider_error_last_provider: "至少保留一个生成服务开启。",
@@ -1210,11 +1214,14 @@ const en: Dict = {
   gemini_remove_confirm:
     "Gemini API will be unavailable until you save another key.",
   gemini_key_memory_note:
-    "Memory only: the key is lost when Imagen restarts.",
+    "Memory only: the key is lost when Imagen restarts. Set IMAGEN_GEMINI_API_KEY to keep it.",
   gemini_key_env_only_note:
     "Docker server mode only reads IMAGEN_GEMINI_API_KEY; a key cannot be saved here.",
-  gemini_storage_hint:
-    "Stored in Imagen's config folder (~/.config/imagen/secrets.json), never in the library folder or its backups. Docker reads IMAGEN_GEMINI_API_KEY. JPG output is converted locally (the API has no format option).",
+  gemini_storage_file:
+    "Stored in Imagen's config folder (~/.config/imagen/secrets.json), never in the library folder or its backups.",
+  gemini_jpg_note: "JPG output is converted locally (the API has no format option).",
+  provider_check_saved_note: "Check connection uses the saved settings. Save your changes first.",
+  queue_need_config: "{provider} isn't set up, so this can't be queued again.",
   jpg_converted_locally: "JPG converted locally",
   jpg_transcode_hint:
     "Gemini API returns PNG; the app converts and saves the output as JPG locally.",
