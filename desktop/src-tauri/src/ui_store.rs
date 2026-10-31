@@ -36,6 +36,13 @@ pub fn remote_path(app: &AppHandle) -> Option<PathBuf> {
         .and_then(|ui| ui.parent().map(|dir| dir.join("remote.json")))
 }
 
+/// `secrets.json` (Gemini API key, owned by the backend, mode 0600) beside the
+/// desktop config, or `None` in data-dir test mode.
+pub fn secrets_path(app: &AppHandle) -> Option<PathBuf> {
+    ui_path(app)
+        .and_then(|ui| ui.parent().map(|dir| dir.join("secrets.json")))
+}
+
 /// The stored object when the file exists, parses, and has our version.
 pub fn read_object(path: &Path) -> Option<Map<String, Value>> {
     let data = fs::read(path).ok()?;

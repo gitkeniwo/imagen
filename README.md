@@ -30,6 +30,24 @@ gcloud auth application-default set-quota-project <your-project>
 
 The account needs the `Vertex AI User` role. After starting the app, open **Settings** and fill in your Project ID and Location.
 
+### Gemini API (optional)
+
+Besides Vertex AI, Imagen can call the same Nano Banana models through the
+**Gemini API** (AI Studio) with an API key instead of ADC. Both providers show
+up in the composer's model menu, so you can switch per generation.
+
+1. Create a key in [Google AI Studio](https://aistudio.google.com/apikey).
+2. Open **Settings › Providers › Gemini**, paste the key and **Save** — or, for
+   Docker, set `IMAGEN_GEMINI_API_KEY` in the environment (the UI then shows the
+   key as read-only, provided by the environment).
+3. Turn the Gemini provider on. Vertex stays the default; at least one provider
+   must remain on.
+
+The key is stored in `~/.config/imagen/secrets.json` with mode `600` — never in
+the library folder or its backups, which are moved and copied around. Without
+that config file (plain dev server, data-directory test mode) the key lives in
+memory only and is lost on restart.
+
 ## Tech Stack
 
 - **Frontend:** React + Vite (TypeScript), no-dependency i18n
