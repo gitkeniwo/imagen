@@ -453,6 +453,8 @@ export default function ImageViewer({
         <ZoomStage
           image={current}
           panelHidden={panelHidden}
+          starred={starred}
+          onToggleStar={toggleStar}
           onTogglePanel={() => setPanelHidden((h) => !h)}
           onZoomedChange={onZoomedChange}
           onNavigate={multi ? goTo : undefined}
