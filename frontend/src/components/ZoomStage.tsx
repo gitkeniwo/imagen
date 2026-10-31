@@ -29,6 +29,8 @@ interface View {
 export default function ZoomStage({
   image,
   panelHidden,
+  starred,
+  onToggleStar,
   onTogglePanel,
   onZoomedChange,
   onNavigate,
@@ -38,6 +40,8 @@ export default function ZoomStage({
 }: {
   image: ImageRow;
   panelHidden: boolean;
+  starred: boolean;
+  onToggleStar: () => void;
   onTogglePanel: () => void;
   onZoomedChange: (zoomed: boolean) => void;
   // Fit only: horizontal swipe/flick to the previous (-1) or next (+1) image.
@@ -509,6 +513,14 @@ export default function ZoomStage({
           1:1
         </button>
         <span className="zoom-sep" aria-hidden="true" />
+        <IconButton
+          className={`zoom-favorite${starred ? " is-starred" : ""}`}
+          icon="favorite"
+          filled={starred}
+          label={starred ? t("unfavorite") : t("favorite")}
+          aria-pressed={starred}
+          onClick={onToggleStar}
+        />
         <button
           type="button"
           className="zoom-icon"

@@ -1059,6 +1059,10 @@ body.resizing-sidebar .side-panel {
 .zoom-hud .icon-btn, .zoom-hud .zoom-icon { width: 32px; height: 32px; color: inherit; border-radius: 8px; }
 .zoom-hud .icon-btn:hover:not(:disabled), .zoom-text:hover:not(:disabled), .zoom-icon:hover { background: rgba(255, 255, 255, 0.1); }
 .zoom-hud .icon-btn:disabled { opacity: 0.35; }
+.zoom-hud .zoom-favorite { width: 32px; height: 32px; color: inherit; border-radius: 8px; }
+.zoom-hud .zoom-favorite:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.zoom-hud .zoom-favorite.is-starred,
+.zoom-hud .zoom-favorite.is-starred:hover:not(:disabled) { color: var(--warning); }
 .zoom-pct { min-width: 52px; text-align: center; font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
 .zoom-sep { width: 1px; height: 18px; background: rgba(255, 255, 255, 0.15); margin: 0 4px; }
 .zoom-text, .zoom-icon {
