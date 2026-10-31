@@ -257,6 +257,11 @@ pub fn spawn(app: &AppHandle) -> Result<u32, String> {
     if let Some(remote) = crate::ui_store::remote_path(app) {
         cmd.env("IMAGEN_REMOTE_PATH", remote);
     }
+    // Also the backend's: secrets.json (Gemini API key, 0600) stays out of the
+    // library so moving or backing it up never carries the key along.
+    if let Some(secrets) = crate::ui_store::secrets_path(app) {
+        cmd.env("IMAGEN_SECRETS_PATH", secrets);
+    }
 
     let log = OpenOptions::new()
         .create(true)

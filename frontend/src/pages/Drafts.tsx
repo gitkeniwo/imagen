@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, Draft, draftToTaskSpec, ImageRow, TaskSpec } from "../api";
+import { api, Draft, draftToTaskSpec, ImageRow, providerOf, TaskSpec } from "../api";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import DraftEditorModal from "../components/DraftEditorModal";
 import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
@@ -28,7 +29,6 @@ function initialDraftColumns() {
 export default function Drafts({
   compact = false,
   refreshKey = 0,
-  canQueue,
   onQueue,
   onOpenViewer,
   onChanged,
@@ -36,7 +36,6 @@ export default function Drafts({
 }: {
   compact?: boolean;
   refreshKey?: number;
-  canQueue: boolean;
   onQueue: (task: TaskSpec) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   // Called after a draft is created or removed, so counts elsewhere refresh.
@@ -45,6 +44,7 @@ export default function Drafts({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const { isReady } = useProviders();
   const askConfirm = useConfirm();
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [query, setQuery] = useState("");
@@ -91,7 +91,8 @@ export default function Drafts({
   };
 
   const queueDraft = async (draft: Draft, removeAfter: boolean) => {
-    if (!canQueue) {
+    // Each draft is queued on its own provider, so readiness is per draft.
+    if (!isReady(providerOf(draft))) {
       toast(t("draft_need_config"));
       return;
     }
@@ -274,6 +275,7 @@ export default function Drafts({
                     </button>
                   )
                 }
+                provider={providerOf(draft)}
                 meta={[draft.model.replace("-image", ""), draft.aspect_ratio, draft.resolution]}
                 prompt={draft.prompt}
                 promptLines={compact ? 3 : 4}

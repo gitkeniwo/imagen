@@ -34,6 +34,7 @@ function workspaceFromDraft(
     ...base,
     prompt: draft.prompt,
     inputIds: [...draft.inputIds],
+    provider: draft.provider,
     model: draft.model,
     aspectRatio: draft.aspectRatio,
     resolution: draft.resolution,
@@ -112,6 +113,17 @@ export function useComposerWorkspaces(libraryKey: string | null) {
         id: workspace.id,
         updatedAt: Date.now(),
       }));
+    },
+    [updateWorkspace],
+  );
+
+  // Catalog corrections (provider turned off, model it doesn't serve). Not a
+  // user edit: it must not count as "touched", or a catalog that arrives
+  // before hydration would overwrite the stored workspace with the memory one.
+  const fitDraft = useCallback(
+    (patch: Partial<ComposerDraft>) => {
+      const id = activeIdRef.current;
+      updateWorkspace(id, (workspace) => ({ ...workspace, ...patch, id: workspace.id }));
     },
     [updateWorkspace],
   );
@@ -611,6 +623,7 @@ export function useComposerWorkspaces(libraryKey: string | null) {
     tray,
     hydrated,
     updateDraft,
+    fitDraft,
     clearComposer,
     addToTray,
     addManyToTray,

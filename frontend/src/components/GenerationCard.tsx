@@ -1,10 +1,11 @@
 import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { ImageRow, MARKER_COLORS, MarkerColor, TagRef, downloadName, imgFileUrl, imgThumbUrl } from "../api";
+import { ImageRow, MARKER_COLORS, MarkerColor, ProviderId, TagRef, downloadName, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
 import Icon, { type IconName } from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Menu, { type MenuItem } from "./ui/Menu";
+import ProviderBadge from "./ProviderBadge";
 
 export const markerHex = (color: MarkerColor | null | undefined) =>
   MARKER_COLORS.find((item) => item.id === color)?.hex ?? MARKER_COLORS[0].hex;
@@ -89,6 +90,7 @@ export default function GenerationCard({
   overlay,
   markerColor,
   header,
+  provider,
   meta,
   substatus,
   error,
@@ -113,6 +115,7 @@ export default function GenerationCard({
   overlay?: ReactNode;
   markerColor?: MarkerColor | null;
   header?: ReactNode;
+  provider?: ProviderId;
   meta: (string | null | undefined)[];
   substatus?: string | null;
   error?: { kind: string; message: string } | null;
@@ -186,7 +189,10 @@ export default function GenerationCard({
           </div>
         )}
         {header}
-        <div className="gcard-meta">{meta.filter(Boolean).join(" · ")}</div>
+        <div className="gcard-meta">
+          {provider && <ProviderBadge provider={provider} />}
+          {meta.filter(Boolean).join(" · ")}
+        </div>
         {substatus && <div className="q-substatus">{substatus}</div>}
         {error && <ErrorLine kind={error.kind} message={error.message} />}
         {prompt && <PromptFold text={prompt} lines={promptLines} />}

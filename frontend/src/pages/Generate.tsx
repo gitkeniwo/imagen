@@ -3,7 +3,7 @@ import { Prefill } from "../App";
 import {
   ImageRow,
   MAX_TASK_ATTEMPTS,
-  MODELS,
+  MODEL_LABELS,
   normalizeModelId,
   OUTPUT_FORMATS,
   QueueTask,
@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { ComposerDraft, WorkspaceRecord } from "../composerDraft";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import Popover from "../components/ui/Popover";
 import ReferenceTray from "../components/ReferenceTray";
 import QueueList from "../components/QueueList";
@@ -100,9 +101,16 @@ export default function Generate({
   const { t } = useI18n();
   const [saveOpen, setSaveOpen] = useState(false);
   const { conn, remote } = useRemote();
+  const {
+    enabled: enabledProviders,
+    isReady,
+    loaded: catalogLoaded,
+    spec: specOf,
+  } = useProviders();
   // The draft itself lives in App so one place owns loading/saving it.
   const {
     prompt,
+    provider,
     model,
     aspectRatio,
     resolution,
@@ -111,6 +119,7 @@ export default function Generate({
     skipIfPrecedingSucceeds,
   } = draft;
   const setPrompt = (v: string) => updateDraft({ prompt: v });
+  const setProvider = (v: TaskSpec["provider"]) => updateDraft({ provider: v });
   const setModel = (v: string) => updateDraft({ model: v });
   const setAspectRatio = (v: string) => updateDraft({ aspectRatio: v });
   const setResolution = (v: string) => updateDraft({ resolution: v });
@@ -148,6 +157,7 @@ export default function Generate({
     if (prefill) {
       updateDraft({
         prompt: prefill.prompt,
+        provider: prefill.provider,
         model: normalizeModelId(prefill.model),
         ...(prefill.aspectRatio ? { aspectRatio: prefill.aspectRatio } : {}),
         ...(prefill.resolution ? { resolution: prefill.resolution } : {}),
@@ -156,22 +166,41 @@ export default function Generate({
     }
   }, [prefill, consumePrefill, updateDraft]);
 
-  const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
+  const spec = specOf(provider, model);
+  const hasResolution = (spec?.resolutions.length ?? 0) > 0;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
+  const providerLabel = t(`provider_short_${provider}`);
+  const openProviderSettings = () => {
+    window.dispatchEvent(
+      new CustomEvent("imagen:open-settings", {
+        detail: `providers:${provider}`,
+      }),
+    );
+  };
 
-  // Phone summary line: "Pro · 1K · JPG · 1:1" (resolution only for Pro).
-  const modelShort = (MODELS.find((m) => m.id === model)?.label ?? model)
-    .replace(/\s*\(.*\)$/, "");
+  // Phone summary line: "Pro · 1K · JPG · 1:1" (resolution only when the model
+  // has one), prefixed with the provider once more than one is on.
+  const modelShort = (spec?.label ?? MODEL_LABELS[model] ?? model)
+    .replace(/\s*\(.*\)$/, "")
+    .replace(/^Nano Banana (?=\S)/, "");
   const formatLabel = OUTPUT_FORMATS.find((f) => f.id === format)?.label ?? format;
-  const optionsSummary = [modelShort, isPro ? resolution : null, formatLabel, aspectRatio]
+  const providerShort = enabledProviders.length > 1 ? providerLabel : null;
+  const optionsSummary = [
+    providerShort,
+    modelShort,
+    hasResolution ? resolution : null,
+    formatLabel,
+    aspectRatio,
+  ]
     .filter(Boolean)
     .join(" · ");
 
   const currentTask = (): TaskSpec => ({
     prompt,
+    provider,
     model,
     aspectRatio,
-    resolution: isPro ? resolution : null,
+    resolution: hasResolution ? resolution : null,
     format,
     inputs: [...tray],
     outputImages: [],
@@ -340,7 +369,9 @@ export default function Generate({
         {!phone && (
           <>
             <ComposerParams
+              provider={provider}
               model={model}
+              setProvider={setProvider}
               setModel={setModel}
               aspectRatio={aspectRatio}
               setAspectRatio={setAspectRatio}
@@ -360,7 +391,15 @@ export default function Generate({
                 title={t("skip_if_preceding_succeeds_title")}
               />
               <div className="spacer" />
-              {!keyConfigured && <span className="muted small">{t("need_key_inline").replace(/^ · /, "")}</span>}
+              {catalogLoaded && !isReady(provider) && (
+                <button
+                  type="button"
+                  className="provider-missing-link"
+                  onClick={openProviderSettings}
+                >
+                  {t("provider_not_set_up_link", { provider: providerLabel })}
+                </button>
+              )}
               <Button icon="saveDraft" onClick={() => onSaveDraft(currentTask())} title={t("save_draft_hint")}>
                 {t("save_draft")}
               </Button>
@@ -401,7 +440,15 @@ export default function Generate({
       {phone && (
         <>
           <div className="phone-dock">
-            {!keyConfigured && <div className="phone-dock-note">{t("no_key_warning")}</div>}
+            {catalogLoaded && !isReady(provider) && (
+              <button
+                type="button"
+                className="phone-dock-note provider-missing-link"
+                onClick={openProviderSettings}
+              >
+                {t("provider_not_set_up_link", { provider: providerLabel })}
+              </button>
+            )}
             <AttemptsStepper attempts={attempts} setAttempts={setAttempts} />
             <button
               type="button"
@@ -429,7 +476,9 @@ export default function Generate({
               }
             >
               <ComposerParams
+                provider={provider}
                 model={model}
+                setProvider={setProvider}
                 setModel={setModel}
                 aspectRatio={aspectRatio}
                 setAspectRatio={setAspectRatio}

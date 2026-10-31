@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS generations (
     created_at      TEXT,
     source          TEXT NOT NULL DEFAULT 'vertex', -- 'vertex' (real call) | 'manual' (logged)
     client_task_id  TEXT,
-    marker_color    TEXT
+    marker_color    TEXT,
+    provider        TEXT NOT NULL DEFAULT 'vertex' -- 'vertex' | 'gemini'
 );
 
 CREATE TABLE IF NOT EXISTS generation_inputs (
@@ -89,7 +90,8 @@ CREATE TABLE IF NOT EXISTS drafts (
     pinned                      INTEGER NOT NULL DEFAULT 0,
     legacy_generation_id        INTEGER UNIQUE REFERENCES generations(id),
     created_at                  TEXT NOT NULL,
-    updated_at                  TEXT NOT NULL
+    updated_at                  TEXT NOT NULL,
+    provider                    TEXT NOT NULL DEFAULT 'vertex'
 );
 
 CREATE TABLE IF NOT EXISTS draft_images (
@@ -152,6 +154,16 @@ def _migrate(conn) -> None:
         conn.execute("ALTER TABLE generations ADD COLUMN client_task_id TEXT")
     if "marker_color" not in gen_cols:
         conn.execute("ALTER TABLE generations ADD COLUMN marker_color TEXT")
+    # Rows from before multi-provider support were all Vertex calls.
+    if "provider" not in gen_cols:
+        conn.execute(
+            "ALTER TABLE generations ADD COLUMN provider TEXT NOT NULL DEFAULT 'vertex'"
+        )
+    draft_cols = {r["name"] for r in conn.execute("PRAGMA table_info(drafts)")}
+    if "provider" not in draft_cols:
+        conn.execute(
+            "ALTER TABLE drafts ADD COLUMN provider TEXT NOT NULL DEFAULT 'vertex'"
+        )
 
     # A process restart necessarily interrupts every in-flight request. Keep
     # its prompt/history record, but do not leave a permanent "waiting" card.

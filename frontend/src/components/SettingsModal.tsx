@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, LibraryInfo } from "../api";
+import { api, isProviderId, LibraryInfo, ProviderId } from "../api";
 import { useI18n } from "../i18n";
 import Icon, { type IconName } from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
@@ -7,12 +7,17 @@ import Segmented from "./ui/Segmented";
 import RemoteSettings from "./RemoteSettings";
 import { useRemote } from "../remote";
 import { useBackLayer } from "../backStack";
+import ProvidersSettings from "./ProvidersSettings";
 
-type Section = "library" | "vertex" | "prefs" | "remote" | "device";
+type Section = "library" | "providers" | "prefs" | "remote" | "device";
+export type SettingsSection =
+  | Section
+  | "vertex"
+  | `providers:${ProviderId}`;
 
 const SECTIONS: { id: Section; icon: IconName; label: string }[] = [
   { id: "library", icon: "libraryFolder", label: "settings_section_library" },
-  { id: "vertex", icon: "cloud", label: "settings_section_vertex" },
+  { id: "providers", icon: "cloud", label: "settings_section_providers" },
   { id: "prefs", icon: "preferences", label: "settings_section_prefs" },
   { id: "remote", icon: "radio", label: "settings_section_remote" },
   { id: "device", icon: "tablet", label: "settings_section_device" },
@@ -38,7 +43,7 @@ export default function SettingsModal({
   setUndoSeconds,
   initialSection = "library",
 }: {
-  initialSection?: Section;
+  initialSection?: SettingsSection;
   onClose: () => void;
   onSaved: () => void;
   undoSeconds: number;
@@ -46,15 +51,28 @@ export default function SettingsModal({
 }) {
   const { t, lang, setLang } = useI18n();
   const { remote, hostName, device, signOut } = useRemote();
-  const [section, setSection] = useState<Section>(initialSection);
+  const initial = (() => {
+    if (initialSection === "vertex" || initialSection.startsWith("providers")) {
+      return {
+        section: "providers" as const,
+        provider: initialSection.includes(":")
+          ? (initialSection.split(":")[1] as ProviderId)
+          : undefined,
+      };
+    }
+    return { section: initialSection as Section, provider: undefined };
+  })();
+  const [section, setSection] = useState<Section>(initial.section);
   // The menubar popover can ask for another section while the modal is already
   // open (window event -> App state). The prop only changes on that request.
-  useEffect(() => setSection(initialSection), [initialSection]);
-  const [project, setProject] = useState("");
-  const [location, setLocation] = useState("global");
+  useEffect(() => {
+    if (initialSection === "vertex" || initialSection.startsWith("providers")) {
+      setSection("providers");
+    } else {
+      setSection(initialSection as Section);
+    }
+  }, [initialSection]);
   const [library, setLibrary] = useState<LibraryInfo | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   // Set while the shell's native folder dialog is up; the page has no way to
   // hear about a cancel, so it clears when the window gets focus back.
   const [picking, setPicking] = useState(false);
@@ -65,10 +83,6 @@ export default function SettingsModal({
   useBackLayer(true, onClose);
 
   useEffect(() => {
-    api.getVertex().then((v) => {
-      if (v.project) setProject(v.project);
-      if (v.location) setLocation(v.location);
-    });
     api.getLibrary().then(setLibrary).catch(() => setLibrary(null));
   }, []);
 
@@ -95,20 +109,6 @@ export default function SettingsModal({
   const pick = (action: string) => {
     setPicking(true);
     shellAction(action);
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setErr(null);
-    try {
-      await api.setVertex(project.trim(), location.trim() || "global");
-      onSaved();
-      onClose();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const when = (secs: number | null) => {
@@ -283,44 +283,15 @@ export default function SettingsModal({
             </div>
           )}
 
-          {section === "vertex" && remote && (
-            <div className="settings-body">
-              <div className="rm-callout lock"><Icon name="lock" size="sm" /><span>{t("remote_vertex_lock")}</span></div>
-            </div>
-          )}
-
-          {section === "vertex" && !remote && (
-            <div className="settings-body">
-              <p className="m-0 settings-lead">{t("settings_desc")}</p>
-              <div className="settings-vertex-grid">
-                <div>
-                  <label htmlFor="settings-project">{t("settings_project")}</label>
-                  <input
-                    id="settings-project"
-                    value={project}
-                    placeholder="my-gcp-project-id"
-                    onChange={(e) => setProject(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label htmlFor="settings-location">{t("settings_location")}</label>
-                  <input
-                    id="settings-location"
-                    value={location}
-                    placeholder="global"
-                    onChange={(e) => setLocation(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="settings-callout">{t("settings_adc_hint")}</div>
-              {err && <div className="notice error small">{err}</div>}
-              <div className="settings-actions">
-                <Button variant="primary" onClick={save} disabled={saving || !project.trim()}>
-                  {saving ? t("saving") : t("settings_save_vertex")}
-                </Button>
-              </div>
-            </div>
+          {section === "providers" && (
+            <ProvidersSettings
+              initialProvider={
+                initial.provider && isProviderId(initial.provider)
+                  ? initial.provider
+                  : undefined
+              }
+              onSaved={onSaved}
+            />
           )}
 
           {section === "prefs" && (

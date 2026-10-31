@@ -11,6 +11,9 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       # IMAGEN_ACCESS_CODE: "24680"   # 5 digits; every browser must sign in
+      # Optional Gemini API provider (AI Studio key). Vertex AI works without
+      # it; the key stays in the environment, never in /data or the library.
+      # IMAGEN_GEMINI_API_KEY: ""
       IMAGEN_DATA_DIR: /data
       GOOGLE_APPLICATION_CREDENTIALS: /gcloud/adc.json
     volumes:

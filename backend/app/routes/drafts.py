@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import tagging
+from .. import providers, tagging
 from ..db import get_conn
 from ..models import DraftCreate, DraftUpdate
 
@@ -25,6 +25,12 @@ def _validate_refs(conn, image_ids: list[int], tag_ids: list[int]) -> None:
     for tag_id in _unique(tag_ids):
         if not conn.execute("SELECT 1 FROM tags WHERE id = ?", (tag_id,)).fetchone():
             raise HTTPException(status_code=404, detail=f"Tag {tag_id} does not exist.")
+
+
+def _validate_provider(provider_id: str) -> None:
+    # Drafts may belong to a provider that is off or not set up yet.
+    if providers.get(provider_id) is None:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_id}")
 
 
 def _replace_images(conn, draft_id: int, role: str, image_ids: list[int]) -> None:
@@ -136,14 +142,15 @@ def create_draft(body: DraftCreate):
     input_ids = _unique(body.inputImageIds)
     output_ids = _unique(body.outputImageIds)
     tag_ids = _unique(body.tagIds)
+    _validate_provider(body.provider)
     with get_conn() as conn:
         _validate_refs(conn, [*input_ids, *output_ids], tag_ids)
         cur = conn.execute(
             """INSERT INTO drafts
-               (prompt, model, aspect_ratio, resolution, output_format,
+               (prompt, provider, model, aspect_ratio, resolution, output_format,
                 skip_if_preceding_succeeds, pinned, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (body.prompt, body.model, body.aspectRatio, body.resolution,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (body.prompt, body.provider, body.model, body.aspectRatio, body.resolution,
              body.outputFormat, int(body.skipIfPrecedingSucceeds), int(body.pinned),
              now, now),
         )
@@ -157,6 +164,10 @@ def create_draft(body: DraftCreate):
 @router.patch("/{draft_id}")
 def update_draft(draft_id: int, body: DraftUpdate):
     data = body.model_dump(exclude_unset=True)
+    if data.get("provider") is not None:
+        _validate_provider(data["provider"])
+    elif "provider" in data:
+        data.pop("provider")  # explicit null: keep the stored provider
     with get_conn() as conn:
         _get(conn, draft_id)
         input_ids = data.get("inputImageIds")
@@ -169,6 +180,7 @@ def update_draft(draft_id: int, body: DraftUpdate):
         )
         column_map = {
             "prompt": "prompt",
+            "provider": "provider",
             "model": "model",
             "aspectRatio": "aspect_ratio",
             "resolution": "resolution",

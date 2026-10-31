@@ -1,11 +1,14 @@
-import { ASPECT_RATIOS, MODELS, OUTPUT_FORMATS, RESOLUTIONS } from "../api";
+import { FALLBACK_ASPECT_RATIOS, FALLBACK_RESOLUTIONS, OUTPUT_FORMATS, ProviderId } from "../api";
+import { useProviders } from "../useProviders";
 import { useI18n } from "../i18n";
-import CustomSelect from "./CustomSelect";
 import Segmented from "./ui/Segmented";
 import { AspectShape } from "./ComposerControls";
+import ModelMenu from "./ModelMenu";
 
 export default function OptionBar({
+  provider,
   model,
+  setProvider,
   setModel,
   aspectRatio,
   setAspectRatio,
@@ -14,7 +17,9 @@ export default function OptionBar({
   format,
   setFormat,
 }: {
+  provider: ProviderId;
   model: string;
+  setProvider: (provider: ProviderId) => void;
   setModel: (v: string) => void;
   aspectRatio: string;
   setAspectRatio: (v: string) => void;
@@ -24,17 +29,28 @@ export default function OptionBar({
   setFormat: (v: string) => void;
 }) {
   const { t } = useI18n();
-  const isPro = MODELS.find((m) => m.id === model)?.pro ?? false;
+  const { spec: specOf, providers } = useProviders();
+  const spec = specOf(provider, model);
+  const choices = providers.filter((info) => info.enabled || info.id === provider);
+  const isPro = (spec?.resolutions.length ?? 0) > 0;
+  const resolutions = isPro
+    ? spec!.resolutions
+    : FALLBACK_RESOLUTIONS;
+  const formats = OUTPUT_FORMATS.filter((f) => spec?.outputFormats.includes(f.id) ?? true);
 
   return (
     <div>
       <div className="row">
         <div>
           <label>{t("model")}</label>
-          <CustomSelect
-            value={model}
-            onChange={setModel}
-            options={MODELS.map((m) => ({ id: m.id, label: m.label }))}
+          <ModelMenu
+            provider={provider}
+            model={model}
+            providers={choices}
+            onChange={(choice) => {
+              setProvider(choice.provider);
+              setModel(choice.model);
+            }}
           />
         </div>
         <div>
@@ -46,7 +62,7 @@ export default function OptionBar({
             value={resolution}
             onChange={setResolution}
             disabled={!isPro}
-            options={RESOLUTIONS.map((r) => ({ value: r, label: r }))}
+            options={resolutions.map((r) => ({ value: r, label: r }))}
           />
         </div>
         <div>
@@ -54,7 +70,7 @@ export default function OptionBar({
           <Segmented
             value={format}
             onChange={setFormat}
-            options={OUTPUT_FORMATS.map((f) => ({ value: f.id, label: f.label }))}
+            options={formats.map((f) => ({ value: f.id, label: f.label }))}
           />
         </div>
       </div>
@@ -62,7 +78,7 @@ export default function OptionBar({
       <div className="mt-4">
         <label>{t("aspect")}</label>
         <div className="aspect-row">
-          {ASPECT_RATIOS.map((r) => {
+          {(spec?.aspectRatios ?? FALLBACK_ASPECT_RATIOS).map((r) => {
             return (
               <button
                 key={r}

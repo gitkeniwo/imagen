@@ -34,6 +34,8 @@ export interface ImageRow {
 export interface Generation {
   id: number;
   prompt: string;
+  // Missing on rows from an older backend: treat as "vertex" (providerOf).
+  provider?: ProviderId;
   model: string;
   aspect_ratio: string | null;
   resolution: string | null;
@@ -77,6 +79,7 @@ export type TaskStatus =
 // all exchange this shape so fields cannot silently drift between features.
 export interface TaskSpec {
   prompt: string;
+  provider: ProviderId;
   model: string;
   aspectRatio: string;
   resolution: string | null;
@@ -110,6 +113,7 @@ export interface QueueTask extends TaskSpec {
 export interface Draft {
   id: number;
   prompt: string;
+  provider?: ProviderId;
   model: string;
   aspect_ratio: string | null;
   resolution: string | null;
@@ -126,6 +130,7 @@ export interface Draft {
 
 export interface DraftBody {
   prompt: string;
+  provider: ProviderId;
   model: string;
   aspectRatio?: string | null;
   resolution?: string | null;
@@ -139,6 +144,7 @@ export interface DraftBody {
 
 export const draftToTaskSpec = (draft: Draft): TaskSpec => ({
   prompt: draft.prompt,
+  provider: providerOf(draft),
   model: normalizeModelId(draft.model),
   aspectRatio: draft.aspect_ratio ?? "1:1",
   resolution: draft.resolution,
@@ -160,6 +166,7 @@ export interface GenerateResult {
 
 export interface GenerateBody {
   prompt: string;
+  provider: ProviderId;
   model: string;
   aspectRatio?: string | null;
   resolution?: string | null;
@@ -173,6 +180,7 @@ export interface GenerateBody {
 
 export interface ManualGenerationBody {
   prompt: string;
+  provider: ProviderId;
   model: string;
   aspectRatio?: string | null;
   resolution?: string | null;
@@ -193,6 +201,7 @@ export interface TaskPhase {
 }
 
 export interface CostBasisRow {
+  provider: ProviderId;
   model: string;
   resolution: string | null;
   count: number;
@@ -215,6 +224,7 @@ export interface PeriodStats {
   total: number;
   by_status: Record<string, number>;
   by_model: Record<string, number>;
+  by_provider: Record<string, number>;
   cost_basis: CostBasisRow[];
   images: { total: number; by_source: Record<string, number>; bytes: number };
   chart: SeriesPoint[];
@@ -285,6 +295,54 @@ const MODEL_ALIASES: Record<string, string> = {
 
 export const normalizeModelId = (model: string) => MODEL_ALIASES[model] ?? model;
 
+// --- Providers --------------------------------------------------------------
+
+export type ProviderId = "vertex" | "gemini";
+
+export const PROVIDER_IDS: ProviderId[] = ["vertex", "gemini"];
+
+export const isProviderId = (value: unknown): value is ProviderId =>
+  PROVIDER_IDS.includes(value as ProviderId);
+
+// Rows written before providers existed (or by an older backend) are Vertex.
+export const providerOf = (row: { provider?: string | null }): ProviderId =>
+  isProviderId(row.provider) ? row.provider : "vertex";
+
+// One model as a provider serves it. Empty lists disable that control.
+export interface ModelSpec {
+  id: string;
+  label: string;
+  resolutions: string[];
+  aspectRatios: string[];
+  outputFormats: string[];
+  // Formats produced by converting locally (the API itself can't return them).
+  transcodes: string[];
+}
+
+export interface ProviderInfo {
+  id: ProviderId;
+  label: string;
+  enabled: boolean;
+  configured: boolean;
+  // Non-secret, provider-specific. LAN devices get neither project nor keyLast4.
+  detail: {
+    project?: string | null;
+    location?: string;
+    keySource?: "env" | "saved" | null;
+    keyLast4?: string | null;
+    keyStorage?: string;
+  };
+  models: ModelSpec[];
+}
+
+export interface ProviderCheck {
+  ok: boolean;
+  message: string;
+  models: string[];
+  // Gemini only: whether each model's expected wire id is visible to the key.
+  expected?: { id: string; wireId: string; found: boolean }[];
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
@@ -322,6 +380,12 @@ export interface LibraryInfo {
   recent: { index: number; path: string; name: string; opened_at: number | null; exists: boolean }[];
 }
 
+const jsonInit = (method: string, body?: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
 // Short-lived tags cache: Library/History/TagPicker all request /api/tags on
 // mount and on every refresh, usually within the same second. The TTL is kept
 // short because tag *counts* change as images are tagged/removed elsewhere.
@@ -333,6 +397,21 @@ function invalidateTags() {
 }
 
 export const api = {
+  async getProviders(): Promise<{ providers: ProviderInfo[] }> {
+    return handle(await fetch("/api/providers", { cache: "no-store" }));
+  },
+  async setProviderEnabled(id: ProviderId, enabled: boolean): Promise<{ providers: ProviderInfo[] }> {
+    return handle(await fetch(`/api/providers/${id}`, jsonInit("PUT", { enabled })));
+  },
+  async setGeminiKey(key: string): Promise<{ providers: ProviderInfo[] }> {
+    return handle(await fetch("/api/providers/gemini/key", jsonInit("PUT", { key })));
+  },
+  async deleteGeminiKey(): Promise<{ providers: ProviderInfo[] }> {
+    return handle(await fetch("/api/providers/gemini/key", { method: "DELETE" }));
+  },
+  async checkProvider(id: ProviderId): Promise<ProviderCheck> {
+    return handle(await fetch(`/api/providers/${id}/check`, { method: "POST" }));
+  },
   async getVertex(): Promise<VertexConfig> {
     return handle(await fetch("/api/settings/vertex"));
   },
@@ -574,17 +653,25 @@ export const api = {
   },
 };
 
-// Pro is first so it is the default selection.
-export const MODELS = [
-  { id: "gemini-3-pro-image", label: "Nano Banana Pro (3 Pro)", pro: true },
-  { id: "gemini-2.5-flash-image", label: "Nano Banana (2.5 Flash)", pro: false },
-];
-
-export const ASPECT_RATIOS = [
+// The catalog (GET /api/providers) is the source of truth for what each model
+// accepts. These are display fallbacks only: full names for tooltips, and
+// labels for records whose provider is off or whose catalog hasn't loaded.
+export const DEFAULT_MODEL = "gemini-3-pro-image";
+// Shown while the catalog loads, so the option rows don't jump in later.
+export const FALLBACK_ASPECT_RATIOS = [
   "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9",
 ];
+export const FALLBACK_RESOLUTIONS = ["1K", "2K", "4K"];
 
-export const RESOLUTIONS = ["1K", "2K", "4K"];
+export const MODEL_LABELS: Record<string, string> = {
+  "gemini-3-pro-image": "Nano Banana Pro (3 Pro)",
+  "gemini-2.5-flash-image": "Nano Banana (2.5 Flash)",
+};
+
+export const PROVIDER_LABELS: Record<ProviderId, string> = {
+  vertex: "Vertex AI",
+  gemini: "Gemini API",
+};
 
 export const OUTPUT_FORMATS = [
   { id: "image/jpeg", label: "JPG" },
@@ -654,12 +741,6 @@ export type RemoteLoginResult =
   | { ok: false; error: "wrong_code"; remaining: number }
   | { ok: false; error: "locked"; retryAfter: number }
   | { ok: false; error: "network" };
-
-const jsonInit = (method: string, body?: unknown): RequestInit => ({
-  method,
-  headers: { "Content-Type": "application/json" },
-  body: body === undefined ? undefined : JSON.stringify(body),
-});
 
 // --- Desktop shell bridge ---------------------------------------------------
 

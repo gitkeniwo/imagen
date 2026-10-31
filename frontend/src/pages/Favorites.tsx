@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useState } from "react";
-import { api, Generation, ImageRow } from "../api";
+import { api, Generation, ImageRow, providerOf } from "../api";
 import { useI18n } from "../i18n";
+import { useProviders } from "../useProviders";
 import AddHistoryModal from "../components/AddHistoryModal";
 import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
@@ -44,6 +45,7 @@ export default function Favorites({
   phone?: boolean;
 }) {
   const { t } = useI18n();
+  const { isReady } = useProviders();
   const toast = useToast();
   const [gens, setGens] = useState<Generation[]>([]);
   const [query, setQuery] = useState("");
@@ -255,7 +257,7 @@ export default function Favorites({
                 onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
                 tags={outImg?.tags ?? []}
                 onReuse={() => onReuse(g)}
-                onRerun={onRerun ? () => onRerun(g) : undefined}
+                onRerun={onRerun && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
                 onUseAsRef={onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined}
                 onEdit={() => setEditingGen(g)}
                 onDuplicate={() => setDuplicatingGen(g)}

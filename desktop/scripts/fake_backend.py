@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Test-only backend for the Tauri shell self-checks.
 
-Reuses ``app.desktop``'s startup logic but replaces ``app.gemini.generate`` with
-a controllable fake and mounts a few ``/__test/*`` pages that run checks inside
+Reuses ``app.desktop``'s startup logic but replaces every provider's
+``generate`` (``app.providers.vertex`` / ``app.providers.gemini_api``) with a
+controllable fake, reports the Gemini API as configured without a key, and mounts a few ``/__test/*`` pages that run checks inside
 WKWebView, reporting results back over HTTP. Never shipped in the bundle: the
 PyInstaller spec only collects the ``app`` package.
 
@@ -37,6 +38,8 @@ _STATE_LOCK = threading.Lock()
 # Per-request overrides used by check_remote.sh to exercise each outcome
 # without restarting the process (None = fall back to the env var).
 _FAKE: dict[str, float | str | None] = {"delay": None, "outcome": None}
+# Provider of the most recent fake generation (see /__test/fake-state).
+_LAST: dict[str, str | None] = {"provider": None, "model": None}
 _LOG_PATH: Path | None = None
 
 
@@ -60,14 +63,25 @@ def _make_png() -> tuple[bytes, str]:
 
 
 def install_fake_generate() -> None:
-    """Patch app.gemini.generate before app.main imports it."""
-    from app import gemini
+    """Patch the providers' generate before app.main imports them.
 
-    async def fake_generate(
-        project,
-        location,
-        prompt,
+    Vertex keeps its real status() (the seed sets a synthetic project, and
+    check_generate_stream.sh relies on the "no project" 400); the Gemini API
+    reports a fake key so tests never need a real one.
+    """
+    from app import providers
+    from app.providers import GenResult, gemini_api
+
+    def make_fake(provider_id):
+        async def fake_generate(**kwargs):
+            return await _fake_generate(provider_id, **kwargs)
+        return fake_generate
+
+    async def _fake_generate(
+        provider_id,
+        *,
         model,
+        prompt,
         aspect_ratio,
         resolution,
         images,
@@ -78,6 +92,8 @@ def install_fake_generate() -> None:
         with _STATE_LOCK:
             delay_override = _FAKE["delay"]
             outcome_override = _FAKE["outcome"]
+            _LAST["provider"] = provider_id
+            _LAST["model"] = model.id
         delay = float(delay_override if delay_override is not None
                       else (os.environ.get("FAKE_DELAY_S") or "0"))
         outcome = str(outcome_override if outcome_override is not None
@@ -90,7 +106,8 @@ def install_fake_generate() -> None:
             except Exception:  # noqa: BLE001
                 pass
         print(
-            f"FAKE generate start tid={tid} delay={delay} outcome={outcome} inputs={len(images)}",
+            f"FAKE generate start tid={tid} provider={provider_id} delay={delay} "
+            f"outcome={outcome} inputs={len(images)}",
             flush=True,
         )
         observed_abort = False
@@ -109,28 +126,39 @@ def install_fake_generate() -> None:
         total = time.monotonic() - start
         if observed_abort:
             print(f"FAKE generate aborted tid={tid} after {total:.1f}s", flush=True)
-            return gemini.GeminiResult(
+            return GenResult(
                 status="aborted",
                 message="Client disconnected before a response was stored.",
                 raw_finish="ABORTED",
             )
         if outcome == "error":
             print(f"FAKE generate error tid={tid} after {total:.1f}s", flush=True)
-            return gemini.GeminiResult(
+            return GenResult(
                 status="error", message="Fake upstream error (403)", raw_finish="403"
             )
         if outcome == "blocked":
             print(f"FAKE generate blocked tid={tid} after {total:.1f}s", flush=True)
-            return gemini.GeminiResult(
+            return GenResult(
                 status="blocked", message="Fake safety block", raw_finish="IMAGE_SAFETY"
             )
         data, mime = _make_png()
         print(f"FAKE generate success tid={tid} after {total:.1f}s", flush=True)
-        return gemini.GeminiResult(
+        result = GenResult(
             status="success", image_bytes=data, image_mime=mime, text="fake", raw_finish="STOP"
         )
+        if provider_id == "gemini":
+            # Same local JPG conversion as the real Gemini API path.
+            result = await gemini_api._maybe_transcode(result, output_mime, tid)
+        return result
 
-    gemini.generate = fake_generate
+    for pid, mod in providers.PROVIDERS.items():
+        mod.generate = make_fake(pid)
+
+    def fake_gemini_status():
+        return {"configured": True, "keySource": "saved", "keyLast4": "fake",
+                "keyStorage": "memory"}
+
+    gemini_api.status = fake_gemini_status
 
 
 TEST_PAGE = """<!doctype html>
@@ -300,6 +328,8 @@ def install_test_routes(app) -> None:
             "abort_seen": any(o["should_abort"] for o in obs),
             "first_abort": next((o for o in obs if o["should_abort"]), None),
             "last": obs[-3:],
+            "provider": _LAST["provider"],
+            "model": _LAST["model"],
         }
 
     @test_api.put("/__test/fake-config")
