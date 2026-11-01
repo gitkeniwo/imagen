@@ -9,8 +9,9 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
 use tauri::menu::{CheckMenuItem, MenuEvent};
@@ -42,6 +43,20 @@ const RECENT_KEY: &str = "recent_libraries";
 const MAX_RECENT: usize = 8;
 pub const CONFIG_VERSION: u64 = 1;
 const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
+
+#[derive(Clone)]
+struct RemoteSwitchNotice {
+    target_path: PathBuf,
+    previous_path: PathBuf,
+    by: String,
+    name: String,
+    at: Instant,
+}
+
+fn remote_switch_notice() -> &'static Mutex<Option<RemoteSwitchNotice>> {
+    static NOTICE: OnceLock<Mutex<Option<RemoteSwitchNotice>>> = OnceLock::new();
+    NOTICE.get_or_init(|| Mutex::new(None))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LibraryMode {
@@ -449,6 +464,50 @@ fn eval_notice(app: &AppHandle, message: &str, kind: &str) {
         app,
         &format!("window.imagenLibraryNotice && window.imagenLibraryNotice({message}, {kind});"),
     );
+}
+
+/// Fire the host-window toast once the newly selected library's app page has
+/// finished loading. A failed switch leaves the old library configured, so the
+/// notice is discarded rather than shown against the wrong library.
+pub fn on_page_load(app: &AppHandle, url: &Url) {
+    if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") {
+        return;
+    }
+    let current = current_library(app);
+    let notice = remote_switch_notice()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take();
+    let Some(notice) = notice else {
+        return;
+    };
+    if notice.at.elapsed().as_secs() > 120 {
+        backend::log_line(app, "remote library switch toast discarded: stale");
+        return;
+    }
+    if current.as_deref() != Some(notice.target_path.as_path()) {
+        backend::log_line(app, "remote library switch toast discarded: library did not change");
+        return;
+    }
+    let recents = recent_libraries(app);
+    let back = recents
+        .iter()
+        .position(|(path, _)| path == &notice.previous_path)
+        .map(|index| index as i64)
+        .unwrap_or(-1);
+    let payload = json!({
+        "by": notice.by,
+        "name": notice.name,
+        "back": if back >= 0 { Some(back) } else { None },
+    });
+    let payload = serde_json::to_string(&payload).unwrap_or_else(|_| "null".to_string());
+    eval(
+        app,
+        &format!(
+            "window.setTimeout(function(){{window.dispatchEvent(new CustomEvent('imagen:library-switched',{{detail:{payload}}}));}},500);"
+        ),
+    );
+    backend::log_line(app, "remote library switch toast dispatched");
 }
 
 pub fn show_native_error(app: &AppHandle, message: &str) {
@@ -1048,6 +1107,68 @@ pub fn open_recent(app: AppHandle, index: usize) -> Result<(), String> {
     };
     switch_to(app, path, LibraryMode::Existing);
     Ok(())
+}
+
+/// Consume a switch request that arrived over the LAN listener. The shell
+/// re-checks the index/path pair from its own recent list; a backend bug or a
+/// stale request can therefore never point it at an arbitrary folder.
+pub fn open_remote_request(app: &AppHandle, index: usize, path: String, by: String) {
+    let state = app.state::<BackendState>();
+    if state
+        .library_change_pending
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        backend::log_line(app, "remote library switch rejected: another change is in progress");
+        return;
+    }
+
+    let requested = PathBuf::from(path);
+    let candidate = recent_libraries(app)
+        .into_iter()
+        .nth(index)
+        .map(|(path, _)| path);
+    let current = current_library(app);
+    let reason = if !requested.is_absolute() {
+        Some("path is not absolute")
+    } else if candidate.as_deref() != Some(requested.as_path()) {
+        Some("path does not match the requested recent item")
+    } else if current.as_deref() == Some(requested.as_path()) {
+        Some("library is already open")
+    } else if let Err(reason) = validate_existing(&requested) {
+        backend::log_line(app, &format!("remote library switch validation: {reason}"));
+        Some("library validation failed")
+    } else {
+        None
+    };
+    if let Some(reason) = reason {
+        backend::log_line(app, &format!("remote library switch rejected: {reason}"));
+        finish_library_change(app);
+        return;
+    }
+    let Some(previous_path) = current else {
+        backend::log_line(app, "remote library switch rejected: no current library");
+        finish_library_change(app);
+        return;
+    };
+    let name = requested
+        .file_name()
+        .map(|part| part.to_string_lossy().to_string())
+        .filter(|part| !part.is_empty())
+        .unwrap_or_else(|| requested.to_string_lossy().to_string());
+    *remote_switch_notice()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = Some(RemoteSwitchNotice {
+        target_path: requested.clone(),
+        previous_path,
+        by: by.clone(),
+        name,
+        at: Instant::now(),
+    });
+    backend::log_line(
+        app,
+        &format!("remote library switch by {by} -> {}", requested.display()),
+    );
+    switch_to(app.clone(), requested, LibraryMode::Existing);
 }
 
 /// Show the switching page, then stop/validate/start off the UI thread.

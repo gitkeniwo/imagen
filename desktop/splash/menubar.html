@@ -34,6 +34,9 @@
       --warn: #d97706;
       --danger: #dc2626;
       --link: #4338ca;
+      --role: #4f46e5;
+      --role-bg: rgba(79, 70, 229, 0.08);
+      --role-border: rgba(79, 70, 229, 0.28);
       --note: rgba(15, 23, 42, 0.05);
       --note-text: #334155;
       --switch-off: #c7ccd4;
@@ -64,6 +67,9 @@
         --warn: #f5a524;
         --danger: #f87171;
         --link: #f5c542;
+        --role: #a5b4fc;
+        --role-bg: rgba(129, 140, 248, 0.16);
+        --role-border: rgba(129, 140, 248, 0.35);
         --note: rgba(160, 230, 220, 0.07);
         --note-text: #c9d9d6;
         --switch-off: #3d5653;
@@ -196,7 +202,13 @@
       border-radius: 50%; background: var(--ok); border: 2px solid var(--ring);
     }
     .dev-text { display: flex; flex-direction: column; gap: 1px; flex-grow: 1; min-width: 0; }
-    .dev-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dev-name { display: flex; align-items: center; gap: 6px; font-weight: 600; min-width: 0; }
+    .dev-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .role-badge {
+      display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+      height: 18px; padding: 0 6px; border: 1px solid var(--role-border); border-radius: 999px;
+      background: var(--role-bg); color: var(--role); font-size: 10.5px; font-weight: 600;
+    }
     .dev-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pill {
       font-size: 11.5px; font-weight: 600; color: var(--run-text); background: var(--run-bg);
@@ -584,7 +596,9 @@
             (d.ip ? " · " + d.ip : "");
           html += '<div class="dev"><span class="dev-ic">' +
             svg(deviceIcon(d.name), 15) + (d.active ? '<span class="live"></span>' : "") +
-            '</span><div class="dev-text"><span class="dev-name">' + esc(d.name) +
+            '</span><div class="dev-text"><span class="dev-name"><span class="dev-label">' + esc(d.name) +
+            (d.role === "admin" ? '</span><span class="role-badge">' + svg("shield", 10) +
+              esc(lang() === "zh" ? "管理员" : "Admin") + "</span>" : "</span>") +
             '</span><span class="dev-sub">' + esc(sub) + "</span></div>" +
             (num(d.running) > 0 ?
               '<span class="pill">' + esc(t("generatingN", { n: num(d.running) })) + "</span>" : "") +

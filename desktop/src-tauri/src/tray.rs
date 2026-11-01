@@ -135,6 +135,7 @@ pub struct TrayHandle {
 /// Set by the poller's callers (spawn / stop / restart / popover) to skip the
 /// remaining sleep and refresh immediately.
 static WAKE: AtomicBool = AtomicBool::new(false);
+static LAST_LIBRARY_REQUEST: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(TrayHandle {
@@ -379,6 +380,65 @@ fn snapshot_status(body: &Value) -> (Option<Value>, Option<Value>) {
     (body.get("status").cloned(), body.get("activity").cloned())
 }
 
+fn handle_library_request(app: &AppHandle, body: &Value) {
+    let Some(request) = body.get("library_request").and_then(Value::as_object) else {
+        return;
+    };
+    let Some(id) = request.get("id").and_then(Value::as_str) else {
+        return;
+    };
+    {
+        let mut last = LAST_LIBRARY_REQUEST
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if last.as_deref() == Some(id) {
+            return;
+        }
+        *last = Some(id.to_string());
+    }
+    let port = backend::port(app);
+    let path = format!("/api/desktop/library-request/{id}/ack");
+    match backend::http_json(port, "POST", &path, None) {
+        Some((200, _)) => {}
+        Some((code, _)) => {
+            clear_library_request_retry(id);
+            backend::log_line(app, &format!("remote library request ack failed: HTTP {code}"));
+            return;
+        }
+        None => {
+            clear_library_request_retry(id);
+            backend::log_line(app, "remote library request ack failed: backend unreachable");
+            return;
+        }
+    }
+    let Some(index) = request
+        .get("index")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        backend::log_line(app, "remote library request rejected: invalid index");
+        return;
+    };
+    let Some(path) = request.get("path").and_then(Value::as_str) else {
+        backend::log_line(app, "remote library request rejected: missing path");
+        return;
+    };
+    let by = request
+        .get("by")
+        .and_then(Value::as_str)
+        .unwrap_or("Remote device");
+    crate::library::open_remote_request(app, index, path.to_string(), by.to_string());
+}
+
+fn clear_library_request_retry(id: &str) {
+    let mut last = LAST_LIBRARY_REQUEST
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if last.as_deref() == Some(id) {
+        *last = None;
+    }
+}
+
 /// Apply the shell's own state and, when given, a fresh remote snapshot.
 ///
 /// `None` is the cheap 500 ms tick: it only refreshes the child-process state
@@ -527,6 +587,7 @@ fn spawn_long_poll(app: AppHandle) {
             match backend::http_json_timeout(port, "GET", &path, None, LONG_POLL_READ) {
                 Some((200, body)) => {
                     revision = body.get("revision").and_then(Value::as_u64).unwrap_or(0);
+                    handle_library_request(&app, &body);
                     let (status, activity) = snapshot_status(&body);
                     commit(&app, Some((status, activity)));
                 }
@@ -574,6 +635,7 @@ fn spawn_poll(app: AppHandle) {
                     "/api/desktop/wait?since=0&timeout=0",
                     None,
                 ) {
+                    handle_library_request(&app, &body);
                     let (status, activity) = snapshot_status(&body);
                     commit(&app, Some((status, activity)));
                 }
