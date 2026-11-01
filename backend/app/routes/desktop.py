@@ -8,11 +8,12 @@ import asyncio
 import time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .. import remote
 from .remote import loopback_only
+from . import settings as settings_routes
 
 router = APIRouter(
     prefix="/api/desktop",
@@ -49,6 +50,7 @@ def _snapshot() -> dict:
         "revision": revision,
         "status": remote.status(),
         "activity": _activity(),
+        "library_request": settings_routes.library_request_snapshot(),
     }
 
 
@@ -93,3 +95,10 @@ async def wait(
     if remote.revision() == since:
         await asyncio.to_thread(remote.wait_for_revision, since, timeout)
     return await asyncio.to_thread(_snapshot)
+
+
+@router.post("/library-request/{request_id}/ack")
+def ack_library_request(request_id: str):
+    if not settings_routes.ack_library_request(request_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}

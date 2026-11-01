@@ -7,9 +7,11 @@ web page open in the user's browser can send "simple" POSTs to localhost.
 """
 import ipaddress
 import os
+import time
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 
+from fastapi import HTTPException, Request
 from starlette.responses import JSONResponse, RedirectResponse
 
 from . import remote
@@ -85,6 +87,26 @@ async def _deny(scope, receive, send, detail: str) -> None:
 def is_lan(scope) -> bool:
     """True when the request arrived on the LAN listener (anything but loopback)."""
     return bool((scope.get("state") or {}).get("remote"))
+
+
+def role(scope) -> str:
+    """Owner for loopback/server mode, otherwise the LAN session's role."""
+    if not is_lan(scope):
+        return "owner"
+    sid = (scope.get("state") or {}).get("remote_session")
+    # Open-access visits have no session and must never gain admin.
+    return remote.session_role(sid)
+
+
+def require_admin(
+    request: Request,
+    detail: str = "This setting is managed on the Mac.",
+) -> str:
+    """Return the requester's role or reject members with a route-specific message."""
+    current = role(request.scope)
+    if current not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail=detail)
+    return current
 
 
 class RemoteGate:
@@ -170,4 +192,32 @@ class RemoteGate:
             return
 
         remote.touch(session, ip)
-        await self.app(scope, receive, send)
+
+        refresh_cookie = False
+        if session and session.get("role") == "admin" and path != "/api/remote/logout":
+            now = time.monotonic()
+            last = session.get("_cookie_refreshed")
+            if last is None:
+                session["_cookie_refreshed"] = now
+                refresh_cookie = True
+            elif now - last > 24 * 3600:
+                session["_cookie_refreshed"] = now
+                refresh_cookie = True
+
+        token = _cookie_token(scope)
+        if not refresh_cookie or not token:
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_cookie(message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                cookie = (
+                    f"{remote.COOKIE_NAME}={token}; Max-Age={remote.ADMIN_IDLE_MAX_S}; "
+                    "Path=/; HttpOnly; SameSite=Strict"
+                )
+                headers.append((b"set-cookie", cookie.encode("latin-1")))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_cookie)

@@ -1,5 +1,6 @@
 """SQLite connection and schema initialization."""
 import contextlib
+import hashlib
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -15,6 +16,11 @@ DATA_DIR = Path(
 IMAGES_DIR = DATA_DIR / "images"
 THUMBS_DIR = DATA_DIR / "thumbs"
 DB_PATH = DATA_DIR / "app.db"
+
+
+def library_key() -> str:
+    """Opaque, cache-safe identity for the currently open library."""
+    return hashlib.sha256(str(DATA_DIR.resolve()).encode("utf-8")).hexdigest()[:16]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS images (

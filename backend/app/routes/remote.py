@@ -6,12 +6,14 @@ manages remote access is loopback-only and 404s on the LAN port. Server mode
 login/hello/session; the code comes from the environment.
 """
 import asyncio
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .. import remote
+from ..db import library_key
 from ..remote_gate import is_lan
 
 router = APIRouter(prefix="/api", tags=["remote"])
@@ -35,6 +37,10 @@ class ConfigPatch(BaseModel):
     keep_awake: bool | None = None
 
 
+class RoleBody(BaseModel):
+    role: Literal["admin", "member"]
+
+
 @router.get("/remote/hello")
 def hello():
     cfg = remote.config()
@@ -55,7 +61,7 @@ async def login(body: LoginBody, request: Request, response: Response):
     if result.get("error"):
         return JSONResponse(result, status_code=401)
     token = remote.create_session(
-        body.name, ip, request.headers.get("user-agent", "")
+        body.name, ip, request.headers.get("user-agent", ""), remember=body.remember
     )
     response.set_cookie(
         remote.COOKIE_NAME,
@@ -81,14 +87,33 @@ def logout(request: Request, response: Response):
 def session(request: Request):
     """Who is asking: the local shell (remote=false) or a LAN device."""
     if not is_lan(request.scope):
-        return {"remote": False, "host_name": None, "device": None}
+        return {
+            "remote": False,
+            "host_name": None,
+            "device": None,
+            "role": "owner",
+            "library_key": library_key(),
+        }
     sid = request.scope.get("state", {}).get("remote_session")
     device = None
     if sid:
         s = remote.find_session_by_id(sid)
         if s:
-            device = {"name": s["name"], "created_at": s["created_at"]}
-    return {"remote": True, "host_name": remote.host_name(), "device": device}
+            device = {
+                "name": s["name"],
+                "created_at": s["created_at"],
+                "role": s["role"],
+                "role_since": s["role_since"],
+                "remember": s["remember"],
+            }
+    current = remote.session_role(sid)
+    return {
+        "remote": True,
+        "host_name": remote.host_name(),
+        "device": device,
+        "role": current,
+        "library_key": library_key(),
+    }
 
 
 @router.get("/remote/status", dependencies=[Depends(loopback_only)])
@@ -114,6 +139,19 @@ def regenerate():
 @router.delete("/remote/sessions/{sid}", dependencies=[Depends(loopback_only)])
 def delete_session(sid: str):
     if not remote.revoke_session(sid):
+        raise HTTPException(status_code=404, detail="Not found")
+    return remote.status()
+
+
+@router.put("/remote/sessions/{sid}/role", dependencies=[Depends(loopback_only)])
+def put_role(sid: str, body: RoleBody):
+    try:
+        session = remote.set_role(sid, body.role)
+    except ValueError as exc:
+        if str(exc) == "not_remembered":
+            return JSONResponse({"detail": "not_remembered"}, status_code=409)
+        raise HTTPException(status_code=400, detail="invalid_role") from exc
+    if session is None:
         raise HTTPException(status_code=404, detail="Not found")
     return remote.status()
 
