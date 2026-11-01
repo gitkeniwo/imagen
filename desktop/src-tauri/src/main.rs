@@ -389,6 +389,7 @@ fn main() {
                 .on_page_load(|window, payload| {
                     if matches!(payload.event(), PageLoadEvent::Finished) {
                         zoom::on_page_load(window.app_handle(), payload.url());
+                        library::on_page_load(window.app_handle(), payload.url());
                     }
                 })
                 .title_bar_style(TitleBarStyle::Transparent)

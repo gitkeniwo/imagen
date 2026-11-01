@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { api, isProviderId, LibraryInfo, ProviderId } from "../api";
+import {
+  api,
+  ApiError,
+  isProviderId,
+  LibraryInfo,
+  ProviderId,
+  settingsApi,
+} from "../api";
 import { useI18n } from "../i18n";
 import Icon, { type IconName } from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
@@ -8,6 +15,11 @@ import RemoteSettings from "./RemoteSettings";
 import { useRemote } from "../remote";
 import { useBackLayer } from "../backStack";
 import ProvidersSettings from "./ProvidersSettings";
+import RoleBadge from "./ui/RoleBadge";
+import { useConfirm } from "./ConfirmDialog";
+import { useToast } from "./Toast";
+import LibrarySwitching from "./LibrarySwitching";
+import { shellAction } from "../shell";
 
 type Section = "library" | "providers" | "prefs" | "remote" | "device";
 export type SettingsSection =
@@ -22,13 +34,6 @@ const SECTIONS: { id: Section; icon: IconName; label: string }[] = [
   { id: "remote", icon: "radio", label: "settings_section_remote" },
   { id: "device", icon: "tablet", label: "settings_section_device" },
 ];
-
-// Library switching is done by the desktop shell. The page only fires fixed
-// `imagen-action://` URLs (the shell owns every path), so a page can never
-// point the app at an arbitrary folder.
-function shellAction(action: string) {
-  window.location.href = `imagen-action://${action}`;
-}
 
 function fmtBytes(n: number): string {
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
@@ -50,7 +55,9 @@ export default function SettingsModal({
   setUndoSeconds: (n: number) => void;
 }) {
   const { t, lang, setLang } = useI18n();
-  const { remote, hostName, device, signOut } = useRemote();
+  const { remote, hostName, device, role, signOut } = useRemote();
+  const askConfirm = useConfirm();
+  const toast = useToast();
   const initial = (() => {
     if (initialSection === "vertex" || initialSection.startsWith("providers")) {
       return {
@@ -80,7 +87,10 @@ export default function SettingsModal({
   // validates it and asks for confirmation in a native dialog.
   const [typing, setTyping] = useState(false);
   const [typedPath, setTypedPath] = useState("");
-  useBackLayer(true, onClose);
+  const [switching, setSwitching] = useState<{ name: string; key: string } | null>(null);
+  // A switch owns the page until it reloads. Returning false vetoes the
+  // browser/iOS back gesture and keeps this history layer in place.
+  useBackLayer(true, () => (switching ? false : onClose()));
 
   useEffect(() => {
     api.getLibrary().then(setLibrary).catch(() => setLibrary(null));
@@ -89,11 +99,11 @@ export default function SettingsModal({
   // Escape closes, matching the other modals.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !switching) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, switching]);
 
   useEffect(() => {
     if (!picking) return;
@@ -121,6 +131,73 @@ export default function SettingsModal({
     return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
 
+  const loadLibrary = async () => {
+    try {
+      setLibrary(await api.getLibrary());
+    } catch {
+      setLibrary(null);
+    }
+  };
+
+  const switchRecent = async (recent: LibraryInfo["recent"][number]) => {
+    if (!recent.id || !library) return;
+    const ok = await askConfirm({
+      title: t("library_switch_confirm_t", { name: recent.name }),
+      message: t("library_switch_confirm_b"),
+      confirmLabel: t("library_switch_confirm_ok"),
+    });
+    if (!ok) return;
+
+    const send = async (force: boolean) => {
+      try {
+        await settingsApi.switchLibrary(recent.index, recent.id!, force);
+        setSwitching({ name: recent.name, key: library.key });
+        return true;
+      } catch (error) {
+        if (!(error instanceof ApiError)) {
+          toast(t("library_switch_error", { msg: (error as Error).message }));
+          return false;
+        }
+        if (error.detail === "library_changed") {
+          await loadLibrary();
+          toast(t("library_switch_changed"), "info");
+          return false;
+        }
+        if (error.detail === "switch_pending") {
+          toast(t("library_switch_pending"));
+          return false;
+        }
+        if (error.detail === "busy" && !force) {
+          const busy = error.data as {
+            running?: number;
+            running_by?: { device: string; n: number }[];
+            queued_mac?: number;
+          };
+          const by = (busy.running_by ?? [])
+            .map((item) => t("library_switch_busy_by", { device: item.device, n: item.n }))
+            .join(t("library_switch_busy_join"));
+          const proceed = await askConfirm({
+            title: t("library_switch_confirm_t", { name: recent.name }),
+            message: t("library_switch_busy_b", {
+              running: busy.running ?? 0,
+              by: by || "—",
+              queued: busy.queued_mac ?? 0,
+            }),
+            confirmLabel: t("library_switch_cancel_and_go"),
+            cancelLabel: t("library_switch_wait"),
+            danger: true,
+          });
+          if (proceed) return send(true);
+          return false;
+        }
+        toast(t("library_switch_error", { msg: error.message }));
+        return false;
+      }
+    };
+
+    await send(false);
+  };
+
   // Remote devices get the device page instead of host-only management; the
   // host window shows the remote-access page only when the backend supports it.
   const sections = SECTIONS.filter((s) =>
@@ -129,7 +206,15 @@ export default function SettingsModal({
   const current = SECTIONS.find((s) => s.id === section)!;
 
   return (
-    <div className="overlay" role="dialog" aria-modal="true" aria-label={t("settings_title")} onClick={onClose}>
+    <div
+      className="overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("settings_title")}
+      onClick={() => {
+        if (!switching) onClose();
+      }}
+    >
       <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
         <nav className="settings-nav" aria-label={t("settings_title")}>
           <h2>{t("settings_title")}</h2>
@@ -150,12 +235,79 @@ export default function SettingsModal({
         <div className="settings-main">
           <div className="settings-head">
             <h3>{t(current.label)}</h3>
-            <IconButton icon="close" size="md" label={t("close")} onClick={onClose} />
+            {remote && <RoleBadge role={role} />}
+            <IconButton
+              icon="close"
+              size="md"
+              label={t("close")}
+              disabled={!!switching}
+              onClick={onClose}
+            />
           </div>
 
-          {section === "library" && remote && (
+          {section === "library" && remote && role === "member" && (
             <div className="settings-body">
               <div className="rm-callout lock"><Icon name="lock" size="sm" /><span>{t("remote_lib_lock")}</span></div>
+            </div>
+          )}
+
+          {section === "library" && remote && role === "admin" && (
+            <div className="settings-body">
+              <div className="settings-lib-card">
+                <span className="settings-lib-icon"><Icon name="libraryFolder" /></span>
+                <div className="settings-lib-text">
+                  <span className="settings-lib-name">
+                    {library?.name || "—"}
+                    <span className="settings-lib-current">{t("settings_library_current")}</span>
+                  </span>
+                  {library && (
+                    <span className="muted small">
+                      {t("settings_library_summary", {
+                        images: library.images,
+                        history: library.history,
+                        size: fmtBytes(library.bytes),
+                      })}
+                    </span>
+                  )}
+                  <span className="muted small">
+                    {t("remote_library_path_hidden", { host: hostName })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="settings-group">
+                <h4>{t("library_switch_recent")}</h4>
+                <div className="settings-recent settings-recent-admin">
+                  {library?.recent.map((recent) => (
+                    <div
+                      key={recent.index}
+                      className={`settings-recent-row${recent.exists ? "" : " missing"}`}
+                    >
+                      <Icon name="libraryFolder" size="sm" />
+                      <span className="settings-recent-text">
+                        <span>{recent.name}</span>
+                        <span className="muted small">
+                          {recent.exists ? when(recent.opened_at) : t("library_recent_missing")}
+                        </span>
+                      </span>
+                      <Button
+                        size="sm"
+                        disabled={!recent.exists || !recent.id}
+                        onClick={() => void switchRecent(recent)}
+                      >
+                        {t("library_switch")}
+                      </Button>
+                    </div>
+                  ))}
+                  {library && library.recent.length === 0 && (
+                    <p className="muted small m-0 settings-note">{t("library_switch_no_recent")}</p>
+                  )}
+                </div>
+              </div>
+              <div className="rm-callout lock">
+                <Icon name="lock" size="sm" />
+                <span>{t("remote_library_admin_note")}</span>
+              </div>
             </div>
           )}
 
@@ -362,7 +514,19 @@ export default function SettingsModal({
                   )}
                 </div>
               </div>
-              <p className="muted small m-0">{t("remote_signed_in_d")}</p>
+              <div className="rm-card rm-device-role">
+                <span className="rm-card-icon"><Icon name="shield" /></span>
+                <div className="rm-card-text">
+                  <span className="rm-card-title">{t("remote_menu_role")}</span>
+                  <span className="muted small">
+                    {role === "admin" ? t("remote_admin_help") : t("remote_member_help")}
+                  </span>
+                </div>
+                <RoleBadge role={role} />
+              </div>
+              <p className="muted small m-0">
+                {t(role === "admin" ? "remote_signed_in_admin_d" : "remote_signed_in_d")}
+              </p>
               <p className="muted small m-0">{t("remote_queue_note")}</p>
               <div className="settings-actions">
                 <Button icon="logout" onClick={() => void signOut()}>{t("remote_sign_out_this")}</Button>
@@ -371,6 +535,13 @@ export default function SettingsModal({
           )}
         </div>
       </div>
+      {switching && (
+        <LibrarySwitching
+          name={switching.name}
+          hostName={hostName}
+          previousKey={switching.key}
+        />
+      )}
     </div>
   );
 }

@@ -35,6 +35,7 @@ logger = logging.getLogger("imagen.remote")
 DEFAULT_PORT = 47861
 COOKIE_NAME = "imagen_remote"
 COOKIE_MAX_AGE = 30 * 24 * 3600
+ADMIN_IDLE_MAX_S = 90 * 24 * 3600
 CODE_LENGTH = 5
 
 ACTIVE_WINDOW_S = 60.0
@@ -213,6 +214,13 @@ def _load() -> dict:
                     "last_seen": float(item.get("last_seen") or 0),
                     "last_ip": str(item.get("last_ip") or ""),
                     "ua": str(item.get("ua") or ""),
+                    "role": item.get("role") if item.get("role") in ("admin", "member") else "member",
+                    "role_since": (
+                        float(item["role_since"])
+                        if isinstance(item.get("role_since"), (int, float))
+                        else None
+                    ),
+                    "remember": item.get("remember") is not False,
                 }
         _sessions = sessions
         cfg["sessions"] = []
@@ -231,7 +239,16 @@ def _save() -> None:
         if path is None:
             return
         try:
-            _atomic_write(path, {**cfg, "sessions": list(_sessions.values())})
+            _atomic_write(
+                path,
+                {
+                    **cfg,
+                    "sessions": [
+                        {k: v for k, v in session.items() if not k.startswith("_")}
+                        for session in _sessions.values()
+                    ],
+                },
+            )
         except OSError:
             logger.exception("could not write remote.json")
 
@@ -256,7 +273,7 @@ def _clean_name(name: str | None) -> str:
     return cleaned[:40] or "Unknown device"
 
 
-def create_session(name: str | None, ip: str, ua: str) -> str:
+def create_session(name: str | None, ip: str, ua: str, remember: bool = True) -> str:
     token = secrets.token_urlsafe(32)
     now = time.time()
     with _lock:
@@ -269,6 +286,9 @@ def create_session(name: str | None, ip: str, ua: str) -> str:
             "last_seen": now,
             "last_ip": ip,
             "ua": ua[:200],
+            "role": "member",
+            "role_since": None,
+            "remember": bool(remember),
         }
         _save()
     bump_revision()
@@ -281,7 +301,15 @@ def find_session(token: str | None) -> dict | None:
     with _lock:
         _load()
         session = _sessions.get(_hash(token))
-        if session and time.time() - session["created_at"] > COOKIE_MAX_AGE:
+        if not session:
+            return None
+        now = time.time()
+        expired = (
+            now - session["last_seen"] > ADMIN_IDLE_MAX_S
+            if session["role"] == "admin"
+            else now - session["created_at"] > COOKIE_MAX_AGE
+        )
+        if expired:
             del _sessions[session["id"]]
             _save()
             return None
@@ -292,6 +320,53 @@ def find_session_by_id(sid: str) -> dict | None:
     with _lock:
         _load()
         return _sessions.get(sid)
+
+
+def session_role(sid: str | None) -> str:
+    """Role for a LAN session; expired or unknown sessions are members."""
+    if not sid:
+        return "member"
+    with _lock:
+        _load()
+        session = _sessions.get(sid)
+        if not session:
+            return "member"
+        now = time.time()
+        expired = (
+            now - session["last_seen"] > ADMIN_IDLE_MAX_S
+            if session["role"] == "admin"
+            else now - session["created_at"] > COOKIE_MAX_AGE
+        )
+        if expired:
+            del _sessions[session["id"]]
+            _save()
+            return "member"
+        return session["role"]
+
+
+def set_role(sid: str, role: str) -> dict | None:
+    """Grant/revoke a remembered session's role. Owner-only at the API layer."""
+    if role not in ("admin", "member"):
+        raise ValueError("invalid_role")
+    with _lock:
+        _load()
+        session = _sessions.get(sid)
+        if session is None:
+            return None
+        if role == "admin" and not session["remember"]:
+            raise ValueError("not_remembered")
+        if session["role"] != role:
+            previous = session["role"]
+            session["role"] = role
+            now = time.time()
+            session["role_since"] = now if role == "admin" else None
+            if previous == "admin" and role == "member":
+                # Member expiry is measured from this transition, so a device
+                # that was admin for months is not signed out on demotion.
+                session["created_at"] = now
+            _save()
+    bump_revision()
+    return {k: v for k, v in session.items() if not k.startswith("_")}
 
 
 def touch(session: dict | None, ip: str) -> None:
@@ -363,6 +438,25 @@ def generation_finished() -> None:
 def generating_total() -> int:
     with _lock:
         return _generating_total
+
+
+def running_by() -> tuple[list[dict], int, int]:
+    """LAN generation counts by device, anonymous LAN, and loopback remainder."""
+    with _lock:
+        lan_total = sum(_running.values())
+        devices = []
+        for sid, count in _running.items():
+            if sid == "-" or count <= 0:
+                continue
+            session = _sessions.get(sid)
+            devices.append({
+                "device": session["name"] if session else "Remote",
+                "n": count,
+            })
+        anonymous = _running.get("-", 0)
+    devices.sort(key=lambda item: (-item["n"], item["device"].lower()))
+    mac = max(0, _generating_total - lan_total)
+    return devices, anonymous, mac
 
 
 # --- login + rate limiting --------------------------------------------------
@@ -782,6 +876,9 @@ def status() -> dict:
                 "last_seen": s["last_seen"],
                 "active": now - s["last_seen"] < ACTIVE_WINDOW_S,
                 "running": _running.get(s["id"], 0),
+                "role": s["role"],
+                "role_since": s["role_since"],
+                "remember": s["remember"],
             })
         anon_running = _running.get("-", 0)
         recent = _last_activity > 0 and time.monotonic() - _last_activity < ACTIVE_WINDOW_S

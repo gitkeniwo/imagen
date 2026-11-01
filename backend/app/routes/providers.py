@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from .. import provider_config, providers
 from ..models import GeminiKeyBody, ProviderToggle
-from ..remote_gate import is_lan
+from ..remote_gate import require_admin, role
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 
@@ -15,14 +15,13 @@ MAX_KEY_LENGTH = 200
 
 
 def _local_only(request: Request) -> None:
-    if is_lan(request.scope):
-        raise HTTPException(status_code=403, detail="Provider settings are managed on the Mac.")
+    require_admin(request, "Provider settings are managed on the Mac.")
 
 
 def _catalog(request: Request) -> dict:
     return {
         "providers": providers.catalog(
-            enabled=provider_config.enabled_map(), lan=is_lan(request.scope)
+            enabled=provider_config.enabled_map(), lan=(role(request.scope) == "member")
         )
     }
 

@@ -137,6 +137,36 @@ remote devices keep working — queued generations keep running too.
 ⌘Q still quits, but while generations are running it asks you to hold ⌘Q for
 about a second ("Hold ⌘Q to quit"). Choosing Quit from a menu exits immediately.
 
+### Remote devices and roles
+
+Turn on **Settings › Remote access**, open the shown address on the iPad or
+phone, and sign in with the 5-digit code. Signing in with **Remember this
+device** keeps the session for 30 days. In **Settings › Remote access ›
+Signed-in devices**, the Mac can change that session between **Member** and
+**Admin**; the role control is disabled for “this visit only” sessions because
+they have no persistent identity to promote.
+
+- **Member** can generate, browse, edit, and use the library, but provider
+  settings and library switching stay locked.
+- **Admin** can also toggle providers, edit Vertex/Gemini credentials, run
+  connection checks, and switch the Mac to a recently opened library. They still
+  cannot open a new folder, create a library, type a path, reveal a path in
+  Finder, change remote-access settings, or manage other devices.
+- Only the Mac grants/removes roles and manages remote access. Admin sessions
+  remain signed in until unused for 90 days; member sessions keep the existing
+  30-day limit. Demoting an admin starts a fresh 30-day member window instead of
+  expiring an older session immediately.
+- LAN clients never receive absolute library paths. While switching, everyone
+  is reloaded onto the new library so queued work cannot reference old image IDs.
+  The Mac shows a Toast after a remote switch and offers **Switch back**.
+- Safari and the Home Screen app have separate cookies and therefore separate
+  sessions. Clearing Safari website data/history removes the cookie, including
+  an admin grant; grant the role again after signing back in.
+
+If a switch is requested while generations are running or queued on the Mac,
+Imagen asks whether to wait or stop them and switch. Run
+`desktop/scripts/check_roles.sh` for the isolated authorization/switch checks.
+
 ### Unsigned build
 
 The app is **not signed with a Developer ID and is not notarized**. Other people
@@ -290,4 +320,5 @@ PROJECT=<your-project> uv run python scripts/probe_gemini.py
 - All data lives in the mounted volume (`./imagen-data` with the command above, or `./backend/data` with compose).
 - Drafts are stored in SQLite; deleting a draft never deletes its attached library images.
 - ADC credentials (`~/.config/gcloud/application_default_credentials.json`) are mounted read-only.
-- Single-user, no access control — add your own if exposing to a network.
+- Docker without `IMAGEN_ACCESS_CODE` has no access control; the desktop's LAN
+  mode uses code-protected sessions with owner/admin/member roles.
