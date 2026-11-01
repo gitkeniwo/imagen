@@ -7,6 +7,7 @@ import { Button } from "./ui/Button";
 import { Switch } from "./ComposerControls";
 import { useToast } from "./Toast";
 import { useRemote } from "../remote";
+import RoleBadge from "./ui/RoleBadge";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -236,7 +237,10 @@ export default function RemoteIndicator({ onOpenSettings }: { onOpenSettings: ()
                   <div key={d.id} className="rm-dev">
                     <span className={`rm-dev-ic${d.active ? " on" : ""}`}><Icon name={deviceIcon(d.name)} size="sm" /></span>
                     <span className="rm-dev-text">
-                      <b>{d.name}</b>
+                      <span className="rm-dev-name">
+                        <b>{d.name}</b>
+                        {d.role === "admin" && <RoleBadge role="admin" />}
+                      </span>
                       <span>
                         {d.active ? t("remote_active") : seenLabel(t, d.last_seen)}
                         {d.running > 0 ? ` · ${t("remote_generating", { n: d.running })}` : ""}
@@ -282,7 +286,7 @@ export default function RemoteIndicator({ onOpenSettings }: { onOpenSettings: ()
 // iPad side: who this device is connected to, and whether the Mac is reachable.
 export function RemoteChip() {
   const { t } = useI18n();
-  const { hostName, device, conn, retry, signOut } = useRemote();
+  const { hostName, device, role, conn, retry, signOut } = useRemote();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const menu = useFitPopup(open, wrap, 280, 0);
@@ -315,6 +319,7 @@ export function RemoteChip() {
             <span className="rm-dot live" />
             <Icon name="laptop" size="sm" />
             <span className="rm-host">{hostName}</span>
+            {role === "admin" && <Icon name="shield" size="sm" className="rm-admin-mark" />}
           </>
         )}
       </button>
@@ -328,6 +333,13 @@ export function RemoteChip() {
             <span>{t("remote_menu_device")}</span>
             <b>{device?.name ?? "—"}</b>
           </div>
+          <div className="rm-menu-item rm-menu-role">
+            <span>{t("remote_menu_role")}</span>
+            <RoleBadge role={role} />
+          </div>
+          {role === "admin" && (
+            <p className="rm-menu-note">{t("remote_admin_help")}</p>
+          )}
           <button type="button" className="rm-menu-out" role="menuitem" onClick={() => void signOut()}>
             <Icon name="logout" size="sm" />
             {t("remote_sign_out_this")}

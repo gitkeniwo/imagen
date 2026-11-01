@@ -4,12 +4,84 @@ import { copyText } from "../clipboard";
 import { useI18n } from "../i18n";
 import Icon from "./ui/Icon";
 import { Button } from "./ui/Button";
+import Popover from "./ui/Popover";
+import RoleBadge from "./ui/RoleBadge";
 import { Switch } from "./ComposerControls";
 import { useConfirm } from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { addressUrl, deviceIcon, reasonText, seenLabel, useRemoteStatus } from "./RemoteIndicator";
 
 const TAILSCALE_URL = "https://tailscale.com";
+
+function RoleControl({
+  device,
+  onChange,
+}: {
+  device: {
+    id: string;
+    name: string;
+    role: "admin" | "member";
+    remember: boolean;
+  };
+  onChange: (role: "admin" | "member") => void;
+}) {
+  const { t } = useI18n();
+  const askConfirm = useConfirm();
+  const [open, setOpen] = useState(false);
+
+  const choose = async (next: "admin" | "member") => {
+    setOpen(false);
+    if (next === device.role) return;
+    if (next === "admin") {
+      const ok = await askConfirm({
+        title: t("remote_promote_confirm_t", { device: device.name }),
+        message: t("remote_promote_confirm_b"),
+        confirmLabel: t("remote_make_admin"),
+      });
+      if (!ok) return;
+    }
+    onChange(next);
+  };
+
+  return (
+    <Popover
+      fixed
+      className="rm-role-control"
+      panelClassName="rm-role-menu"
+      panelProps={{ role: "menu" }}
+      open={open}
+      onClose={() => setOpen(false)}
+      trigger={
+        <button
+          type="button"
+          className="rm-role-btn"
+          disabled={!device.remember}
+          title={!device.remember ? t("remote_role_remember_only") : undefined}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <RoleBadge role={device.role} />
+          <Icon name={open ? "chevronUp" : "chevronDown"} size="sm" />
+        </button>
+      }
+    >
+      {(["member", "admin"] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          role="menuitemradio"
+          aria-checked={device.role === value}
+          className="rm-role-option"
+          onClick={() => void choose(value)}
+        >
+          <RoleBadge role={value} />
+          <span>{t(`remote_role_${value}_desc`)}</span>
+        </button>
+      ))}
+    </Popover>
+  );
+}
 
 // Settings › Remote access (host window only).
 export default function RemoteSettings() {
@@ -187,37 +259,63 @@ export default function RemoteSettings() {
             )}
           </div>
 
-          {s.devices.length > 0 && (
-            <div className="settings-group rm-group">
-              <h4>
-                {t("remote_signed_devices")}
+          <div className="settings-group rm-group">
+            <h4>
+              {t("remote_signed_devices")}
+              {s.devices.length > 0 && (
                 <Button size="sm" variant="link" className="rm-danger" onClick={async () => {
                   try { setStatus(await remoteApi.signOutAll()); } catch (e) { fail(e); }
                 }}>
                   {t("remote_sign_out_all")}
                 </Button>
-              </h4>
-              <div className="rm-rows">
-                {s.devices.map((d) => (
-                  <div key={d.id} className="rm-row">
-                    <Icon name={deviceIcon(d.name)} size="sm" />
-                    <span className="rm-row-text">
-                      <b>{d.name}</b>
-                      <span>
-                        {d.active ? t("remote_active") : seenLabel(t, d.last_seen)} · {d.ip}
-                        {d.running > 0 ? ` · ${t("remote_generating", { n: d.running })}` : ""}
-                      </span>
-                    </span>
-                    <Button size="sm" onClick={async () => {
-                      try { setStatus(await remoteApi.signOutDevice(d.id)); } catch (e) { fail(e); }
-                    }}>
-                      {t("remote_sign_out")}
-                    </Button>
-                  </div>
-                ))}
+              )}
+            </h4>
+            <div className="rm-rows rm-device-rows">
+              <div className="rm-row rm-device-row">
+                <Icon name="laptop" size="sm" />
+                <span className="rm-row-text">
+                  <b>{t("remote_this_mac")}</b>
+                  <span>{s.host_name}</span>
+                </span>
+                <span className="rm-owner-role-spacer" />
+                <span className="rm-owner-role"><RoleBadge role="owner" /></span>
               </div>
+              {s.devices.map((d) => (
+                <div key={d.id} className="rm-row rm-device-row">
+                  <Icon name={deviceIcon(d.name)} size="sm" />
+                  <span className="rm-row-text">
+                    <b>{d.name}</b>
+                    <span>
+                      {d.active ? t("remote_active") : seenLabel(t, d.last_seen)} · {d.ip}
+                      {d.running > 0 ? ` · ${t("remote_generating", { n: d.running })}` : ""}
+                      {d.role === "admin" && d.role_since
+                        ? ` · ${t("remote_admin_since", {
+                            date: new Date(d.role_since * 1000).toLocaleDateString(),
+                          })}`
+                        : ""}
+                      {!d.remember ? ` · ${t("remote_visit_only")}` : ""}
+                    </span>
+                  </span>
+                  <RoleControl
+                    device={d}
+                    onChange={async (next) => {
+                      try {
+                        setStatus(await remoteApi.setRole(d.id, next));
+                      } catch (e) {
+                        fail(e);
+                      }
+                    }}
+                  />
+                  <Button size="sm" className="rm-signout" onClick={async () => {
+                    try { setStatus(await remoteApi.signOutDevice(d.id)); } catch (e) { fail(e); }
+                  }}>
+                    {t("remote_sign_out")}
+                  </Button>
+                </div>
+              ))}
             </div>
-          )}
+            <p className="muted small m-0 settings-note">{t("remote_roles_note")}</p>
+          </div>
 
           <div className="rm-rows">
             <div className="rm-row">

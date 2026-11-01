@@ -53,6 +53,7 @@ import appIcon from "./assets/app-icon.png";
 import { isRefDrag } from "./imageDrag";
 import { uuid } from "./uuid";
 import { useComposerWorkspaces } from "./useComposerWorkspaces";
+import { shellAction } from "./shell";
 
 export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
 
@@ -305,6 +306,36 @@ export default function App() {
     window.addEventListener("imagen:open-settings", onOpenSettings);
     return () => window.removeEventListener("imagen:open-settings", onOpenSettings);
   }, []);
+
+  // The Tauri shell emits this after an admin switched libraries remotely.
+  useEffect(() => {
+    const onLibrarySwitched = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        by?: unknown;
+        name?: unknown;
+        back?: unknown;
+      }>).detail;
+      if (!detail || typeof detail.by !== "string" || typeof detail.name !== "string") {
+        return;
+      }
+      const back = typeof detail.back === "number" ? detail.back : null;
+      toast(
+        t("library_switched_toast", { by: detail.by, name: detail.name }),
+        "info",
+        {
+          durationMs: 12_000,
+          action: back === null
+            ? undefined
+            : {
+                label: t("library_switch_back"),
+                onClick: () => shellAction(`open-recent/${back}`),
+              },
+        },
+      );
+    };
+    window.addEventListener("imagen:library-switched", onLibrarySwitched);
+    return () => window.removeEventListener("imagen:library-switched", onLibrarySwitched);
+  }, [t, toast]);
 
   // Once the catalog is known, move the active workspace off a provider that
   // is turned off and onto values its model accepts. Runs again whenever the

@@ -343,11 +343,27 @@ export interface ProviderCheck {
   expected?: { id: string; wireId: string; found: boolean }[];
 }
 
+export class ApiError extends Error {
+  detail: string;
+  data: unknown;
+  status: number;
+
+  constructor(detail: string, data: unknown, status: number) {
+    super(detail);
+    this.name = "ApiError";
+    this.detail = detail;
+    this.data = data;
+    this.status = status;
+  }
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
+    let data: unknown = null;
     try {
-      detail = (await res.json()).detail ?? detail;
+      data = await res.json();
+      detail = (data as { detail?: string }).detail ?? detail;
     } catch {
       /* ignore */
     }
@@ -355,7 +371,7 @@ async function handle<T>(res: Response): Promise<T> {
     if (res.status === 401 && detail === "remote_auth_required") {
       location.href = "/login";
     }
-    throw new Error(detail);
+    throw new ApiError(detail, data, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -377,7 +393,14 @@ export interface LibraryInfo {
   key: string;
   // Desktop only: recently opened libraries (current one excluded). `index`
   // is the shell's own list position used by imagen-action://open-recent/<n>.
-  recent: { index: number; path: string; name: string; opened_at: number | null; exists: boolean }[];
+  recent: {
+    index: number;
+    path?: string;
+    id?: string;
+    name: string;
+    opened_at: number | null;
+    exists: boolean;
+  }[];
 }
 
 const jsonInit = (method: string, body?: unknown): RequestInit => ({
@@ -686,7 +709,17 @@ export const MAX_TASK_ATTEMPTS = 20;
 export interface SessionInfo {
   remote: boolean;
   host_name: string | null;
-  device: { name: string; created_at: number } | null;
+  role: "owner" | "admin" | "member";
+  // Opaque current-library identity; lets the heartbeat detect library
+  // changes without running the full library summary query.
+  library_key?: string | null;
+  device: {
+    name: string;
+    created_at: number;
+    role?: "admin" | "member";
+    role_since?: number | null;
+    remember?: boolean;
+  } | null;
 }
 
 export interface RemoteAddress {
@@ -703,6 +736,9 @@ export interface RemoteDevice {
   last_seen: number;
   active: boolean;
   running: number;
+  role: "admin" | "member";
+  role_since: number | null;
+  remember: boolean;
 }
 
 export type RemoteState = "off" | "idle" | "active" | "no_code" | "blocked";
@@ -758,6 +794,17 @@ export const desktopApi = {
   },
 };
 
+export const settingsApi = {
+  async switchLibrary(index: number, id: string, force = false): Promise<{ ok: true }> {
+    return handle(
+      await fetch(
+        "/api/settings/library/switch",
+        jsonInit("POST", { index, id, force }),
+      ),
+    );
+  },
+};
+
 export const remoteApi = {
   async session(): Promise<SessionInfo> {
     return handle(await fetch("/api/session", { cache: "no-store" }));
@@ -804,5 +851,10 @@ export const remoteApi = {
   },
   async signOutAll(): Promise<RemoteStatus> {
     return handle(await fetch("/api/remote/sessions", { method: "DELETE" }));
+  },
+  async setRole(id: string, role: "admin" | "member"): Promise<RemoteStatus> {
+    return handle(
+      await fetch(`/api/remote/sessions/${id}/role`, jsonInit("PUT", { role })),
+    );
   },
 };

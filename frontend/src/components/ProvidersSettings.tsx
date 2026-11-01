@@ -41,7 +41,8 @@ export default function ProvidersSettings({
 }) {
   const { t } = useI18n();
   const { providers, enabled, loading, reload } = useProviders();
-  const { remote } = useRemote();
+  const { role } = useRemote();
+  const locked = role === "member";
   const askConfirm = useConfirm();
   const [selected, setSelected] = useState<ProviderId>(
     initialProvider && isProviderId(initialProvider) ? initialProvider : "vertex",
@@ -87,7 +88,7 @@ export default function ProvidersSettings({
   };
 
   const toggleProvider = async (provider: ProviderInfo) => {
-    if (remote || (provider.enabled && enabled.length === 1)) return;
+    if (locked || (provider.enabled && enabled.length === 1)) return;
     setErr(null);
     try {
       const next = await api.setProviderEnabled(provider.id, !provider.enabled);
@@ -99,7 +100,7 @@ export default function ProvidersSettings({
   };
 
   const save = async () => {
-    if (!info || remote) return;
+    if (!info || locked) return;
     setSaving(true);
     setErr(null);
     try {
@@ -143,7 +144,7 @@ export default function ProvidersSettings({
   };
 
   const runCheck = async () => {
-    if (!info || remote) return;
+    if (!info || locked) return;
     setChecking(true);
     setErr(null);
     setCheck(null);
@@ -178,7 +179,7 @@ export default function ProvidersSettings({
       : !!keyInput.trim();
 
   const canSave =
-    !remote &&
+    !locked &&
     !saving &&
     !!info &&
     dirty &&
@@ -194,7 +195,7 @@ export default function ProvidersSettings({
 
   return (
     <div className="settings-body providers-settings">
-      {remote && (
+      {locked && (
         <div className="rm-callout lock">
           <Icon name="lock" size="sm" />
           <span>{t("providers_lan_lock")}</span>
@@ -235,7 +236,7 @@ export default function ProvidersSettings({
                   aria-checked={provider.enabled}
                   aria-label={t("provider_use", { provider: provider.label })}
                   title={lastOn ? t("provider_keep_one") : undefined}
-                  disabled={remote || lastOn}
+                  disabled={locked || lastOn}
                   onClick={() => void toggleProvider(provider)}
                 >
                   <span />
@@ -276,7 +277,7 @@ export default function ProvidersSettings({
                       id="settings-project"
                       value={project}
                       placeholder="my-gcp-project-id"
-                      readOnly={remote}
+                      readOnly={locked}
                       onChange={(e) => setProject(e.target.value)}
                     />
                   </div>
@@ -286,7 +287,7 @@ export default function ProvidersSettings({
                       id="settings-location"
                       value={location}
                       placeholder="global"
-                      readOnly={remote}
+                      readOnly={locked}
                       onChange={(e) => setLocation(e.target.value)}
                     />
                   </div>
@@ -321,7 +322,7 @@ export default function ProvidersSettings({
                           ? t("gemini_key_saved", { last4 })
                           : t("gemini_key_saved_plain")}
                       </span>
-                      {!remote && (
+                      {!locked && (
                         <>
                           <Button size="sm" onClick={() => setReplacingKey(true)}>
                             {t("gemini_key_replace")}
@@ -345,7 +346,7 @@ export default function ProvidersSettings({
                       value={keyInput}
                       placeholder={t("gemini_key_placeholder")}
                       autoFocus={replacingKey}
-                      readOnly={remote || keyStorage === "env_only"}
+                      readOnly={locked || keyStorage === "env_only"}
                       autoComplete="off"
                       spellCheck={false}
                       onChange={(e) => setKeyInput(e.target.value)}
@@ -376,7 +377,7 @@ export default function ProvidersSettings({
 
             {err && <div className="notice error small">{err}</div>}
 
-            {!remote && (
+            {!locked && (
               <footer className="provider-detail-actions">
                 <div className="provider-check-result" aria-live="polite">
                   {dirty && !check && (
