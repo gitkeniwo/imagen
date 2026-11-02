@@ -188,6 +188,7 @@ jobs:
           fi
           # Audit the committed cask from this checkout before pushing it.
           brew tap gitkeniwo/imagen "$PWD"
+          brew trust --cask gitkeniwo/imagen/imagen
           brew audit --cask --online gitkeniwo/imagen/imagen
           brew fetch --cask --force gitkeniwo/imagen/imagen
           git push origin HEAD:main
