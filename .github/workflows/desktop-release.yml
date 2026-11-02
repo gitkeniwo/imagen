@@ -1,0 +1,203 @@
+name: Desktop release
+
+# Pushing a v* tag builds the DMG, publishes the GitHub Release and updates
+# the Homebrew tap. The Docker workflow reacts to the same tag push on its own.
+#
+# Release notes: an annotated tag's message is used as-is (create it with
+# `git tag -a --cleanup=verbatim -F notes.md v<version>` so Markdown headings
+# survive); a lightweight tag gets GitHub's generated notes.
+#
+# Re-running a failed run is safe: an existing release gets its assets
+# replaced, and an already-updated cask is not committed again.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+# Never cancel a release halfway; a second push of the same tag waits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.ref_name }}
+  GH_TOKEN: ${{ github.token }}
+  UV_PYTHON: '3.12'
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_ANALYTICS: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+jobs:
+  release:
+    # Apple silicon runner; the app is arm64-only.
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # checkout may store the pushed tag without its annotation; fetch the
+      # real tag object so the message can be read below.
+      - name: Fetch tag object
+        run: git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+
+      - name: Check tag, version and branch
+        id: meta
+        run: |
+          VERSION="${TAG#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || { echo "::error::tag $TAG is not v<major>.<minor>.<patch>"; exit 1; }
+          python3 desktop/scripts/check_versions.py | tee versions.txt
+          grep -qx "VERSION OK: $VERSION" versions.txt \
+            || { echo "::error::tag $TAG does not match the version files"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$TAG is not on main"; exit 1; }
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
+          {
+            echo "version=$VERSION"
+            echo "prev=$PREV"
+            echo "dmg=Imagen_${VERSION}_aarch64.dmg"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      # Caches saved under a tag ref are only visible to that tag, so they
+      # speed up re-runs of the same release, not the next release.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      # build.sh already checks the wry patch, the bundled frontend, the DMG
+      # image, the ad-hoc signature, arm64 and the 15.0 minimum.
+      - name: Build DMG
+        run: desktop/build.sh --dmg
+
+      - name: Verify app and write checksum
+        id: dmg
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          DMG: ${{ steps.meta.outputs.dmg }}
+        run: |
+          APP=desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Imagen.app
+          OUT=desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+          [ -f "$OUT/$DMG" ] || { echo "::error::$OUT/$DMG missing"; exit 1; }
+          codesign --verify --deep --strict "$APP"
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          [ "$PLIST_VERSION" = "$VERSION" ] \
+            || { echo "::error::Info.plist version $PLIST_VERSION != $VERSION"; exit 1; }
+          cd "$OUT"
+          shasum -a 256 "$DMG" > "$DMG.sha256"
+          shasum -a 256 -c "$DMG.sha256"
+          {
+            echo "dir=$OUT"
+            echo "sha256=$(awk '{print $1}' "$DMG.sha256")"
+            echo "size=$(du -h "$DMG" | awk '{print $1}')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          PREV: ${{ steps.meta.outputs.prev }}
+          DIR: ${{ steps.dmg.outputs.dir }}
+          DMG: ${{ steps.meta.outputs.dmg }}
+        run: |
+          ASSETS=("$DIR/$DMG" "$DIR/$DMG.sha256")
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            NOTES_ARGS=(--generate-notes)
+            if [ "$(git cat-file -t "$TAG")" = "tag" ]; then
+              git tag -l --format='%(contents)' "$TAG" > "$RUNNER_TEMP/notes.md"
+              if [ -n "$PREV" ] && ! grep -q 'Full Changelog' "$RUNNER_TEMP/notes.md"; then
+                printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
+                  "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$PREV" "$TAG" >> "$RUNNER_TEMP/notes.md"
+              fi
+              NOTES_ARGS=(--notes-file "$RUNNER_TEMP/notes.md")
+            elif [ -n "$PREV" ]; then
+              NOTES_ARGS+=(--notes-start-tag "$PREV")
+            fi
+            # Upload into a draft first so the release never appears without assets.
+            gh release create "$TAG" "${ASSETS[@]}" --verify-tag --draft \
+              --title "Imagen $VERSION" "${NOTES_ARGS[@]}"
+          fi
+          gh release edit "$TAG" --draft=false --prerelease=false --latest
+          gh release view "$TAG" --json isDraft,isPrerelease,assets \
+            -q '"draft=\(.isDraft) prerelease=\(.isPrerelease)", (.assets[] | "\(.name) \(.state)")' \
+            | tee release.txt
+          grep -qx 'draft=false prerelease=false' release.txt
+          grep -qx "$DMG uploaded" release.txt
+          grep -qx "$DMG.sha256 uploaded" release.txt
+
+      - uses: actions/checkout@v7
+        with:
+          repository: gitkeniwo/homebrew-imagen
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
+          # `brew tap` clones this checkout below; give it full history.
+          fetch-depth: 0
+
+      - name: Update Homebrew tap
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA256: ${{ steps.dmg.outputs.sha256 }}
+        working-directory: tap
+        run: |
+          CASK=Casks/imagen.rb
+          sed -i '' -E \
+            -e "s/^  version \"[^\"]*\"/  version \"$VERSION\"/" \
+            -e "s/^  sha256 \"[^\"]*\"/  sha256 \"$SHA256\"/" "$CASK"
+          grep -qx "  version \"$VERSION\"" "$CASK"
+          grep -qx "  sha256 \"$SHA256\"" "$CASK"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet; then
+            echo "cask already at $VERSION"
+          else
+            git commit -qam "imagen $VERSION"
+          fi
+          # Audit the committed cask from this checkout before pushing it.
+          brew tap gitkeniwo/imagen "$PWD"
+          brew audit --cask --online gitkeniwo/imagen/imagen
+          brew fetch --cask --force gitkeniwo/imagen/imagen
+          git push origin HEAD:main
+          git fetch -q origin main
+          [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          DMG: ${{ steps.meta.outputs.dmg }}
+          SHA256: ${{ steps.dmg.outputs.sha256 }}
+          SIZE: ${{ steps.dmg.outputs.size }}
+        run: |
+          {
+            echo "### Imagen $VERSION"
+            echo "- Release: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            echo "- DMG: \`$DMG\` ($SIZE)"
+            echo "- SHA-256: \`$SHA256\`"
+            echo "- Tap: gitkeniwo/homebrew-imagen @ \`$(git -C tap rev-parse --short HEAD)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
