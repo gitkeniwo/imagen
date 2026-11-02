@@ -94,6 +94,11 @@ The app is written to
 The DMG is written to the sibling `bundle/dmg/` directory. The build checks that
 the backend, desktop package, Cargo manifest, and Tauri config versions agree.
 
+Releases are built by GitHub Actions: pushing a `v<version>` tag on `main`
+runs `.github/workflows/desktop-release.yml`, which builds the DMG, publishes
+the GitHub Release with the DMG and its `.sha256`, and updates the
+[Homebrew tap](https://github.com/gitkeniwo/homebrew-imagen).
+
 ### Data, logs, and port
 
 The app does **not** create or copy a library by default. On first launch it
