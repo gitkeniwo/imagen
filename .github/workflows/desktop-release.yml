@@ -13,17 +13,23 @@ name: Desktop release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 # Never cancel a release halfway; a second push of the same tag waits.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
-  TAG: ${{ github.ref_name }}
+  TAG: ${{ inputs.tag || github.ref_name }}
   GH_TOKEN: ${{ github.token }}
   UV_PYTHON: '3.12'
   HOMEBREW_NO_AUTO_UPDATE: '1'
@@ -39,6 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       # checkout may store the pushed tag without its annotation; fetch the
@@ -55,7 +62,7 @@ jobs:
           python3 desktop/scripts/check_versions.py | tee versions.txt
           grep -qx "VERSION OK: $VERSION" versions.txt \
             || { echo "::error::tag $TAG does not match the version files"; exit 1; }
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+          git merge-base --is-ancestor HEAD origin/main \
             || { echo "::error::$TAG is not on main"; exit 1; }
           PREV="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
           {
