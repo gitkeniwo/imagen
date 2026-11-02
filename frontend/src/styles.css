@@ -2449,8 +2449,9 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-island {
     flex: 1;
     min-height: 0;
+    /* Keep the island's top edge clear of the iOS standalone scroll-edge blur. */
     /* Bottom margin keeps the island's rounded edge and shadow from being cut at the viewport. */
-    margin: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
+    margin: var(--space-5) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
     border-radius: 18px;
   }
   .phone-island-scroll {
