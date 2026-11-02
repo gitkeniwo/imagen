@@ -81,6 +81,10 @@ expect "page redirects to /login" 302 "$(code "$U/")"
 expect "/login is public" 200 "$(code "$U/login")"
 expect "hello" 200 "$(code "$U/api/remote/hello")"
 grep -q '"server":true' "$TMP/body" || die "hello does not report server mode"
+for FILE in favicon.ico apple-touch-icon.png site.webmanifest; do
+  expect "$FILE is public" 200 "$(code "$U/$FILE")"
+  cmp -s "$TMP/body" "$ROOT/frontend/dist/$FILE" || die "$FILE is not the built file"
+done
 expect "login without Origin" 403 "$(code -X POST -H 'Content-Type: application/json' -d '{"code":"24680"}' "$U/api/remote/login")"
 expect "wrong code" 401 "$(login 11111 "$TMP/jar-bad")"
 expect "right code" 200 "$(login 24680 "$J")"

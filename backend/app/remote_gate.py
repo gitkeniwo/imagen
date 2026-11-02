@@ -19,6 +19,17 @@ from . import remote
 # Reachable on the LAN listener without a session.
 _PUBLIC_GET = {"/login", "/api/remote/hello"}
 _PUBLIC_POST = {"/api/remote/login"}
+# Browser chrome requests these while showing the login page, before a LAN
+# session exists. Keep the icon set public so tabs and Add to Home Screen work.
+_PUBLIC_WEB_ASSETS = {
+    "/favicon.ico",
+    "/favicon-16x16.png",
+    "/favicon-32x32.png",
+    "/apple-touch-icon.png",
+    "/icon-192x192.png",
+    "/icon-512x512.png",
+    "/site.webmanifest",
+}
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # The Vite dev server (separate origin) proxies /api here; see CORS in main.py.
 _DEV_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
@@ -177,7 +188,14 @@ class RemoteGate:
         scope["state"]["remote_session"] = session["id"] if session else None
 
         public = (
-            (method in ("GET", "HEAD") and (path in _PUBLIC_GET or path.startswith("/assets/")))
+            (
+                method in ("GET", "HEAD")
+                and (
+                    path in _PUBLIC_GET
+                    or path in _PUBLIC_WEB_ASSETS
+                    or path.startswith("/assets/")
+                )
+            )
             or (method == "POST" and path in _PUBLIC_POST)
             # Docker HEALTHCHECK; without the desktop token it says nothing.
             or (not lan and method in ("GET", "HEAD") and path == "/api/health")

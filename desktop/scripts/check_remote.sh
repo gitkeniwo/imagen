@@ -147,6 +147,20 @@ ASSET="$(ls "$ROOT/frontend/dist/assets" | head -1)"
 expect "LAN /assets/$ASSET" 200 "$(code "$LAN/assets/$ASSET")"
 expect "LAN /api/remote/hello" 200 "$(code "$LAN/api/remote/hello")"
 expect "LAN /api/remote/status hidden (no session)" 401 "$(code "$LAN/api/remote/status")"
+for FILE in favicon.ico favicon-16x16.png favicon-32x32.png apple-touch-icon.png \
+  icon-192x192.png icon-512x512.png site.webmanifest; do
+  expect "LAN /$FILE before login" 200 "$(code "$LAN/$FILE")"
+  cmp -s "$TMP/body" "$ROOT/frontend/dist/$FILE" || die "LAN /$FILE is not the built file"
+done
+python3 - "$TMP/body" <<'PY' || die "LAN web manifest is invalid"
+import json, sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    manifest = json.load(handle)
+assert manifest["name"] == "Imagen"
+assert {icon["sizes"] for icon in manifest["icons"]} == {"192x192", "512x512"}
+PY
+say "LAN favicon, touch icon and web manifest are public"
 
 # --- login ---
 JAR="$TMP/jar1"
