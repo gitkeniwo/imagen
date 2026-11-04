@@ -113,6 +113,11 @@ export default function ImageViewer({
     setZoomed(z);
   }, []);
   const [panelHidden, setPanelHidden] = useState(false);
+  const [controlsHidden, setControlsHidden] = useState(false);
+  const togglePanel = useCallback(() => {
+    setPanelHidden((hidden) => !hidden);
+    setControlsHidden(false);
+  }, []);
   // Phone: bottom sheet-style info panel; collapsed shows a 3-line prompt.
   const phone = useIsPhone();
   const [expanded, setExpanded] = useState(false);
@@ -356,7 +361,7 @@ export default function ImageViewer({
       const el = e.target instanceof Element ? e.target : null;
       if (el?.closest("input, textarea, select, [contenteditable='true']")) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "i" || e.key === "I") setPanelHidden((h) => !h);
+      if (e.key === "i" || e.key === "I") togglePanel();
       else if (zoomedRef.current) return;
       else if (e.key === "ArrowLeft") void goTo(-1);
       else if (e.key === "ArrowRight") void goTo(1);
@@ -364,7 +369,7 @@ export default function ImageViewer({
     if (editingGen || duplicatingGen) return;
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close, goTo, editingGen, duplicatingGen]);
+  }, [close, goTo, editingGen, duplicatingGen, togglePanel]);
 
   const refreshGeneration = () => {
     if (source !== "generated") return;
@@ -453,15 +458,17 @@ export default function ImageViewer({
         <ZoomStage
           image={current}
           panelHidden={panelHidden}
+          controlsHidden={controlsHidden}
           starred={starred}
           onToggleStar={toggleStar}
-          onTogglePanel={() => setPanelHidden((h) => !h)}
+          onTogglePanel={togglePanel}
+          onToggleControls={() => setControlsHidden((hidden) => !hidden)}
           onZoomedChange={onZoomedChange}
           onNavigate={multi ? goTo : undefined}
           canNavigatePrev={!atStart}
           canNavigateNext={!atEnd}
         >
-          {(phone || panelHidden) && (
+          {(phone || panelHidden) && !controlsHidden && (
             <div className="viewer-phone-top">
               <IconButton variant="overlay" size="md" icon="close" label={t("close")} onClick={close} />
               {multi && <span className="viewer-phone-count">{globalPosition} / {total}</span>}

@@ -29,9 +29,11 @@ interface View {
 export default function ZoomStage({
   image,
   panelHidden,
+  controlsHidden,
   starred,
   onToggleStar,
   onTogglePanel,
+  onToggleControls,
   onZoomedChange,
   onNavigate,
   canNavigatePrev = true,
@@ -40,9 +42,11 @@ export default function ZoomStage({
 }: {
   image: ImageRow;
   panelHidden: boolean;
+  controlsHidden: boolean;
   starred: boolean;
   onToggleStar: () => void;
   onTogglePanel: () => void;
+  onToggleControls: () => void;
   onZoomedChange: (zoomed: boolean) => void;
   // Fit only: horizontal swipe/flick to the previous (-1) or next (+1) image.
   onNavigate?: (delta: -1 | 1) => void;
@@ -75,6 +79,7 @@ export default function ZoomStage({
   } | null>(null);
   const suppressClick = useRef(false);
   const suppressClickTimer = useRef<number | undefined>(undefined);
+  const controlsClickTimer = useRef<number | undefined>(undefined);
 
   const iw = image.width || 1;
   const ih = image.height || 1;
@@ -412,7 +417,25 @@ export default function ZoomStage({
     e.preventDefault();
     e.stopPropagation();
   };
+  const onClick = (e: React.MouseEvent) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (
+      !panelHidden ||
+      target?.closest(
+        ".viewer-phone-top, .zoom-hud, .viewer-count, .zoom-mini, " +
+          "button, a, input, textarea, select, [contenteditable='true'], [role='toolbar']",
+      )
+    ) {
+      return;
+    }
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    if (x < 1 / 5 || x > 4 / 5) return;
+    window.clearTimeout(controlsClickTimer.current);
+    controlsClickTimer.current = window.setTimeout(onToggleControls, 220);
+  };
   const onDoubleClick = (e: React.MouseEvent) => {
+    window.clearTimeout(controlsClickTimer.current);
     const target = e.target instanceof Element ? e.target : null;
     if (target?.closest("button")) return;
     const r = e.currentTarget.getBoundingClientRect();
@@ -440,6 +463,7 @@ export default function ZoomStage({
   useEffect(
     () => () => {
       window.clearTimeout(suppressClickTimer.current);
+      window.clearTimeout(controlsClickTimer.current);
     },
     [],
   );
@@ -453,6 +477,7 @@ export default function ZoomStage({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       onClickCapture={onClickCapture}
+      onClick={onClick}
       onDoubleClick={onDoubleClick}
     >
       <div
@@ -485,53 +510,55 @@ export default function ZoomStage({
         </div>
       )}
 
-      <div className="zoom-hud" role="toolbar" aria-label={t("zoom_toolbar")}>
-        <IconButton
-          icon="zoomOut"
-          label={t("zoom_out")}
-          disabled={!zoomed}
-          onClick={() => zoomAt(view.s / STEP, ...center())}
-        />
-        <span className="zoom-pct">{pct}%</span>
-        <IconButton
-          icon="zoomIn"
-          label={t("zoom_in")}
-          disabled={view.s >= maxS - 1e-3}
-          onClick={() => zoomAt(view.s * STEP, ...center())}
-        />
-        <span className="zoom-sep" aria-hidden="true" />
-        <button type="button" className="zoom-text" aria-pressed={isFit} onClick={toFit}>
-          {t("zoom_fit")}
-        </button>
-        <button
-          type="button"
-          className="zoom-text"
-          aria-pressed={isOne}
-          disabled={minS > 1 + 1e-3}
-          onClick={() => zoomAt(1, ...center())}
-        >
-          1:1
-        </button>
-        <span className="zoom-sep" aria-hidden="true" />
-        <IconButton
-          className={`zoom-favorite${starred ? " is-starred" : ""}`}
-          icon="favorite"
-          filled={starred}
-          label={starred ? t("unfavorite") : t("favorite")}
-          aria-pressed={starred}
-          onClick={onToggleStar}
-        />
-        <button
-          type="button"
-          className="zoom-icon"
-          aria-pressed={panelHidden}
-          aria-label={panelHidden ? t("show_panel") : t("hide_panel")}
-          title={`${panelHidden ? t("show_panel") : t("hide_panel")} (I)`}
-          onClick={onTogglePanel}
-        >
-          <Icon name={panelHidden ? "fullscreenExit" : "fullscreen"} size="sm" />
-        </button>
-      </div>
+      {!controlsHidden && (
+        <div className="zoom-hud" role="toolbar" aria-label={t("zoom_toolbar")}>
+          <IconButton
+            icon="zoomOut"
+            label={t("zoom_out")}
+            disabled={!zoomed}
+            onClick={() => zoomAt(view.s / STEP, ...center())}
+          />
+          <span className="zoom-pct">{pct}%</span>
+          <IconButton
+            icon="zoomIn"
+            label={t("zoom_in")}
+            disabled={view.s >= maxS - 1e-3}
+            onClick={() => zoomAt(view.s * STEP, ...center())}
+          />
+          <span className="zoom-sep" aria-hidden="true" />
+          <button type="button" className="zoom-text" aria-pressed={isFit} onClick={toFit}>
+            {t("zoom_fit")}
+          </button>
+          <button
+            type="button"
+            className="zoom-text"
+            aria-pressed={isOne}
+            disabled={minS > 1 + 1e-3}
+            onClick={() => zoomAt(1, ...center())}
+          >
+            1:1
+          </button>
+          <span className="zoom-sep" aria-hidden="true" />
+          <IconButton
+            className={`zoom-favorite${starred ? " is-starred" : ""}`}
+            icon="favorite"
+            filled={starred}
+            label={starred ? t("unfavorite") : t("favorite")}
+            aria-pressed={starred}
+            onClick={onToggleStar}
+          />
+          <button
+            type="button"
+            className="zoom-icon"
+            aria-pressed={panelHidden}
+            aria-label={panelHidden ? t("show_panel") : t("hide_panel")}
+            title={`${panelHidden ? t("show_panel") : t("hide_panel")} (I)`}
+            onClick={onTogglePanel}
+          >
+            <Icon name={panelHidden ? "fullscreenExit" : "fullscreen"} size="sm" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
