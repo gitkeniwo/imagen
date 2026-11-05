@@ -1,3 +1,5 @@
+import { generatedDate, isDefaultGeneratedName } from "./displayName";
+
 // Thin fetch wrapper around the FastAPI backend.
 
 export interface TagRef {
@@ -273,6 +275,11 @@ const DOWNLOAD_EXT: Record<string, string> = {
  */
 export function downloadName(img: ImageRow): string {
   const ext = DOWNLOAD_EXT[(img.mime || "").toLowerCase()] ?? "png";
+  const generated = isDefaultGeneratedName(img) ? generatedDate(img.filename) : null;
+  if (generated) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `imagen-${generated.getFullYear()}${pad(generated.getMonth() + 1)}${pad(generated.getDate())}-${pad(generated.getHours())}${pad(generated.getMinutes())}${pad(generated.getSeconds())}.${ext}`;
+  }
   const raw = (img.filename || "")
     .trim()
     .replace(/\\/g, "/")

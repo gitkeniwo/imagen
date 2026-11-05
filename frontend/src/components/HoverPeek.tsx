@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { ImageRow, imgThumbUrl } from "../api";
+import { useI18n } from "../i18n";
+import { displayName } from "../displayName";
 
 // Hover-to-enlarge for small thumbnails (composer references, history/queue
 // input chips). One floating card for the whole app: thumbnails spread
@@ -67,6 +69,7 @@ const subscribe = (l: () => void) => {
 };
 
 export default function HoverPeek() {
+  const { t } = useI18n();
   const peek = useSyncExternalStore(subscribe, () => state);
 
   // Anything that moves the page under the pointer invalidates the anchor.
@@ -106,7 +109,7 @@ export default function HoverPeek() {
     <div className="hover-peek" style={{ left, top, width: cardW }} aria-hidden="true">
       <img src={imgThumbUrl(img)} alt="" style={{ height: imgH }} />
       <div className="hover-peek-text">
-        <span className="hover-peek-name">{label ? `${label} · ${img.filename}` : img.filename}</span>
+        <span className="hover-peek-name">{label ? `${label} · ${displayName(img, t)}` : displayName(img, t)}</span>
         {dims && <span className="hover-peek-dims">{dims}</span>}
       </div>
     </div>,

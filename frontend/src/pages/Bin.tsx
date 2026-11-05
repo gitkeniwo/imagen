@@ -5,6 +5,7 @@ import { pressable } from "../a11y";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import { Button } from "../components/ui/Button";
+import { displayName } from "../displayName";
 
 const PAGE_SIZE = 60;
 
@@ -139,7 +140,7 @@ export default function Bin({
               <div className="card-img-wrap">
                 <img
                   src={imgThumbUrl(img)}
-                  alt={img.filename}
+                  alt={displayName(img, t)}
                   title={t("open_viewer")}
                   onClick={() => onOpenViewer(img, images)}
                   {...pressable(() => onOpenViewer(img, images))}

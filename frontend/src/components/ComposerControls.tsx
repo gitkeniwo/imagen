@@ -100,6 +100,7 @@ export function ComposerParams({
             key={r}
             type="button"
             className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
+            aria-label={`${t("aspect")} ${r}`}
             aria-pressed={aspectRatio === r}
             onClick={() => setAspectRatio(r)}
           >
