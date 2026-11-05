@@ -1,11 +1,13 @@
 """Image upload, listing, file serving, metadata edit, delete."""
 import asyncio
-import io
+import os
+import tempfile
 import zipfile
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
+from starlette.background import BackgroundTask
 
 from .. import storage, tagging
 from ..db import get_conn
@@ -132,26 +134,36 @@ def batch_download(ids: str = Query(...)):
         raise HTTPException(status_code=400, detail="ids must be comma-separated integers")
     if not id_list:
         raise HTTPException(status_code=400, detail="No valid ids provided")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        with get_conn() as conn:
-            for image_id in id_list:
-                row = storage.get_image(conn, image_id)
-                if not row:
-                    continue
-                path = storage.file_on_disk(row)
-                if not path.exists():
-                    continue
-                # download_name drops directory parts, so a crafted upload
-                # name like "../../x" cannot escape the folder on unzip.
-                zf.write(path, f"{image_id}_{download_name(row)}")
-    return Response(
-        content=buf.getvalue(),
+    # Build the archive on disk (system temp dir), not in memory: holding the
+    # whole ZIP in a BytesIO cost ~2x the selected originals. Images are
+    # already compressed, so ZIP_STORED skips pointless deflate CPU.
+    tmp = tempfile.NamedTemporaryFile(prefix="imagen-batch-", suffix=".zip", delete=False)
+    tmp_path = tmp.name
+    try:
+        with tmp, zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as zf:
+            with get_conn() as conn:
+                for image_id in id_list:
+                    row = storage.get_image(conn, image_id)
+                    if not row:
+                        continue
+                    path = storage.file_on_disk(row)
+                    if not path.exists():
+                        continue
+                    # download_name drops directory parts, so a crafted upload
+                    # name like "../../x" cannot escape the folder on unzip.
+                    zf.write(path, f"{image_id}_{download_name(row)}")
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
+    # BackgroundTask runs after the response finishes or the client disconnects.
+    return FileResponse(
+        tmp_path,
         media_type="application/zip",
         headers={
             "Content-Disposition": "attachment; filename=images.zip",
             "Cache-Control": "private, no-store",
         },
+        background=BackgroundTask(os.unlink, tmp_path),
     )
 
 
