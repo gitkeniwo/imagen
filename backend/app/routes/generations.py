@@ -1,10 +1,9 @@
 """Generation history with lineage (input images + output image)."""
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
 from .. import providers, storage, tagging
-from ..db import get_conn
+from ..db import canonical_timestamp, get_conn, now_timestamp
 from ..models import ManualGenerationRequest, MarkerPatch
 
 router = APIRouter(prefix="/api/generations", tags=["generations"])
@@ -15,10 +14,22 @@ _MARKER_COLORS = {"red", "orange", "yellow", "green", "blue", "purple", "pink"}
 _LIVE_OUTPUT_CLAUSE = (
     "output_image_id IN (SELECT id FROM images WHERE deleted_at IS NULL)"
 )
+# History filter by outcome. "error" also covers cancelled requests, which the
+# UI shows as failures too; "running" placeholders match no outcome filter.
+_RESULT_FILTERS = {
+    "success": ("success",),
+    "blocked": ("blocked",),
+    "error": ("error", "aborted"),
+}
+# Newest first by when the generation happened. Manual records may carry a
+# past `created_at` with a larger id, so id only breaks ties. created_at is
+# stored as canonical UTC ISO text (db.canonical_timestamp), so text order is
+# time order; COALESCE keeps rare NULLs deterministic (last).
+_ORDER = "COALESCE(created_at, '') DESC, id DESC"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return now_timestamp()
 
 
 def _inputs_for(conn, gen_id: int) -> list[dict]:
@@ -95,9 +106,14 @@ def _validate_manual_body(body: ManualGenerationRequest) -> None:
     # History may belong to a provider that is off or not set up.
     if providers.get(body.provider) is None:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {body.provider}")
+    if body.status == "success" and not body.outputImageId:
+        # A success without an output renders as "deleted" in History.
+        raise HTTPException(
+            status_code=400, detail="A successful record needs an output image."
+        )
     if body.createdAt:
         try:
-            datetime.fromisoformat(body.createdAt)
+            body.createdAt = canonical_timestamp(body.createdAt)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid createdAt: {body.createdAt}")
 
@@ -217,6 +233,9 @@ def list_generations(
     q: str | None = None,
     starred: bool | None = None,
     kind: str | None = None,
+    status: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
     with_output: bool = False,
     unique_outputs: bool = False,
 ):
@@ -246,6 +265,21 @@ def list_generations(
     if q and q.strip():
         base_clauses.append("prompt LIKE ?")
         params.append(f"%{q.strip()}%")
+    if status:
+        if status not in _RESULT_FILTERS:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        wanted = _RESULT_FILTERS[status]
+        base_clauses.append(f"status IN ({','.join('?' * len(wanted))})")
+        params.extend(wanted)
+    if model:
+        # Old rows may still carry a preview id that maps to this model.
+        wanted = providers.normalize_model(model)
+        aliases = [wanted, *(a for a, m in providers.MODEL_ALIASES.items() if m == wanted)]
+        base_clauses.append(f"model IN ({','.join('?' * len(aliases))})")
+        params.extend(aliases)
+    if provider:
+        base_clauses.append("provider = ?")
+        params.append(provider)
     clauses = [*base_clauses]
     if with_output or unique_outputs:
         # Only retain records with a live output image. This deliberately
@@ -257,16 +291,26 @@ def list_generations(
     output_where = f"WHERE {' AND '.join([*base_clauses, _LIVE_OUTPUT_CLAUSE])}"
     # The viewer navigates images, not generation records. Several records may
     # deliberately point at one output image (manual reuse or SHA-256 dedup),
-    # so rank each live output by the newest matching generation that uses it.
+    # so rank each live output by the newest matching generation that uses it
+    # (newest in the same created_at/id order as the list itself).
     output_ranked = f"""
-        SELECT output_image_id, MAX(id) AS representative_id
-        FROM generations
-        {output_where}
-        GROUP BY output_image_id
+        SELECT output_image_id, representative_id, representative_at
+        FROM (
+            SELECT output_image_id, id AS representative_id,
+                   COALESCE(created_at, '') AS representative_at,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY output_image_id ORDER BY {_ORDER}
+                   ) AS rn
+            FROM generations
+            {output_where}
+        ) candidates
+        WHERE rn = 1
     """
     output_positioned = f"""
         SELECT output_image_id, representative_id,
-               ROW_NUMBER() OVER (ORDER BY representative_id DESC) - 1 AS output_index
+               ROW_NUMBER() OVER (
+                   ORDER BY representative_at DESC, representative_id DESC
+               ) - 1 AS output_index
         FROM ({output_ranked}) ranked
     """
     with get_conn() as conn:
@@ -276,7 +320,7 @@ def list_generations(
         if unique_outputs:
             base_positioned = f"""
                 SELECT id,
-                       ROW_NUMBER() OVER (ORDER BY id DESC) - 1 AS generation_offset
+                       ROW_NUMBER() OVER (ORDER BY {_ORDER}) - 1 AS generation_offset
                 FROM generations
                 {base_where}
             """
@@ -288,7 +332,7 @@ def list_generations(
                 FROM output_positioned p
                 JOIN generations g ON g.id = p.representative_id
                 JOIN base_positioned b ON b.id = g.id
-                ORDER BY g.id DESC
+                ORDER BY p.output_index
                 LIMIT ? OFFSET ?
                 """,
                 (*params, *params, limit, offset),
@@ -298,7 +342,7 @@ def list_generations(
             out = _hydrate(conn, [dict(g) for g in rows])
         else:
             gens = conn.execute(
-                f"SELECT * FROM generations {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+                f"SELECT * FROM generations {where} ORDER BY {_ORDER} LIMIT ? OFFSET ?",
                 (*params, limit, offset),
             ).fetchall()
             total = conn.execute(
@@ -310,8 +354,10 @@ def list_generations(
                 # grid page precedes its outputs in the viewer sequence.
                 output_offset = conn.execute(
                     f"SELECT COUNT(*) c FROM ({output_ranked}) ranked "
-                    "WHERE representative_id > ?",
-                    (*params, gens[0]["id"]),
+                    "WHERE representative_at > ? "
+                    "OR (representative_at = ? AND representative_id > ?)",
+                    (*params, gens[0]["created_at"] or "",
+                     gens[0]["created_at"] or "", gens[0]["id"]),
                 ).fetchone()["c"]
             out = _hydrate(conn, [dict(g) for g in gens])
             for i, g in enumerate(out):
@@ -352,7 +398,7 @@ def generation_by_output(image_id: int):
     with get_conn() as conn:
         row = conn.execute(
             "SELECT * FROM generations WHERE output_image_id = ? AND status != 'note' "
-            "ORDER BY id DESC LIMIT 1",
+            f"ORDER BY {_ORDER} LIMIT 1",
             (image_id,),
         ).fetchone()
         if not row:

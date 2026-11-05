@@ -825,8 +825,12 @@ body.resizing-sidebar .side-panel {
   position: sticky; top: 0; z-index: 5;
   background: var(--bg); padding-bottom: var(--space-2); margin-bottom: var(--space-0_5);
 }
-.history-toolbar-row { display: flex; align-items: center; gap: var(--space-2); }
-.history-toolbar-row .searchbox { flex: 1; min-width: 0; }
+/* In a narrow sidebar the search keeps a usable width and the view controls
+   wrap to their own (right-aligned) line instead of squeezing it. */
+.history-toolbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.history-toolbar-row .searchbox { flex: 1 1 150px; min-width: 0; }
+.history-toolbar-row > .searchbox + * { margin-left: auto; }
+.history-toolbar-controls { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 .history-cols-seg { flex: 0 0 auto; }
 .history-kind-seg { flex: 0 0 auto; }
 
@@ -2014,6 +2018,12 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
   .filter-row .seg button { padding: 0 var(--space-2); }
 }
 .history-toolbar-row + .filter-row { margin-top: var(--space-2); }
+.filter-trigger .filter-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-full);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--ui-accent); color: #fff; font-size: var(--fs-xs); font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
 .view-seg button { padding: 0 var(--space-2); min-height: 28px; }
 
 /* ===== history records: equal-height grid cards and fixed-height list rows ===== */
@@ -2067,6 +2077,17 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 }
 .gcard-meta .provider-badge { margin-right: var(--space-1_5); vertical-align: middle; }
 .hcard-meta-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hcard-time { flex: none; margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.hcard-media > .hcard-time {
+  position: absolute; right: 6px; bottom: 6px; z-index: 1; pointer-events: none;
+  padding: 1px 6px; border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.55); color: #fff; line-height: 16px;
+}
+/* List view day groups (today / yesterday / date). */
+.hlist-day {
+  margin: var(--space-2) 0 0; font-size: var(--fs-sm); font-weight: 650; color: var(--muted);
+}
+.hlist-day:first-child { margin-top: 0; }
 .hcard-meta.error { color: var(--badge-error-text); }
 .hcard-meta.blocked { color: var(--badge-blocked-text); }
 .hcard-meta .fulltext-trigger { color: inherit; text-decoration: underline; }
@@ -2122,6 +2143,21 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 @container (max-width: 440px) {
   .hcard.list .hcard-btn-label { display: none; }
   .hcard.list .hcard-actions .btn-sm { padding-inline: var(--space-1_5); }
+}
+/* Default-width sidebar: even icon-only, seven actions don't fit beside the
+   thumbnail, so the action row moves under it and spans the whole card
+   (instead of being clipped). */
+@container (max-width: 340px) {
+  .hcard.list {
+    display: grid; grid-template-columns: 72px minmax(0, 1fr);
+    column-gap: var(--space-2_5); row-gap: var(--space-1_5);
+  }
+  .hcard.list .hcard-body { display: contents; }
+  .hcard.list .hcard-body > * { grid-column: 2; }
+  .hcard.list .hcard-media { grid-column: 1; grid-row: 1 / span 3; width: auto; min-height: 72px; }
+  .hcard.list .hcard-actions { grid-column: 1 / -1; gap: 2px; padding-top: 0; }
+  .hcard.list .hcard-actions .btn-sm { padding-inline: 5px; }
+  .hcard.list .hcard-meta { flex-wrap: wrap; height: auto; row-gap: 2px; }
 }
 
 /* Queue card: live status and undo/cancel centred over the pending shimmer. */
@@ -2881,6 +2917,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     border-color: var(--ui-accent-line);
   }
   .phone-filter-row .filter-label { display: none; }
+  .phone-filter-row .filter-trigger { width: auto; padding: 0 var(--space-2_5); gap: var(--space-1); }
   .phone-filter-row .phone-search-toggle { margin-left: auto; }
 
   .phone-tagrow {

@@ -11,6 +11,7 @@ import Popover from "./ui/Popover";
 import { useToast } from "./Toast";
 import { downloadImage, markerHex } from "./GenerationCard";
 import ProviderBadge from "./ProviderBadge";
+import { cardTime, clockTime, fullTime, parseTime } from "../historyTime";
 
 export type HistoryLayout = "grid" | "list";
 
@@ -138,8 +139,13 @@ export default function HistoryItem({
   // Optional extra row above the meta (the favorites note).
   header?: ReactNode;
 }) {
-  const { t, reason } = useI18n();
+  const { t, lang, reason } = useI18n();
   const toast = useToast();
+  // The list is grouped by day, so its rows only need the clock time.
+  const when = parseTime(g.created_at);
+  const whenShort = when
+    ? layout === "list" ? clockTime(when, lang) : cardTime(when, new Date(), lang)
+    : null;
   const running = g.status === "running";
   const failed = !output && !missing && !running;
   const kind = g.status === "blocked" || g.status === "aborted" || g.status === "note" ? g.status : "error";
@@ -164,6 +170,17 @@ export default function HistoryItem({
     { icon: "edit", label: t("edit_annotation"), onClick: onEdit, disabled: running },
     { icon: "duplicate", label: t("duplicate_record"), onClick: onDuplicate, disabled: running },
   ];
+
+  const timeEl =
+    when && whenShort ? (
+      <time
+        className="hcard-time"
+        dateTime={g.created_at}
+        title={t("generated_at", { time: fullTime(when, lang) })}
+      >
+        {whenShort}
+      </time>
+    ) : null;
 
   const media = (
     <div
@@ -213,6 +230,8 @@ export default function HistoryItem({
           )}
         </div>
       )}
+      {/* The grid's meta line is too narrow to also carry the time. */}
+      {layout === "grid" && timeEl}
     </div>
   );
 
@@ -238,6 +257,7 @@ export default function HistoryItem({
           <ProviderBadge provider={providerOf(g)} />
           <span className="hcard-meta-text">{listFailure ? errorText : meta}</span>
           {listFailure && <FullTextButton label={t("details")} title={t(`status_${g.status}`)} text={errorText} />}
+          {layout === "list" && timeEl}
         </div>
         <PromptClamp text={g.prompt} lines={2} />
         <div className="hcard-chips">

@@ -1,9 +1,10 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { api, Generation, ImageRow, providerOf } from "../api";
 import { useI18n } from "../i18n";
 import { useProviders } from "../useProviders";
 import AddHistoryModal from "../components/AddHistoryModal";
 import { pageSizedToColumns } from "../pageSize";
+import { useFitColumns } from "../useFitColumns";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import Icon from "../components/ui/Icon";
@@ -57,9 +58,12 @@ export default function Favorites({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Fewer columns while cards would be too narrow for their buttons.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const fitColumns = useFitColumns(rootRef, columns);
   const pageSize = pageSizedToColumns(
     compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
-    phone ? 1 : columns,
+    phone ? 1 : fitColumns,
   );
 
   const load = () => {
@@ -176,7 +180,7 @@ export default function Favorites({
   );
 
   return (
-    <div>
+    <div ref={rootRef}>
       <div className="history-toolbar">
         <div className="history-toolbar-row">
           <SearchBox
@@ -241,7 +245,7 @@ export default function Favorites({
       ) : (
         <div
           className={`history-list hlist grid${compact ? " compact" : ""}`}
-          style={{ "--history-columns": columns } as CSSProperties}
+          style={{ "--history-columns": fitColumns } as CSSProperties}
         >
           {gens.map((g) => {
             const outImg = g.outputImage ?? null;

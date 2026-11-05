@@ -403,14 +403,20 @@ ok("drafts store provider (default vertex, unknown -> 400)")
 # manual history: a provider that is off is still allowed
 c.put("/api/providers/vertex", json={"enabled": False}).raise_for_status()
 r = c.post("/api/generations/manual", json={"prompt": "m", "provider": "vertex",
-                                            "model": "gemini-3-pro-image", "status": "success"})
+                                            "model": "gemini-3-pro-image", "status": "error"})
 if r.status_code != 200 or r.json()["provider"] != "vertex":
     fail(f"manual on a provider that is off: {r.status_code} {r.text[:200]}")
 gid = r.json()["id"]
 r = c.patch(f"/api/generations/{gid}", json={"prompt": "m", "provider": "gemini",
-                                             "model": "gemini-3-pro-image", "status": "success"})
+                                             "model": "gemini-3-pro-image", "status": "error"})
 if r.json()["provider"] != "gemini":
     fail("manual edit provider")
+# A success needs its output image (otherwise History shows it as deleted).
+no_output = {"prompt": "m", "model": "gemini-3-pro-image", "status": "success"}
+if c.post("/api/generations/manual", json=no_output).status_code != 400:
+    fail("manual success without an output accepted")
+if c.patch(f"/api/generations/{gid}", json=no_output).status_code != 400:
+    fail("manual edit to success without an output accepted")
 if c.post("/api/generations/manual", json={"model": "x", "provider": "nope"}).status_code != 400:
     fail("manual with unknown provider accepted")
 c.put("/api/providers/vertex", json={"enabled": True}).raise_for_status()

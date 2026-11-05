@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS draft_tags (
 INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_generations_output_image_id ON generations(output_image_id);
+CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_generation_inputs_image_id ON generation_inputs(image_id);
 CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_images_source ON images(source);
@@ -129,6 +130,25 @@ CREATE INDEX IF NOT EXISTS idx_drafts_order ON drafts(pinned DESC, updated_at DE
 CREATE INDEX IF NOT EXISTS idx_draft_images_image_id ON draft_images(image_id);
 CREATE INDEX IF NOT EXISTS idx_draft_tags_tag_id ON draft_tags(tag_id);
 """
+
+
+# Fixed-width UTC ISO-8601 (``2026-11-05T18:18:23.603635+00:00``): text order
+# equals time order, which History's ``ORDER BY created_at`` relies on.
+_CANONICAL_TS_GLOB = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9][0-9][0-9][0-9]+00:00"
+
+
+def canonical_timestamp(value: str) -> str:
+    """Normalize an ISO-8601 timestamp to canonical UTC text.
+
+    Naive values are taken as UTC. Raises ValueError for unparsable input."""
+    dt = datetime.fromisoformat(value.strip())
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+
+def now_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def init_storage() -> None:
@@ -170,6 +190,24 @@ def _migrate(conn) -> None:
         conn.execute(
             "ALTER TABLE drafts ADD COLUMN provider TEXT NOT NULL DEFAULT 'vertex'"
         )
+
+    # History sorts by created_at as text. Older rows may lack microseconds
+    # ("…:00+00:00"), use "Z", or carry a non-UTC offset from a manual entry;
+    # rewrite those to the canonical form. Unparsable values are left alone.
+    odd = conn.execute(
+        "SELECT id, created_at FROM generations "
+        "WHERE created_at IS NOT NULL AND created_at NOT GLOB ?",
+        (_CANONICAL_TS_GLOB,),
+    ).fetchall()
+    for row in odd:
+        try:
+            fixed = canonical_timestamp(row["created_at"])
+        except ValueError:
+            continue
+        if fixed != row["created_at"]:
+            conn.execute(
+                "UPDATE generations SET created_at = ? WHERE id = ?", (fixed, row["id"])
+            )
 
     # A process restart necessarily interrupts every in-flight request. Keep
     # its prompt/history record, but do not leave a permanent "waiting" card.
