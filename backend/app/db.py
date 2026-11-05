@@ -116,11 +116,27 @@ CREATE TABLE IF NOT EXISTS draft_tags (
 """
 
 
+# Fixed-width UTC ISO-8601 (``2026-11-05T18:18:23.603635+00:00``): text order
+# equals time order, which History's ``ORDER BY created_at`` relies on.
+_CANONICAL_TS_GLOB = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9][0-9][0-9][0-9]+00:00"
+
+# History's sort key. Canonical timestamps sort as themselves; anything else
+# (unparsable text the migration had to keep, or NULL) becomes '' and sorts
+# after every real time. A plain `created_at DESC` would put "not-a-date"
+# first, since letters compare greater than digits. Every History query uses
+# this exact text so SQLite can match it to idx_generations_sort.
+GENERATION_SORT_AT = (
+    f"(CASE WHEN created_at GLOB '{_CANONICAL_TS_GLOB}' THEN created_at ELSE '' END)"
+)
+
+
 # Created after _migrate so index columns exist on pre-migration databases.
-INDEXES = """
+INDEXES = f"""
 CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_generations_output_image_id ON generations(output_image_id);
-CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at DESC, id DESC);
+DROP INDEX IF EXISTS idx_generations_created_at;
+CREATE INDEX IF NOT EXISTS idx_generations_sort
+    ON generations({GENERATION_SORT_AT} DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_generation_inputs_image_id ON generation_inputs(image_id);
 CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_images_source ON images(source);
@@ -130,11 +146,6 @@ CREATE INDEX IF NOT EXISTS idx_drafts_order ON drafts(pinned DESC, updated_at DE
 CREATE INDEX IF NOT EXISTS idx_draft_images_image_id ON draft_images(image_id);
 CREATE INDEX IF NOT EXISTS idx_draft_tags_tag_id ON draft_tags(tag_id);
 """
-
-
-# Fixed-width UTC ISO-8601 (``2026-11-05T18:18:23.603635+00:00``): text order
-# equals time order, which History's ``ORDER BY created_at`` relies on.
-_CANONICAL_TS_GLOB = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9][0-9][0-9][0-9]+00:00"
 
 
 def canonical_timestamp(value: str) -> str:

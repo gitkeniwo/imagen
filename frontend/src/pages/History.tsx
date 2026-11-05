@@ -1,7 +1,7 @@
 import { type CSSProperties, Fragment, useEffect, useRef, useState } from "react";
 import { api, Generation, HistoryResult, ImageRow, ProviderId, providerOf, Tag } from "../api";
 import { useI18n } from "../i18n";
-import { dayKey, dayLabel, parseTime } from "../historyTime";
+import { dayKey, dayLabel, sortableTime } from "../historyTime";
 import { useFitColumns } from "../useFitColumns";
 import { useProviders } from "../useProviders";
 import AddHistoryModal from "../components/AddHistoryModal";
@@ -237,7 +237,7 @@ export default function History({
         <span>
           {hasPages
             ? t("phone_page_status", { page: page + 1, pages: pageCount })
-            : t("phone_total_images", { n: total })}
+            : t("phone_total_records", { n: total })}
         </span>
         {hasPages && (
           <button
@@ -251,7 +251,7 @@ export default function History({
           </button>
         )}
       </div>
-      {hasPages && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
+      {hasPages && <span className="phone-pager-total">{t("phone_total_records", { n: total })}</span>}
     </div>
   );
 
@@ -321,8 +321,8 @@ export default function History({
   const now = new Date();
   const dayHeading = (index: number) => {
     if (layout !== "list") return null;
-    const d = parseTime(gens[index].created_at);
-    const prev = index > 0 ? parseTime(gens[index - 1].created_at) : null;
+    const d = sortableTime(gens[index].created_at);
+    const prev = index > 0 ? sortableTime(gens[index - 1].created_at) : null;
     if (index > 0 && (d ? dayKey(d) : "") === (prev ? dayKey(prev) : "")) return null;
     return (
       <h3 className="hlist-day">{d ? dayLabel(d, now, lang, t) : t("history_unknown_day")}</h3>
