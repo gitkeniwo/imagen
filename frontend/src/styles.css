@@ -2077,6 +2077,7 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 }
 .gcard-meta .provider-badge { margin-right: var(--space-1_5); vertical-align: middle; }
 .hcard-meta-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hcard-runtime { flex: none; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .hcard-time { flex: none; margin-left: auto; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
 .hcard-media > .hcard-time {
   position: absolute; right: 6px; bottom: 6px; z-index: 1; pointer-events: none;

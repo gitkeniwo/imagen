@@ -49,6 +49,8 @@ export interface Generation {
   source: "vertex" | "manual";
   client_task_id: string | null;
   marker_color: MarkerColor | null;
+  duration_ms: number | null;
+  attempts: number | null;
   inputs?: ImageRow[];
   outputImage?: ImageRow | null;
   generation_offset?: number;
@@ -112,6 +114,8 @@ export interface QueueTask extends TaskSpec {
   message?: string | null;
   text?: string | null;
   rawFinish?: string | null;
+  durationMs?: number | null;
+  attempts?: number | null;
   outputImage?: ImageRow | null;
 }
 

@@ -669,6 +669,8 @@ export default function App() {
                     message: res.message,
                     text: res.text,
                     rawFinish: res.generation?.raw_finish,
+                    durationMs: res.generation?.duration_ms,
+                    attempts: res.generation?.attempts,
                     outputImage: res.outputImage,
                   } as QueueTask
                 : t,

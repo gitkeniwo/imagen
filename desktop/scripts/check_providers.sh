@@ -296,10 +296,15 @@ for t in ("generations", "drafts"):
     assert "provider" in cols and cols["provider"][3] == 1, (t, cols.get("provider"))
     vals = {r[0] for r in c.execute(f"SELECT provider FROM {t}")}
     assert vals == {"vertex"}, (t, vals)
+cols = {r[1]: r for r in c.execute("PRAGMA table_info(generations)")}
+for name in ("duration_ms", "attempts"):
+    assert name in cols and cols[name][3] == 0, (name, cols.get(name))
+assert {r[0] for r in c.execute("SELECT duration_ms FROM generations")} == {None}
+assert {r[0] for r in c.execute("SELECT attempts FROM generations")} == {None}
 n = c.execute("SELECT COUNT(*) FROM drafts WHERE legacy_generation_id IS NOT NULL").fetchone()[0]
 assert n == 1, n
 PY
-say "provider columns added (NOT NULL), old rows + migrated note are 'vertex'; idempotent"
+say "provider/metric columns added; old rows keep NULL timing; idempotent"
 
 # --- D. fake backend -------------------------------------------------------
 head2 "D. fake backend (port $FAKE_PORT)"
@@ -360,6 +365,8 @@ if p["status"] != "success":
 g = p["generation"]
 if g["provider"] != "gemini" or g["model"] != "gemini-3-pro-image" or g["resolution"] != "2K":
     fail(f"gemini row: {g}")
+if not isinstance(g["duration_ms"], int) or g["duration_ms"] < 0 or g["attempts"] != 1:
+    fail(f"gemini timing fields: {g.get('duration_ms')}, {g.get('attempts')}")
 if p["outputImage"]["mime"] != "image/jpeg":
     fail(f"gemini output not converted to JPG: {p['outputImage']['mime']}")
 state = c.get("/__test/fake-state").json()
@@ -379,6 +386,8 @@ if p["status"] != "success" or p["generation"]["provider"] != "vertex":
     fail(f"vertex generate: {p}")
 if p["generation"]["model"] != "gemini-3-pro-image":
     fail(f"preview id not normalized: {p['generation']['model']}")
+if not isinstance(p["generation"]["duration_ms"], int) or p["generation"]["attempts"] != 1:
+    fail(f"vertex timing fields: {p['generation'].get('duration_ms')}, {p['generation'].get('attempts')}")
 if c.get("/__test/fake-state").json()["provider"] != "vertex":
     fail("fake-state did not record vertex")
 ok("vertex generation: row provider='vertex', preview id normalized")
@@ -406,7 +415,10 @@ r = c.post("/api/generations/manual", json={"prompt": "m", "provider": "vertex",
                                             "model": "gemini-3-pro-image", "status": "error"})
 if r.status_code != 200 or r.json()["provider"] != "vertex":
     fail(f"manual on a provider that is off: {r.status_code} {r.text[:200]}")
-gid = r.json()["id"]
+manual = r.json()
+if manual["duration_ms"] is not None or manual["attempts"] is not None:
+    fail(f"manual timing fields should stay NULL: {manual}")
+gid = manual["id"]
 r = c.patch(f"/api/generations/{gid}", json={"prompt": "m", "provider": "gemini",
                                              "model": "gemini-3-pro-image", "status": "error"})
 if r.json()["provider"] != "gemini":

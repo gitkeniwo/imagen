@@ -93,6 +93,7 @@ export default function GenerationCard({
   header,
   provider,
   meta,
+  runtime,
   substatus,
   error,
   prompt,
@@ -118,6 +119,7 @@ export default function GenerationCard({
   header?: ReactNode;
   provider?: ProviderId;
   meta: (string | null | undefined)[];
+  runtime?: string | null;
   substatus?: string | null;
   error?: { kind: string; message: string } | null;
   prompt?: string;
@@ -193,6 +195,7 @@ export default function GenerationCard({
         <div className="gcard-meta">
           {provider && <ProviderBadge provider={provider} />}
           {meta.filter(Boolean).join(" · ")}
+          {runtime && <span className="gcard-runtime"> · {runtime}</span>}
         </div>
         {substatus && <div className="q-substatus">{substatus}</div>}
         {error && <ErrorLine kind={error.kind} message={error.message} />}

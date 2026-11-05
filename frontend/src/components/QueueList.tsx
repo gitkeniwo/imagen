@@ -17,6 +17,7 @@ import { imgThumbUrl } from "../api";
 import { peekProps } from "./HoverPeek";
 import { pressable } from "../a11y";
 import ProviderBadge from "./ProviderBadge";
+import { generationRuntime } from "../generationMetrics";
 import { displayName } from "../displayName";
 
 // v2: the old key held the pre-card horizontal layout's 1-column default.
@@ -260,6 +261,9 @@ const QueueItem = memo(function QueueItem({
   const meta = [task.model.replace("-image", "").replace("-preview", ""), task.aspectRatio, task.resolution]
     .filter(Boolean)
     .join(" · ");
+  const runtime = active
+    ? null
+    : generationRuntime(task.durationMs, task.attempts, t);
   const statusLabel = task.interrupted ? t("remote_interrupted") : t(`status_${task.status}`);
 
   // Same fixed-slot layout as History cards so a queue row lines up; the
@@ -339,6 +343,7 @@ const QueueItem = memo(function QueueItem({
           )}
           <ProviderBadge provider={task.provider} />
           <span className="hcard-meta-text">{meta}</span>
+          {runtime && <span className="hcard-runtime">{runtime}</span>}
         </div>
         <PromptClamp text={task.prompt} lines={2} />
         <div className="hcard-chips">
