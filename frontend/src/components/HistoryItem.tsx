@@ -12,6 +12,7 @@ import { useToast } from "./Toast";
 import { downloadImage, markerHex } from "./GenerationCard";
 import ProviderBadge from "./ProviderBadge";
 import { cardTime, clockTime, fullTime, parseTime } from "../historyTime";
+import { generationRuntime } from "../generationMetrics";
 
 export type HistoryLayout = "grid" | "list";
 
@@ -156,6 +157,7 @@ export default function HistoryItem({
   const meta = [g.model.replace("-image", "").replace("-preview", ""), g.aspect_ratio, g.resolution]
     .filter(Boolean)
     .join(" · ");
+  const runtime = generationRuntime(g.duration_ms, g.attempts, t);
   const inputs = g.inputs ?? [];
 
   const tools: Tool[] = [
@@ -256,6 +258,7 @@ export default function HistoryItem({
           {running && <span className="hcard-flag running">{t("status_running")}</span>}
           <ProviderBadge provider={providerOf(g)} />
           <span className="hcard-meta-text">{listFailure ? errorText : meta}</span>
+          {runtime && <span className="hcard-runtime">{runtime}</span>}
           {listFailure && <FullTextButton label={t("details")} title={t(`status_${g.status}`)} text={errorText} />}
           {layout === "list" && timeEl}
         </div>

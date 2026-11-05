@@ -13,6 +13,7 @@ import { hidePeek, peekProps } from "./HoverPeek";
 import ZoomStage from "./ZoomStage";
 import { useIsPhone } from "../useIsPhone";
 import { useBackLayer } from "../backStack";
+import { formatGenerationDuration } from "../generationMetrics";
 
 // Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
 // and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
@@ -480,6 +481,7 @@ export default function ImageViewer({
   const params = gen
     ? [gen.model.replace("-image", "").replace("-preview", ""), gen.aspect_ratio, gen.resolution, format]
         .filter(Boolean)
+        .concat(formatGenerationDuration(gen.duration_ms, t) ?? [])
         .join(" · ")
     : "";
 

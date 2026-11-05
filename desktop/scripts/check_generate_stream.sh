@@ -163,9 +163,14 @@ if result.get("status") != "success":
     fail(f"long: status={result.get('status')} message={result.get('message')}")
 if not result.get("outputImage") or not row or row.get("status") != "success":
     fail("long: success result was not persisted")
+if not isinstance(row.get("duration_ms"), int) or row["duration_ms"] < (delay - 1.5) * 1000:
+    fail(f"long: duration_ms={row.get('duration_ms')!r}, expected about {delay:.0f}s")
+if row.get("attempts") != 1:
+    fail(f"long: attempts={row.get('attempts')!r}, expected 1")
 print(
     f"PASS long: http=200 ttfb={ttfb:.4f}s total={total:.3f}s "
-    f"chunks={len(chunks)} status=success image={result['outputImage']['id']}"
+    f"chunks={len(chunks)} status=success image={result['outputImage']['id']} "
+    f"duration_ms={row['duration_ms']} attempts={row['attempts']}"
 )
 
 # --- b. client disconnect -------------------------------------------------
@@ -244,12 +249,22 @@ if result.get("status") != "aborted":
 with httpx.Client(base_url=base, timeout=10) as client:
     remaining = generation_for(client, cid)
     state = client.get("/__test/fake-state", timeout=5).json()
-if remaining is not None:
-    fail("cancel: generation row was not deleted")
+if not remaining:
+    fail("cancel: generation row disappeared")
+if remaining.get("status") != "aborted" or remaining.get("raw_finish") != "ABORTED":
+    fail(
+        "cancel: expected aborted/ABORTED, got "
+        f"{remaining.get('status')}/{remaining.get('raw_finish')}"
+    )
+if not isinstance(remaining.get("duration_ms"), int) or remaining.get("attempts") != 1:
+    fail(
+        f"cancel: duration_ms={remaining.get('duration_ms')!r}, "
+        f"attempts={remaining.get('attempts')!r}"
+    )
 if not state.get("abort_seen"):
     fail("cancel: fake backend never observed should_abort")
 print(
-    "PASS cancel: {\"ok\":true}; final status=aborted; row deleted; "
+    "PASS cancel: {\"ok\":true}; final status=aborted; row kept with timing; "
     f"abort_seen=true observations={state['count']}"
 )
 

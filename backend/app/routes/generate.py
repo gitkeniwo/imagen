@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -187,14 +188,22 @@ async def generate(body: GenerateRequest, request: Request):
     # on disconnect — it must run to completion so the history row is honest.
     cid = body.clientTaskId
     disconnected = {"v": False}
+    attempts_seen = 0
     # iPad Safari drops long connections when the tab goes to the background;
     # that must not stop the retries. LAN requests only cancel explicitly.
     lan = is_lan(request.scope)
     owner = remote.session_started(request.scope["state"].get("remote_session")) if lan else None
 
     def on_event(ev: dict) -> None:
+        nonlocal attempts_seen
         if cid:
             PROGRESS[cid] = ev
+        if ev.get("phase") == "sent":
+            try:
+                sent_attempt = int(ev.get("attempt") or 0)
+            except (TypeError, ValueError):
+                sent_attempt = 0
+            attempts_seen = max(attempts_seen, sent_attempt)
 
     def _should_abort() -> bool:
         return disconnected["v"] or bool(cid and cid in CANCELLED)
@@ -202,14 +211,19 @@ async def generate(body: GenerateRequest, request: Request):
     # Persist in a worker thread (Pillow decode + thumbnail are CPU-bound and
     # would otherwise stall the event loop). The thread opens its own
     # connection — sqlite3 connections are bound to their creating thread.
-    def _persist(result: providers.GenResult, explicitly_cancelled: bool) -> tuple[str, str | None, dict | None, dict | None]:
+    def _persist(
+        result: providers.GenResult,
+        explicitly_cancelled: bool,
+        duration_ms: int,
+        attempts: int,
+    ) -> tuple[str, str | None, dict | None, dict | None]:
         status, message = result.status, result.message
         output_image = None
         with get_conn() as conn:
             if explicitly_cancelled and result.status != "success":
-                conn.execute("DELETE FROM generations WHERE id = ?", (gen_id,))
-                return "aborted", "User cancelled.", None, None
-            if result.status == "aborted":
+                status = "aborted"
+                message = "User cancelled."
+            elif result.status == "aborted":
                 status = "error"
                 message = "Client disconnected before a response was stored."
             if result.status == "success":
@@ -227,11 +241,14 @@ async def generate(body: GenerateRequest, request: Request):
 
             conn.execute(
                 """UPDATE generations
-                   SET status = ?, error_message = ?, raw_finish = ?, output_image_id = ?
+                   SET status = ?, error_message = ?, raw_finish = ?, output_image_id = ?,
+                       duration_ms = ?, attempts = ?
                    WHERE id = ?""",
                 (status, message,
-                 "CLIENT_DISCONNECTED" if result.status == "aborted" else result.raw_finish,
-                 output_image["id"] if output_image else None, gen_id),
+                 "ABORTED" if explicitly_cancelled and result.status != "success"
+                 else "CLIENT_DISCONNECTED" if result.status == "aborted"
+                 else result.raw_finish,
+                 output_image["id"] if output_image else None, duration_ms, attempts, gen_id),
             )
             # Auto-archive into chosen tags only on success: output + input images.
             if body.tagIds and output_image:
@@ -253,6 +270,7 @@ async def generate(body: GenerateRequest, request: Request):
         turned into a valid `status="error"` payload so the stream can always
         finish with parseable JSON.
         """
+        started = time.monotonic()
         try:
             result = await provider.generate(
                 model=spec,
@@ -271,11 +289,12 @@ async def generate(body: GenerateRequest, request: Request):
             result = providers.GenResult(
                 status="error", message=f"Unexpected backend error: {exc}"
             )
+        duration_ms = max(0, round((time.monotonic() - started) * 1000))
 
         explicitly_cancelled = bool(cid and cid in CANCELLED)
         try:
             status, message, generation, output_image = await asyncio.to_thread(
-                _persist, result, explicitly_cancelled
+                _persist, result, explicitly_cancelled, duration_ms, attempts_seen
             )
         except asyncio.CancelledError:
             raise
@@ -285,8 +304,11 @@ async def generate(body: GenerateRequest, request: Request):
             try:
                 with get_conn() as conn:
                     conn.execute(
-                        "UPDATE generations SET status = 'error', error_message = ? WHERE id = ?",
-                        (message, gen_id),
+                        """UPDATE generations
+                           SET status = 'error', error_message = ?,
+                               duration_ms = ?, attempts = ?
+                           WHERE id = ?""",
+                        (message, duration_ms, attempts_seen, gen_id),
                     )
                     conn.commit()
                     generation = dict(

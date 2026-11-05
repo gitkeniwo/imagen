@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS generations (
     source          TEXT NOT NULL DEFAULT 'vertex', -- 'vertex' (real call) | 'manual' (logged)
     client_task_id  TEXT,
     marker_color    TEXT,
-    provider        TEXT NOT NULL DEFAULT 'vertex' -- 'vertex' | 'gemini'
+    provider        TEXT NOT NULL DEFAULT 'vertex', -- 'vertex' | 'gemini'
+    duration_ms     INTEGER,          -- provider call time, NULL for legacy/manual
+    attempts        INTEGER            -- actual provider requests, NULL for legacy/manual
 );
 
 CREATE TABLE IF NOT EXISTS generation_inputs (
@@ -185,6 +187,10 @@ def _migrate(conn) -> None:
         conn.execute(
             "ALTER TABLE generations ADD COLUMN provider TEXT NOT NULL DEFAULT 'vertex'"
         )
+    if "duration_ms" not in gen_cols:
+        conn.execute("ALTER TABLE generations ADD COLUMN duration_ms INTEGER")
+    if "attempts" not in gen_cols:
+        conn.execute("ALTER TABLE generations ADD COLUMN attempts INTEGER")
     draft_cols = {r["name"] for r in conn.execute("PRAGMA table_info(drafts)")}
     if "provider" not in draft_cols:
         conn.execute(
