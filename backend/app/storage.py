@@ -67,15 +67,19 @@ def store_image(conn, data: bytes, filename: str, mime: str, source: str) -> dic
             return get_image(conn, existing["id"])
         return _row_to_dict(existing)
 
-    # Decode to learn dimensions + normalize mime/extension. Only the formats
-    # we store are tried: Pillow's other plugins include EPS, which shells out
-    # to Ghostscript, and uploads are untrusted bytes.
+    # Read dimensions + mime from the header, then build the thumbnail straight
+    # from the unloaded image. For JPEG, Pillow's thumbnail() uses draft() to
+    # decode at reduced scale, so the full-resolution bitmap is never held. The
+    # decode still walks the whole stream, so it doubles as the corruption check
+    # and runs before anything is written to disk. Only the formats we store are
+    # tried: Pillow's other plugins include EPS, which shells out to Ghostscript,
+    # and uploads are untrusted bytes.
     try:
         img = Image.open(io.BytesIO(data), formats=_FORMATS)
-        img.load()
         width, height = img.size
         if img.format:
             mime = Image.MIME.get(img.format, mime)
+        thumb = _make_thumb(img)
     except (UnidentifiedImageError, OSError):
         raise ValueError("Unsupported or corrupt image file")
 
@@ -84,7 +88,7 @@ def store_image(conn, data: bytes, filename: str, mime: str, source: str) -> dic
     thumb_path = db.THUMBS_DIR / f"{sha}.webp"
 
     file_path.write_bytes(data)
-    _make_thumb(img, thumb_path)
+    thumb.save(thumb_path, format="WEBP", quality=82)
 
     cur = conn.execute(
         """INSERT INTO images
@@ -98,9 +102,9 @@ def store_image(conn, data: bytes, filename: str, mime: str, source: str) -> dic
     return get_image(conn, cur.lastrowid)
 
 
-def _make_thumb(img: Image.Image, thumb_path) -> None:
-    thumb = img.copy()
-    thumb.thumbnail((THUMB_MAX, THUMB_MAX))
-    if thumb.mode not in ("RGB", "RGBA"):
-        thumb = thumb.convert("RGBA")
-    thumb.save(thumb_path, format="WEBP", quality=82)
+def _make_thumb(img: Image.Image) -> Image.Image:
+    """Downscale in place (no full-size copy) and return an RGB/RGBA image."""
+    img.thumbnail((THUMB_MAX, THUMB_MAX))
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA")
+    return img
