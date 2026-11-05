@@ -17,6 +17,7 @@ import appIcon from "../assets/app-icon.png";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import type { ViewerPager } from "../components/ImageViewer";
+import { peekProps } from "../components/HoverPeek";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -45,8 +46,20 @@ export default function Library({
   onChanged,
   phone = false,
   onSelectModeChange,
+  addManyToTray,
+  picker,
 }: {
   addToTray: (img: ImageRow) => void;
+  // One call for a whole selection. Without it, selections are added one by
+  // one through `addToTray`, which must then be safe to call in a loop.
+  addManyToTray?: (imgs: ImageRow[]) => void;
+  // Picking images into a form (LibraryPickerModal): picked tiles keep a
+  // numbered check that removes them again, deleting is hidden, and on the
+  // phone a tap toggles the pick (a corner button opens the viewer).
+  picker?: {
+    pickedIds: number[];
+    onUnpick: (img: ImageRow) => void;
+  };
   onOpenViewer: (
     img: ImageRow,
     list: ImageRow[],
@@ -91,6 +104,9 @@ export default function Library({
   const pressTimer = useRef<number | null>(null);
   const pressStart = useRef<{ x: number; y: number } | null>(null);
   const longPressed = useRef(false);
+  // Every row seen in this session, so a selection that spans pages can still
+  // be turned into references (the grid only holds the current page).
+  const rowsById = useRef(new Map<number, ImageRow>());
   // Phone thumbnails offer 2/3/4 columns; a saved desktop width of 1 or 5 is
   // clamped here (the stored key stays the same on both layouts).
   const phoneColumns = Math.min(4, Math.max(2, columns));
@@ -116,6 +132,7 @@ export default function Library({
       api.listTags(),
     ])
       .then(([r, tagsRes]) => {
+        for (const img of r.images) rowsById.current.set(img.id, img);
         setImages(r.images);
         setTotal(r.total);
         setTags(tagsRes.tags);
@@ -206,29 +223,34 @@ export default function Library({
       return;
     }
     if (selectMode) toggleSelect(img.id);
-    else {
-      const offset = page * pageSize;
-      onOpenViewer(
-        img,
-        images,
-        {
-          offset,
-          total,
-          fetch: async (nextOffset, limit) => {
-            const r = await api.listImages({
-              limit,
-              offset: nextOffset,
-              source: source || undefined,
-              tag: tagFilter ?? undefined,
-              starred: starredOnly || undefined,
-              q: query || undefined,
-            });
-            return r.images;
-          },
+    else if (picker && phone) togglePick(img);
+    else openInViewer(img);
+  };
+
+  // Opens the viewer over the current page with paging through the whole
+  // filtered result, and keeps the grid on the page the viewer ended on.
+  const openInViewer = (img: ImageRow) => {
+    const offset = page * pageSize;
+    onOpenViewer(
+      img,
+      images,
+      {
+        offset,
+        total,
+        fetch: async (nextOffset, limit) => {
+          const r = await api.listImages({
+            limit,
+            offset: nextOffset,
+            source: source || undefined,
+            tag: tagFilter ?? undefined,
+            starred: starredOnly || undefined,
+            q: query || undefined,
+          });
+          return r.images;
         },
-        (globalIndex) => setPage(Math.floor(globalIndex / pageSize)),
-      );
-    }
+      },
+      (globalIndex) => setPage(Math.floor(globalIndex / pageSize)),
+    );
   };
 
   const endLongPress = () => {
@@ -265,8 +287,22 @@ export default function Library({
     setBatchSheet(false);
   };
 
+  const pickIndex = (id: number) => picker?.pickedIds.indexOf(id) ?? -1;
+  const togglePick = (img: ImageRow) => {
+    if (picker && pickIndex(img.id) >= 0) picker.onUnpick(img);
+    else addToTray(img);
+  };
+
+  // Selection order, not page order: the first image tapped is reference 1.
   const useSelectedAsRefs = () => {
-    for (const img of images) if (selected.has(img.id)) addToTray(img);
+    const rows = [...selected]
+      .map((id) => rowsById.current.get(id))
+      .filter((img): img is ImageRow => !!img);
+    if (rows.length === 0) return;
+    if (addManyToTray) addManyToTray(rows);
+    else for (const img of rows) addToTray(img);
+    toast(t("refs_added_n", { n: rows.length }), "info");
+    stopSelect();
   };
 
   const applyBatch = async (tagId: number) => {
@@ -298,6 +334,10 @@ export default function Library({
       toast(t("op_failed", { msg: (e as Error).message }));
     }
   };
+
+  // Hover-to-enlarge for tiles small enough to need it. Mouse only (see
+  // HoverPeek); the phone layout never attaches it.
+  const peeks = !phone && (compact || thumbSize !== "l");
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const hasPages = total > pageSize;
@@ -603,6 +643,17 @@ export default function Library({
               >
                 <span className="batch-btn-label">{t("batch_download")}</span>
               </Button>
+              <Button
+                size="sm"
+                icon="addToRefs"
+                variant={picker ? "primary" : undefined}
+                title={t("batch_add_ref")}
+                aria-label={t("batch_add_ref")}
+                disabled={selected.size === 0}
+                onClick={useSelectedAsRefs}
+              >
+                <span className="batch-btn-label">{t("batch_add_ref")}</span>
+              </Button>
             </div>
           </div>
         )}
@@ -685,11 +736,13 @@ export default function Library({
         >
           {images.map((img) => {
             const tagNames = (img.tags ?? []).map((tg) => tg.name);
+            const pickAt = pickIndex(img.id);
+            const picked = pickAt >= 0;
             return (
               <div
                 className={`card lib-tile${selected.has(img.id) ? " selected" : ""}${selectMode ? " selecting" : ""}${
                   added === img.id ? " just-added" : ""
-                }`}
+                }${picked ? " picked" : ""}`}
                 key={img.id}
                 {...(!phone && !selectMode ? imageDragProps(img) : {})}
                 onPointerDown={phone ? (e) => startLongPress(e, img) : undefined}
@@ -702,9 +755,10 @@ export default function Library({
                   src={imgThumbUrl(img)}
                   alt={img.filename}
                   draggable={false}
-                  title={[img.filename, ...tagNames].join(" · ")}
+                  title={peeks ? undefined : [img.filename, ...tagNames].join(" · ")}
                   onClick={() => onCardClick(img)}
                   {...pressable(() => onCardClick(img))}
+                  {...(peeks ? peekProps(img) : {})}
                 />
                 <span
                   className={`lib-source ${img.source}`}
@@ -712,7 +766,29 @@ export default function Library({
                 >
                   <Icon name={img.source === "upload" ? "uploaded" : "generated"} size="sm" />
                 </span>
-                {!!img.starred && !selectMode && (
+                {picked && !selectMode && (
+                  <button
+                    type="button"
+                    className="pick-badge"
+                    aria-label={t("picker_ref_badge", { n: pickAt + 1 })}
+                    title={t("remove_ref")}
+                    onClick={() => picker?.onUnpick(img)}
+                  >
+                    <Icon name="check" size="sm" />
+                    <span>{pickAt + 1}</span>
+                  </button>
+                )}
+                {picker && phone && !selectMode && (
+                  <button
+                    type="button"
+                    className="pick-view"
+                    aria-label={t("picker_view")}
+                    onClick={() => openInViewer(img)}
+                  >
+                    <Icon name="zoomIn" size="sm" />
+                  </button>
+                )}
+                {!!img.starred && !selectMode && !picked && (
                   <span className="lib-starred" title={t("favorite")}>
                     <Icon name="favorite" size="sm" filled />
                   </span>
@@ -732,16 +808,26 @@ export default function Library({
                 )}
                 {!selectMode && (
                   <div className="lib-actions">
-                    <IconButton
-                      variant="overlay"
-                      icon="addToRefs"
-                      label={t("add_ref")}
-                      onClick={() => {
-                        addToTray(img);
-                        setAdded(img.id);
-                        setTimeout(() => setAdded(null), 700);
-                      }}
-                    />
+                    {picked ? (
+                      <IconButton
+                        variant="overlay"
+                        icon="remove"
+                        label={t("remove_ref")}
+                        onClick={() => picker?.onUnpick(img)}
+                      />
+                    ) : (
+                      <IconButton
+                        variant="overlay"
+                        icon="addToRefs"
+                        label={t("add_ref")}
+                        onClick={() => {
+                          addToTray(img);
+                          if (picker) return;
+                          setAdded(img.id);
+                          setTimeout(() => setAdded(null), 700);
+                        }}
+                      />
+                    )}
                     <div className="spacer" />
                     <IconButton
                       variant="overlay"
@@ -753,7 +839,9 @@ export default function Library({
                       onClick={() => toggleStar(img)}
                     />
                     <IconButton variant="overlay" icon="download" label={t("download")} onClick={() => download(img)} />
-                    <IconButton variant="overlay" icon="delete" label={t("delete")} onClick={() => remove(img)} />
+                    {!picker && (
+                      <IconButton variant="overlay" icon="delete" label={t("delete")} onClick={() => remove(img)} />
+                    )}
                   </div>
                 )}
               </div>

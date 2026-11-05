@@ -9,7 +9,7 @@ import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Menu from "./ui/Menu";
 import { downloadImage } from "./GenerationCard";
-import { peekProps } from "./HoverPeek";
+import { hidePeek, peekProps } from "./HoverPeek";
 import ZoomStage from "./ZoomStage";
 import { useIsPhone } from "../useIsPhone";
 import { useBackLayer } from "../backStack";
@@ -40,6 +40,9 @@ export default function ImageViewer({
   onTagsChanged,
   onReuse,
   onChanged,
+  trayIds,
+  onRemoveFromTray,
+  nested = false,
 }: {
   image: ImageRow;
   list: ImageRow[];
@@ -50,6 +53,12 @@ export default function ImageViewer({
   onTagsChanged: () => void;
   onReuse?: (g: Generation) => void;
   onChanged?: () => void;
+  // Ids currently in the reference tray. With `onRemoveFromTray`, images that
+  // are already references offer "remove" instead of a no-op "add".
+  trayIds?: number[];
+  onRemoveFromTray?: (img: ImageRow) => void;
+  // Opened from inside another full-screen layer (the library picker).
+  nested?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -87,13 +96,27 @@ export default function ImageViewer({
     onClose();
   }, [image, onClose, onIndexChange]);
   useBackLayer(true, close);
-  const current = items[Math.min(idx, items.length - 1)] ?? image;
+  // Drill-down into a generated image's inputs. While non-empty, the last
+  // entry is shown instead of the list item; "back" pops one level and
+  // prev/next stay off so the list position is never lost.
+  const [trail, setTrail] = useState<{ img: ImageRow; label: string }[]>([]);
+  const inTrail = trail.length > 0;
+  const popTrail = useCallback(() => setTrail((all) => all.slice(0, -1)), []);
+  useBackLayer(inTrail, popTrail);
+  const base = items[Math.min(idx, items.length - 1)] ?? image;
+  const current = trail[trail.length - 1]?.img ?? base;
+  const isRef = (id: number) => !!trayIds?.includes(id);
+  const canRemoveRef = (id: number) => !!onRemoveFromTray && isRef(id);
+  const toggleRef = (img: ImageRow) => {
+    if (canRemoveRef(img.id)) onRemoveFromTray?.(img);
+    else onAddToTray(img);
+  };
   const globalIndex = Math.min(
     Math.max(0, total - 1),
     startOffset + idx,
   );
   const globalPosition = globalIndex + 1;
-  const multi = total > 1;
+  const multi = total > 1 && !inTrail;
   const [tagIds, setTagIds] = useState<number[]>(
     (current.tags ?? []).map((x) => x.id),
   );
@@ -366,7 +389,7 @@ export default function ImageViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return close();
+      if (e.key === "Escape") return inTrail ? popTrail() : close();
       const el = e.target instanceof Element ? e.target : null;
       if (el?.closest("input, textarea, select, [contenteditable='true']")) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -378,7 +401,7 @@ export default function ImageViewer({
     if (editingGen || duplicatingGen) return;
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [close, goTo, editingGen, duplicatingGen, togglePanel]);
+  }, [close, goTo, editingGen, duplicatingGen, togglePanel, inTrail, popTrail]);
 
   const refreshGeneration = () => {
     if (source !== "generated") return;
@@ -416,7 +439,9 @@ export default function ImageViewer({
         ...(panelHidden
           ? [
               ...(onReuse && gen ? [{ icon: "reuse" as const, label: t("reuse"), onSelect: () => onReuse(gen) }] : []),
-              { icon: "addToRefs" as const, label: t("phone_use_as_ref"), onSelect: () => onAddToTray(current) },
+              canRemoveRef(current.id)
+                ? { icon: "remove" as const, label: t("remove_ref"), onSelect: () => toggleRef(current) }
+                : { icon: "addToRefs" as const, label: t("phone_use_as_ref"), onSelect: () => toggleRef(current) },
               { icon: "favorite" as const, label: starred ? t("unfavorite") : t("favorite"), onSelect: toggleStar },
               { icon: "download" as const, label: t("download"), onSelect: () => downloadImage(current) },
             ]
@@ -458,8 +483,15 @@ export default function ImageViewer({
         .join(" · ")
     : "";
 
+  const backButton = inTrail && (
+    <button type="button" className="viewer-back" onClick={popTrail}>
+      <Icon name="prev" size="sm" />
+      <span>{trail.length > 1 ? t("viewer_back") : t("viewer_back_to_original")}</span>
+    </button>
+  );
+
   return (
-    <div className="viewer-overlay" role="dialog" aria-modal="true" onClick={close}>
+    <div className={`viewer-overlay${nested ? " nested" : ""}`} role="dialog" aria-modal="true" onClick={close}>
       <div
         className={`viewer-window${panelHidden ? " panel-hidden" : ""}${phone ? " phone" : ""}${phone && expanded ? " expanded" : ""}`}
         onClick={(e) => e.stopPropagation()}
@@ -480,10 +512,11 @@ export default function ImageViewer({
           {(phone || panelHidden) && !controlsHidden && (
             <div className="viewer-phone-top">
               <IconButton variant="overlay" size="md" icon="close" label={t("close")} onClick={close} />
-              {multi && <span className="viewer-phone-count">{globalPosition} / {total}</span>}
+              {inTrail ? backButton : multi && <span className="viewer-phone-count">{globalPosition} / {total}</span>}
               <span className="viewer-phone-menu">{moreMenu}</span>
             </div>
           )}
+          {inTrail && !phone && !panelHidden && <div className="viewer-stage-back">{backButton}</div>}
           {multi && (
             <>
               <span className="viewer-count">{globalPosition} / {total}</span>
@@ -558,6 +591,25 @@ export default function ImageViewer({
             />
           )}
           <div className="viewer-top">
+            {inTrail && (
+              <nav className="viewer-trail" aria-label={t("viewer_trail")}>
+                <button type="button" onClick={() => setTrail([])} title={base.filename}>
+                  {t("viewer_crumb_original")}
+                </button>
+                {trail.map((step, i) => (
+                  <span key={`${i}-${step.img.id}`} className="viewer-trail-step">
+                    <Icon name="next" size="sm" />
+                    {i === trail.length - 1 ? (
+                      <span aria-current="page" title={step.img.filename}>{step.label}</span>
+                    ) : (
+                      <button type="button" title={step.img.filename} onClick={() => setTrail((all) => all.slice(0, i + 1))}>
+                        {step.label}
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </nav>
+            )}
             <div className="viewer-head">
               <h2 className="viewer-name">{current.filename}</h2>
               <IconButton
@@ -604,9 +656,15 @@ export default function ImageViewer({
               <span>{fmtTime(current.created_at)}</span>
             </div>
             <div className="viewer-actions">
-              <Button variant="primary" icon="addToRefs" onClick={() => onAddToTray(current)}>
-                {t("add_to_input")}
-              </Button>
+              {canRemoveRef(current.id) ? (
+                <Button icon="remove" onClick={() => toggleRef(current)}>
+                  {t("remove_ref")}
+                </Button>
+              ) : (
+                <Button variant="primary" icon="addToRefs" onClick={() => toggleRef(current)}>
+                  {isRef(current.id) ? t("ref_added") : t("add_to_input")}
+                </Button>
+              )}
               {onReuse && gen && (
                 <Button icon="reuse" onClick={() => onReuse(gen)}>
                   {t("reuse")}
@@ -620,10 +678,17 @@ export default function ImageViewer({
                   {t("reuse")}
                 </button>
               )}
-              <button type="button" className="prim" onClick={() => onAddToTray(current)}>
-                <Icon name="addToRefs" />
-                {t("phone_use_as_ref")}
-              </button>
+              {canRemoveRef(current.id) ? (
+                <button type="button" onClick={() => toggleRef(current)}>
+                  <Icon name="remove" />
+                  {t("remove_ref")}
+                </button>
+              ) : (
+                <button type="button" className="prim" onClick={() => toggleRef(current)}>
+                  <Icon name="addToRefs" />
+                  {isRef(current.id) ? t("ref_added") : t("phone_use_as_ref")}
+                </button>
+              )}
               <button type="button" className={starred ? "is-starred" : undefined} aria-pressed={starred} onClick={toggleStar}>
                 <Icon name="favorite" filled={starred} />
                 {starred ? t("unfavorite") : t("favorite")}
@@ -669,17 +734,32 @@ export default function ImageViewer({
                         <Icon name="imageMissing" />
                       </span>
                     ) : (
-                      <button
-                        key={im.id}
-                        type="button"
-                        className="viewer-input"
-                        aria-label={`${im.filename} · ${t("add_to_input")}`}
-                        {...peekProps(im, t("peek_input", { n: i + 1 }))}
-                        onClick={() => onAddToTray(im)}
-                      >
-                        <img src={imgThumbUrl(im)} alt="" />
-                        <span className="pos">{i + 1}</span>
-                      </button>
+                      <span key={im.id} className="viewer-input-wrap">
+                        <button
+                          type="button"
+                          className="viewer-input"
+                          aria-label={`${im.filename} · ${t("viewer_open_input")}`}
+                          title={t("viewer_open_input")}
+                          {...peekProps(im, t("peek_input", { n: i + 1 }))}
+                          onClick={() => {
+                            hidePeek();
+                            setTrail((all) => [...all, { img: im, label: t("peek_input", { n: i + 1 }) }]);
+                          }}
+                        >
+                          <img src={imgThumbUrl(im)} alt="" />
+                          <span className="pos">{i + 1}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`viewer-input-add${isRef(im.id) ? " on" : ""}`}
+                          aria-label={`${im.filename} · ${canRemoveRef(im.id) ? t("remove_ref") : t("add_to_input")}`}
+                          title={canRemoveRef(im.id) ? t("remove_ref") : isRef(im.id) ? t("ref_added") : t("add_to_input")}
+                          aria-pressed={isRef(im.id)}
+                          onClick={() => toggleRef(im)}
+                        >
+                          <Icon name={isRef(im.id) ? "check" : "add"} size="sm" />
+                        </button>
+                      </span>
                     ),
                   )}
                 </div>

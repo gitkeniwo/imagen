@@ -504,6 +504,8 @@ export default function Generate({
         <LibraryPickerModal
           mode="multi"
           onPick={(img) => addManyToTray([img])}
+          pickedIds={tray.map((img) => img.id)}
+          onUnpick={(img) => removeFromTray(img.id)}
           onClose={() => setPickingRefs(false)}
         />
       )}

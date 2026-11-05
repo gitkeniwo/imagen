@@ -481,6 +481,12 @@ export default function AddHistoryModal({
         <LibraryPickerModal
           mode={picker === "input" || (picker === "output" && isCreate) ? "multi" : "single"}
           onPick={picker === "input" ? addInputImage : pickOutput}
+          pickedIds={(picker === "input" ? inputImages : outputImages).map((img) => img.id)}
+          onUnpick={(img) =>
+            picker === "input"
+              ? setInputImages((prev) => prev.filter((item) => item.id !== img.id))
+              : removeOutput(img.id)
+          }
           onClose={() => setPicker(null)}
         />
       )}

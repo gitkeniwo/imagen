@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -222,6 +223,11 @@ export default function App() {
     [],
   );
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
+  const trayIds = useMemo(() => tray.map((img) => img.id), [tray]);
+  const removeFromTrayRow = useCallback(
+    (img: ImageRow) => removeFromTray(img.id),
+    [removeFromTray],
+  );
 
   // Back from a dropped link: results the Mac finished meanwhile are already in
   // History, so reload the panels.
@@ -891,6 +897,7 @@ export default function App() {
             {sidebarPanel === "library" ? (
               <Library
                 addToTray={addToTray}
+                addManyToTray={addManyToTray}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
@@ -1090,6 +1097,7 @@ export default function App() {
                 <div className="side-scroll phone-island-scroll">
                   <Library
                     addToTray={addToTray}
+                    addManyToTray={addManyToTray}
                     compact
                     phone
                     onSelectModeChange={setPhoneSelecting}
@@ -1277,6 +1285,8 @@ export default function App() {
           onIndexChange={viewer.onIndexChange}
           onClose={() => setViewer(null)}
           onAddToTray={addToTray}
+          trayIds={trayIds}
+          onRemoveFromTray={removeFromTrayRow}
           onTagsChanged={bumpData}
           onReuse={reuse}
           onChanged={bumpData}
