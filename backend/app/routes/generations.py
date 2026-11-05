@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from .. import providers, storage, tagging
-from ..db import canonical_timestamp, get_conn, now_timestamp
+from ..db import GENERATION_SORT_AT, canonical_timestamp, get_conn, now_timestamp
 from ..models import ManualGenerationRequest, MarkerPatch
 
 router = APIRouter(prefix="/api/generations", tags=["generations"])
@@ -24,8 +24,9 @@ _RESULT_FILTERS = {
 # Newest first by when the generation happened. Manual records may carry a
 # past `created_at` with a larger id, so id only breaks ties. created_at is
 # stored as canonical UTC ISO text (db.canonical_timestamp), so text order is
-# time order; COALESCE keeps rare NULLs deterministic (last).
-_ORDER = "COALESCE(created_at, '') DESC, id DESC"
+# time order; unparsable values and NULLs sort last (db.GENERATION_SORT_AT).
+_SORT_AT = GENERATION_SORT_AT
+_ORDER = f"{_SORT_AT} DESC, id DESC"
 
 
 def _now() -> str:
@@ -297,7 +298,7 @@ def list_generations(
         SELECT output_image_id, representative_id, representative_at
         FROM (
             SELECT output_image_id, id AS representative_id,
-                   COALESCE(created_at, '') AS representative_at,
+                   {_SORT_AT} AS representative_at,
                    ROW_NUMBER() OVER (
                        PARTITION BY output_image_id ORDER BY {_ORDER}
                    ) AS rn
@@ -342,7 +343,8 @@ def list_generations(
             out = _hydrate(conn, [dict(g) for g in rows])
         else:
             gens = conn.execute(
-                f"SELECT * FROM generations {where} ORDER BY {_ORDER} LIMIT ? OFFSET ?",
+                f"SELECT *, {_SORT_AT} AS sort_at FROM generations {where} "
+                f"ORDER BY {_ORDER} LIMIT ? OFFSET ?",
                 (*params, limit, offset),
             ).fetchall()
             total = conn.execute(
@@ -356,10 +358,11 @@ def list_generations(
                     f"SELECT COUNT(*) c FROM ({output_ranked}) ranked "
                     "WHERE representative_at > ? "
                     "OR (representative_at = ? AND representative_id > ?)",
-                    (*params, gens[0]["created_at"] or "",
-                     gens[0]["created_at"] or "", gens[0]["id"]),
+                    (*params, gens[0]["sort_at"], gens[0]["sort_at"], gens[0]["id"]),
                 ).fetchone()["c"]
-            out = _hydrate(conn, [dict(g) for g in gens])
+            out = _hydrate(conn, [
+                {k: g[k] for k in g.keys() if k != "sort_at"} for g in gens
+            ])
             for i, g in enumerate(out):
                 g["generation_offset"] = offset + i
             output_ids = sorted({

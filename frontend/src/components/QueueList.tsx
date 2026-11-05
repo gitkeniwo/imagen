@@ -18,6 +18,7 @@ import { peekProps } from "./HoverPeek";
 import { pressable } from "../a11y";
 import ProviderBadge from "./ProviderBadge";
 import { generationRuntime } from "../generationMetrics";
+import { displayName } from "../displayName";
 
 // v2: the old key held the pre-card horizontal layout's 1-column default.
 const QUEUE_COLUMNS_KEY = "imagen-queue-columns-v2";
@@ -296,7 +297,7 @@ const QueueItem = memo(function QueueItem({
         {output ? (
           <img
             src={imgThumbUrl(output)}
-            alt={output.filename}
+            alt={displayName(output, t)}
             title={t("open_viewer")}
             onClick={() => onOpenViewer(output, [])}
             {...pressable(() => onOpenViewer(output, []))}
@@ -350,7 +351,7 @@ const QueueItem = memo(function QueueItem({
             <img
               key={im.id}
               src={imgThumbUrl(im)}
-              alt={im.filename}
+              alt={displayName(im, t)}
               {...peekProps(im, t("peek_input", { n: i + 1 }))}
               onClick={() => onOpenViewer(im, task.inputs)}
               {...pressable(() => onOpenViewer(im, task.inputs))}

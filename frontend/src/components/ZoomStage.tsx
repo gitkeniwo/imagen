@@ -3,6 +3,7 @@ import { ImageRow, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
+import { displayName } from "../displayName";
 
 // Zoomable image stage for the viewer. Zoom stays clipped inside the stage,
 // never over the inspector.
@@ -491,7 +492,7 @@ export default function ZoomStage({
           visibility: size.w ? undefined : "hidden",
         }}
       >
-        <img src={src} alt={image.filename} draggable={false} />
+        <img src={src} alt={displayName(image, t)} draggable={false} />
       </div>
 
       {children}

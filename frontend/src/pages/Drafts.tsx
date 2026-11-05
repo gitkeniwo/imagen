@@ -191,7 +191,7 @@ export default function Drafts({
         <span>
           {total > pageSize
             ? t("phone_page_status", { page: page + 1, pages: pageCount })
-            : t("phone_total_images", { n: total })}
+            : t("phone_total_drafts", { n: total })}
         </span>
         {total > pageSize && (
           <button
@@ -205,7 +205,7 @@ export default function Drafts({
           </button>
         )}
       </div>
-      {total > pageSize && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
+      {total > pageSize && <span className="phone-pager-total">{t("phone_total_drafts", { n: total })}</span>}
     </div>
   );
 

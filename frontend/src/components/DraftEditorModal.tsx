@@ -19,6 +19,7 @@ import TagPicker from "./TagPicker";
 import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import { useBackLayer } from "../backStack";
+import { displayName } from "../displayName";
 
 export default function DraftEditorModal({
   existing,
@@ -158,8 +159,8 @@ export default function DraftEditorModal({
           <p className="muted small draft-output-hint">{t("draft_outputs_hint")}</p>
           <div className="tray dropzone-wrap">
             {outputs.map((img) => (
-              <div className="chip" key={img.id} title={img.filename}>
-                <img src={imgThumbUrl(img)} alt={img.filename} />
+              <div className="chip" key={img.id} title={displayName(img, t)}>
+                <img src={imgThumbUrl(img)} alt={displayName(img, t)} />
                 <IconButton
                   className="x"
                   variant="overlay"

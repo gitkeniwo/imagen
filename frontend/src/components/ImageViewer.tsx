@@ -14,6 +14,7 @@ import ZoomStage from "./ZoomStage";
 import { useIsPhone } from "../useIsPhone";
 import { useBackLayer } from "../backStack";
 import { formatGenerationDuration } from "../generationMetrics";
+import { displayName } from "../displayName";
 
 // Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
 // and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
@@ -595,16 +596,16 @@ export default function ImageViewer({
           <div className="viewer-top">
             {inTrail && (
               <nav className="viewer-trail" aria-label={t("viewer_trail")}>
-                <button type="button" onClick={() => setTrail([])} title={base.filename}>
+                <button type="button" onClick={() => setTrail([])} title={displayName(base, t)}>
                   {t("viewer_crumb_original")}
                 </button>
                 {trail.map((step, i) => (
                   <span key={`${i}-${step.img.id}`} className="viewer-trail-step">
                     <Icon name="next" size="sm" />
                     {i === trail.length - 1 ? (
-                      <span aria-current="page" title={step.img.filename}>{step.label}</span>
+                      <span aria-current="page" title={displayName(step.img, t)}>{step.label}</span>
                     ) : (
-                      <button type="button" title={step.img.filename} onClick={() => setTrail((all) => all.slice(0, i + 1))}>
+                      <button type="button" title={displayName(step.img, t)} onClick={() => setTrail((all) => all.slice(0, i + 1))}>
                         {step.label}
                       </button>
                     )}
@@ -613,7 +614,7 @@ export default function ImageViewer({
               </nav>
             )}
             <div className="viewer-head">
-              <h2 className="viewer-name">{current.filename}</h2>
+              <h2 className="viewer-name">{displayName(current, t)}</h2>
               <IconButton
                 className={`viewer-star${starred ? " is-starred" : ""}`}
                 size="md"
@@ -740,7 +741,7 @@ export default function ImageViewer({
                         <button
                           type="button"
                           className="viewer-input"
-                          aria-label={`${im.filename} · ${t("viewer_open_input")}`}
+                          aria-label={`${displayName(im, t)} · ${t("viewer_open_input")}`}
                           title={t("viewer_open_input")}
                           {...peekProps(im, t("peek_input", { n: i + 1 }))}
                           onClick={() => {
@@ -754,7 +755,7 @@ export default function ImageViewer({
                         <button
                           type="button"
                           className={`viewer-input-add${isRef(im.id) ? " on" : ""}`}
-                          aria-label={`${im.filename} · ${canRemoveRef(im.id) ? t("remove_ref") : t("add_to_input")}`}
+                          aria-label={`${displayName(im, t)} · ${canRemoveRef(im.id) ? t("remove_ref") : t("add_to_input")}`}
                           title={canRemoveRef(im.id) ? t("remove_ref") : isRef(im.id) ? t("ref_added") : t("add_to_input")}
                           aria-pressed={isRef(im.id)}
                           onClick={() => toggleRef(im)}

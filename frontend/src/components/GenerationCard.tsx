@@ -6,6 +6,7 @@ import Icon, { type IconName } from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
 import Menu, { type MenuItem } from "./ui/Menu";
 import ProviderBadge from "./ProviderBadge";
+import { displayName } from "../displayName";
 
 export const markerHex = (color: MarkerColor | null | undefined) =>
   MARKER_COLORS.find((item) => item.id === color)?.hex ?? MARKER_COLORS[0].hex;
@@ -164,7 +165,7 @@ export default function GenerationCard({
           {media.kind === "image" ? (
             <img
               src={imgThumbUrl(media.image)}
-              alt={media.image.filename}
+              alt={displayName(media.image, t)}
               title={t("open_viewer")}
               onClick={media.onOpen}
               {...pressable(media.onOpen)}
@@ -210,8 +211,8 @@ export default function GenerationCard({
                 <img
                   key={im.id}
                   src={imgThumbUrl(im)}
-                  alt={im.filename}
-                  title={im.filename}
+                  alt={displayName(im, t)}
+                  title={displayName(im, t)}
                   onClick={onOpenInput ? () => onOpenInput(im) : undefined}
                   {...(onOpenInput ? pressable(() => onOpenInput(im)) : {})}
                 />

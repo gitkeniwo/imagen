@@ -13,6 +13,7 @@ import { downloadImage, markerHex } from "./GenerationCard";
 import ProviderBadge from "./ProviderBadge";
 import { cardTime, clockTime, fullTime, parseTime } from "../historyTime";
 import { generationRuntime } from "../generationMetrics";
+import { displayName } from "../displayName";
 
 export type HistoryLayout = "grid" | "list";
 
@@ -193,7 +194,7 @@ export default function HistoryItem({
         <>
           <img
             src={imgThumbUrl(output)}
-            alt={output.filename}
+            alt={displayName(output, t)}
             draggable={false}
             title={t("open_viewer")}
             onClick={onOpen}
@@ -273,7 +274,7 @@ export default function HistoryItem({
               <img
                 key={im.id}
                 src={imgThumbUrl(im)}
-                alt={im.filename}
+                alt={displayName(im, t)}
                 {...peekProps(im, t("peek_input", { n: inputs.indexOf(im) + 1 }))}
                 onClick={() => onOpenInput(im)}
                 {...pressable(() => onOpenInput(im))}

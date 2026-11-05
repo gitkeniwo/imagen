@@ -47,6 +47,8 @@ const zh: Dict = {
   tray_upload: "拖入 / 点击上传",
   tray_drop_title: "松开以添加为参考图",
   tray_drop_hint: "图片将被加入当前参考列表",
+  upload_unsupported_types: "仅支持 PNG / JPEG / WebP / GIF 图片。",
+  generated_name: "生成 · {time}",
 
   prompt: "提示词",
   prompt_placeholder:
@@ -638,6 +640,8 @@ const zh: Dict = {
   phone_show_less_prompt: "收起 Prompt",
   phone_columns_n: "{n} 列",
   phone_total_images: "{n} 张",
+  phone_total_records: "{n} 条记录",
+  phone_total_drafts: "{n} 个草稿",
   phone_page_status: "{page} / {pages}",
   phone_batch_tags: "批量标签",
   phone_more_title: "更多",
@@ -729,6 +733,8 @@ const en: Dict = {
   tray_upload: "Drag / click to upload",
   tray_drop_title: "Drop to add as references",
   tray_drop_hint: "Images will be added to the current reference list",
+  upload_unsupported_types: "Only PNG / JPEG / WebP / GIF images are supported.",
+  generated_name: "Generated · {time}",
 
   prompt: "Prompt",
   prompt_placeholder:
@@ -1320,6 +1326,8 @@ const en: Dict = {
   phone_show_less_prompt: "Show less",
   phone_columns_n: "{n} columns",
   phone_total_images: "{n} images",
+  phone_total_records: "{n} records",
+  phone_total_drafts: "{n} drafts",
   phone_page_status: "{page} / {pages}",
   phone_batch_tags: "Batch tags",
   phone_more_title: "More",

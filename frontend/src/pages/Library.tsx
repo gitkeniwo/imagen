@@ -1,6 +1,7 @@
 import { type CSSProperties, type PointerEvent, useEffect, useRef, useState } from "react";
 import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
+import { displayName } from "../displayName";
 import { pressable } from "../a11y";
 import { imageDragProps } from "../imageDrag";
 import { pageSizedToColumns } from "../pageSize";
@@ -753,9 +754,9 @@ export default function Library({
               >
                 <img
                   src={imgThumbUrl(img)}
-                  alt={img.filename}
+                  alt={displayName(img, t)}
                   draggable={false}
-                  title={peeks ? undefined : [img.filename, ...tagNames].join(" · ")}
+                  title={peeks ? undefined : [displayName(img, t), ...tagNames].join(" · ")}
                   onClick={() => onCardClick(img)}
                   {...pressable(() => onCardClick(img))}
                   {...(peeks ? peekProps(img) : {})}
