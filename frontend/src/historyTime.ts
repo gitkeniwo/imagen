@@ -10,6 +10,15 @@ export function parseTime(value: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+// The backend sorts only canonical UTC timestamps by time
+// (db.GENERATION_SORT_AT); everything else comes last. Day groups use the same
+// rule, so those records end up under one "Unknown date" heading at the end.
+const CANONICAL_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00$/;
+
+export function sortableTime(value: string | null | undefined): Date | null {
+  return value && CANONICAL_TS.test(value) ? parseTime(value) : null;
+}
+
 // Local calendar day, e.g. "2026-10-5" (only compared, never shown).
 export function dayKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
