@@ -35,6 +35,14 @@ hiddenimports += [
     "uvicorn.protocols.http.h11_impl",
     "uvicorn.lifespan.on",
 ]
+# app.providers imports google-genai lazily, inside functions (it is ~33 MB
+# of RSS the idle backend should not pay for). Analysis follows those
+# function-level imports too, but bundle the SDK explicitly so a refactor of
+# the lazy accessor can never silently drop it from the frozen app.
+# (Its bundled test suite is skipped.)
+hiddenimports += collect_submodules(
+    "google.genai", filter=lambda name: ".tests" not in name
+)
 
 a = Analysis(
     [str(BACKEND / "app" / "desktop.py")],

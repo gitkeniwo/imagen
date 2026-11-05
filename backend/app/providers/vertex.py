@@ -3,19 +3,22 @@
 Uses vertexai=True + project + location; credentials come from the machine's
 Application Default Credentials (gcloud auth application-default login).
 """
+from __future__ import annotations
+
 import asyncio
 import uuid
-from typing import Callable, Optional
-
-from google import genai
-from google.genai import errors, types
+from typing import TYPE_CHECKING, Callable, Optional
 
 from .. import provider_config
 from .base import GenResult, Gate, InputImage, ModelSpec, PRO_RESOLUTIONS
 from .genai_common import (
     MIN_ATTEMPT_SPACING, TEXT_SAFETY_CATEGORIES, build_contents, error_code,
-    logger, run_with_retry, safety_off,
+    logger, run_with_retry, safety_off, sdk,
 )
+
+if TYPE_CHECKING:
+    from google import genai
+    from google.genai import types
 
 ID = "vertex"
 LABEL = "Vertex AI"
@@ -44,7 +47,8 @@ _SAFETY_CATEGORIES = (
 
 # Cache one client per (project, location): construction resolves ADC (sync
 # file IO) so it must not run per-call on the event loop. A racing first call
-# may build twice; last-write-wins is harmless.
+# may build twice; last-write-wins is harmless. The first call also imports
+# google-genai in that worker thread (see genai_common.sdk).
 _clients: dict[tuple[str, str], genai.Client] = {}
 
 
@@ -53,7 +57,7 @@ async def _get_client(project: str, location: str) -> genai.Client:
     client = _clients.get(key)
     if client is None:
         client = await asyncio.to_thread(
-            genai.Client, vertexai=True, project=project, location=location
+            lambda: sdk().Client(vertexai=True, project=project, location=location)
         )
         _clients[key] = client
     return client
@@ -70,6 +74,7 @@ def build_config(
     resolution: Optional[str],
     output_mime: Optional[str] = None,
 ) -> types.GenerateContentConfig:
+    types = sdk().types
     image_config = types.ImageConfig(
         aspect_ratio=aspect_ratio or None,
         image_size=resolution if (resolution and model.resolutions) else None,
@@ -162,6 +167,7 @@ async def check() -> dict:
         if _is_missing_adc(e):
             return {"ok": False, "message": _NO_ADC, "models": []}
         return {"ok": False, "message": f"Failed to create Vertex client: {e}", "models": []}
+    errors = sdk().errors  # loaded by _get_client
     found: list[str] = []
     for spec in MODELS:
         try:
