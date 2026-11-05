@@ -8,6 +8,24 @@ import { peekProps } from "./HoverPeek";
 import { isRefDrag, readImageDrag } from "../imageDrag";
 import { Button, IconButton } from "./ui/Button";
 import Menu from "./ui/Menu";
+import { displayName } from "../displayName";
+
+const UPLOAD_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
+const UPLOAD_EXT = /\.(png|jpe?g|webp|gif)$/i;
+
+const isSupportedUpload = (file: File) =>
+  UPLOAD_TYPES.has((file.type || "").toLowerCase()) ||
+  (!file.type && UPLOAD_EXT.test(file.name));
+
+const isTextEntry = (el: HTMLElement | null) => {
+  if (!el) return false;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
+    el.isContentEditable
+  );
+};
 
 export default function ReferenceTray({
   tray,
@@ -47,10 +65,17 @@ export default function ReferenceTray({
   const dragIdx = useRef<number | null>(null);
 
   const upload = useCallback(async (files: FileList | File[]) => {
-    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (!list.length) return;
+    const all = Array.from(files);
+    const list = all.filter(isSupportedUpload);
+    const rejected = all.some(
+      (f) => f.type.toLowerCase().startsWith("image/") && !isSupportedUpload(f),
+    );
+    if (!list.length) {
+      if (rejected) setErr(t("upload_unsupported_types"));
+      return;
+    }
     setBusy(true);
-    setErr(null);
+    setErr(rejected ? t("upload_unsupported_types") : null);
     try {
       const { images } = await api.uploadImages(list);
       onAdd(images);
@@ -59,7 +84,32 @@ export default function ReferenceTray({
     } finally {
       setBusy(false);
     }
-  }, [onAdd]);
+  }, [onAdd, t]);
+
+  // Cmd/Ctrl+V in the composer adds clipboard images through the same upload
+  // path as drag/drop and the file picker. Text-only pastes are untouched, and
+  // pasting into a search/tag/other field never uploads. When the clipboard
+  // carries a screenshot plus its HTML/text flavour, the image wins and the
+  // default paste is cancelled so no stray text lands in the prompt.
+  useEffect(() => {
+    if (!dropTarget) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.items ?? [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => !!file && file.type.startsWith("image/"));
+      if (!files.length) return;
+      const active = document.activeElement as HTMLElement | null;
+      // Only the prompt owns an image paste while the user is typing. Search,
+      // tag, note and every other text field keep their normal paste behavior.
+      const isPrompt = !!active?.classList.contains("composer-prompt");
+      if (isTextEntry(active) && !isPrompt) return;
+      e.preventDefault();
+      upload(files);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [dropTarget, upload]);
 
   const addDropped = (dt: DataTransfer) => {
     const img = readImageDrag(dt);
@@ -199,7 +249,7 @@ export default function ReferenceTray({
               dragIdx.current = null;
             }}
           >
-            <img src={imgThumbUrl(img)} alt={img.filename} draggable={false} />
+            <img src={imgThumbUrl(img)} alt={displayName(img, t)} draggable={false} />
             <span className="pos">{i + 1}</span>
             <IconButton
               className="x"
@@ -247,6 +297,7 @@ export default function ReferenceTray({
               <Button
                 size="sm"
                 icon="upload"
+                aria-label={t("upload_short")}
                 title={t("tray_drop_hint")}
                 disabled={busy}
                 onClick={() => fileInput.current?.click()}
@@ -279,7 +330,7 @@ export default function ReferenceTray({
         <input
           ref={fileInput}
           type="file"
-          accept="image/*"
+          accept="image/png,image/jpeg,image/webp,image/gif"
           multiple
           hidden
           onChange={(e) => {

@@ -170,6 +170,12 @@ export default function Generate({
   const hasResolution = (spec?.resolutions.length ?? 0) > 0;
   const canSubmit = keyConfigured && (!!prompt.trim() || tray.length > 0);
   const providerLabel = t(`provider_short_${provider}`);
+  const generateLabel =
+    conn === "lost"
+      ? t("remote_waiting")
+      : attempts > 1
+        ? t("generate_n", { n: attempts })
+        : t("generate");
   const openProviderSettings = () => {
     window.dispatchEvent(
       new CustomEvent("imagen:open-settings", {
@@ -406,11 +412,12 @@ export default function Generate({
               <button
                 type="button"
                 className="primary composer-generate"
+                aria-label={generateLabel}
                 onClick={submit}
                 disabled={!canSubmit}
                 title={t("submit_shortcut_hint")}
               >
-                {conn === "lost" ? t("remote_waiting") : attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
+                {generateLabel}
                 {conn !== "lost" && <kbd className="kbd">⌘↵</kbd>}
               </button>
             </div>
@@ -453,12 +460,13 @@ export default function Generate({
             <button
               type="button"
               className="primary composer-generate phone-generate"
+              aria-label={generateLabel}
               onClick={submit}
               disabled={!canSubmit}
               title={t("submit_shortcut_hint")}
             >
               <Icon name="generated" size="sm" />
-              {conn === "lost" ? t("remote_waiting") : attempts > 1 ? t("generate_n", { n: attempts }) : t("generate")}
+              {generateLabel}
             </button>
           </div>
           {optionsOpen && (

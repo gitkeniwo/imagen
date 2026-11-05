@@ -1,8 +1,10 @@
 """Image upload, listing, file serving, metadata edit, delete."""
 import asyncio
 import os
+import re
 import tempfile
 import zipfile
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
@@ -222,6 +224,9 @@ _MIME_EXT = {
     "image/gif": "gif",
 }
 _EXT_ALIASES = {"jpg": {"jpg", "jpeg"}}
+_GENERATED_NAME = re.compile(
+    r"^gen-(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|\+00:00)$"
+)
 
 
 def download_name(row: dict) -> str:
@@ -243,6 +248,15 @@ def download_name(row: dict) -> str:
         stem, suffix = raw[:dot], raw[dot + 1:].lower()
     else:
         stem, suffix = raw, ""
+
+    if (row.get("source") or "") == "generated":
+        match = _GENERATED_NAME.match(stem)
+        if match:
+            try:
+                stamp = datetime.fromisoformat(match.group(1)).replace(tzinfo=timezone.utc)
+                return f"imagen-{stamp.astimezone():%Y%m%d-%H%M%S}.{ext}"
+            except ValueError:
+                pass
 
     valid = _EXT_ALIASES.get(ext, {ext})
     if suffix in valid:

@@ -21,6 +21,7 @@ import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
 import { useBackLayer } from "../backStack";
 import ModelMenu from "./ModelMenu";
+import { displayName } from "../displayName";
 
 // Drafts have their own editor (DraftEditorModal); this form only logs results.
 type Kind = "vertex" | "manual";
@@ -294,8 +295,8 @@ export default function AddHistoryModal({
                 }}
               >
                 {outputImages.map((im) => (
-                  <div className="chip" key={im.id} title={im.filename}>
-                    <img src={imgThumbUrl(im)} alt={im.filename} draggable={false} />
+                  <div className="chip" key={im.id} title={displayName(im, t)}>
+                    <img src={imgThumbUrl(im)} alt={displayName(im, t)} draggable={false} />
                     <IconButton
                       className="x"
                       variant="overlay"
@@ -390,6 +391,7 @@ export default function AddHistoryModal({
                     key={r}
                     type="button"
                     className={`aspect-btn${aspectRatio === r ? " on" : ""}`}
+                    aria-label={`${t("aspect")} ${r}`}
                     aria-pressed={aspectRatio === r}
                     onClick={() => setAspectRatio(r)}
                     title={r}
