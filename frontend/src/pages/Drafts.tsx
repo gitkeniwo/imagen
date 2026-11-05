@@ -30,13 +30,17 @@ export default function Drafts({
   compact = false,
   refreshKey = 0,
   onQueue,
+  onUnqueue,
   onOpenViewer,
   onChanged,
   phone = false,
 }: {
   compact?: boolean;
   refreshKey?: number;
-  onQueue: (task: TaskSpec) => void;
+  // Returns the client queue id of the task it just added.
+  onQueue: (task: TaskSpec) => string;
+  // Removes an added task if it has not been sent yet.
+  onUnqueue?: (id: string) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   // Called after a draft is created or removed, so counts elsewhere refresh.
   onChanged?: () => void;
@@ -90,6 +94,31 @@ export default function Drafts({
     }
   };
 
+  const restoreDraft = async (draft: Draft, queueId: string) => {
+    try {
+      await api.createDraft({
+        prompt: draft.prompt,
+        provider: providerOf(draft),
+        model: draft.model,
+        aspectRatio: draft.aspect_ratio,
+        resolution: draft.resolution,
+        outputFormat: draft.output_format,
+        skipIfPrecedingSucceeds: !!draft.skip_if_preceding_succeeds,
+        pinned: !!draft.pinned,
+        inputImageIds: draft.inputImages.map((img) => img.id),
+        outputImageIds: draft.outputImages.map((img) => img.id),
+        tagIds: draft.tags.map((tag) => tag.id),
+      });
+      // Pending tasks are removed; a task that has already been sent stays.
+      onUnqueue?.(queueId);
+      toast(t("draft_restored"), "success");
+      load();
+      onChanged?.();
+    } catch (e) {
+      toast(t("draft_restore_failed", { msg: (e as Error).message }));
+    }
+  };
+
   const queueDraft = async (draft: Draft, removeAfter: boolean) => {
     // Each draft is queued on its own provider, so readiness is per draft.
     if (!isReady(providerOf(draft))) {
@@ -104,9 +133,9 @@ export default function Drafts({
       toast(t("draft_deleted_input"));
       return;
     }
-    onQueue(draftToTaskSpec(draft));
+    const queueId = onQueue(draftToTaskSpec(draft));
     if (!removeAfter) {
-      toast(t("draft_queued_kept"));
+      toast(t("draft_queued_kept"), "success");
       return;
     }
     try {
@@ -114,7 +143,10 @@ export default function Drafts({
       setDrafts((prev) => prev.filter((item) => item.id !== draft.id));
       setTotal((value) => Math.max(0, value - 1));
       onChanged?.();
-      toast(t("draft_queued_deleted"));
+      toast(t("draft_queued_deleted"), "success", {
+        durationMs: 8000,
+        action: { label: t("undo"), onClick: () => void restoreDraft(draft, queueId) },
+      });
     } catch (e) {
       toast(t("draft_queued_delete_failed", { msg: (e as Error).message }));
     }

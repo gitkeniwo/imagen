@@ -25,14 +25,6 @@ import { useBackLayer } from "../backStack";
 
 const PRICES_KEY = "imagen-cost-prices";
 const PERIODS: StatPeriod[] = ["day", "week", "month", "year", "all"];
-// Bucket unit per period (matches backend `_chart`).
-const SERIES_UNIT: Record<StatPeriod, string> = {
-  day: "hour",
-  week: "day",
-  month: "day",
-  year: "month",
-  all: "year",
-};
 // Stacked from the baseline up; whatever is left (aborted …) sits on top.
 const STACK = ["success", "blocked", "error"] as const;
 
@@ -202,6 +194,18 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const showCounts = chartPoints.length <= 12;
   const modelRows = Object.entries(p?.by_model ?? {}).sort((a, b) => b[1] - a[1]);
   const modelMax = Math.max(1, ...modelRows.map(([, c]) => c));
+  // Different providers can produce the same localized reason (e.g. both
+  // return IMAGE_SAFETY). Merge identical visible text into one row; the
+  // provider is an implementation detail and two identical lines read like a
+  // duplicate.
+  const failureRows = (() => {
+    const merged = new Map<string, number>();
+    for (const f of p?.failures ?? []) {
+      const label = reason(f.code) || reason(f.message) || f.message || f.code || t("no_output");
+      merged.set(label, (merged.get(label) ?? 0) + f.count);
+    }
+    return [...merged].map(([label, count]) => ({ label, count }));
+  })();
 
   return (
     <div className="manager-overlay usage-overlay" role="dialog" aria-modal="true">
@@ -216,11 +220,11 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
             onChange={setPeriod}
             options={PERIODS.map((b) => ({ value: b, label: t(`bucket_${b}`) }))}
           />
-          {stats?.first_at && (
+          {p?.range && (
             <span className="muted small tabular">
               {t("usage_range", {
-                from: (stats.first_at ?? "").slice(0, 10),
-                to: (stats.last_at ?? "").slice(0, 10),
+                from: p.range.from,
+                to: p.range.to,
               })}
             </span>
           )}
@@ -274,7 +278,7 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
             {/* Stacked status bars for the selected window */}
             <section className="usage-card">
               <div className="usage-card-head">
-                <h4 className="m-0">{t(`usage_series_${SERIES_UNIT[period]}`)}</h4>
+                <h4 className="m-0">{t(`usage_series_${p.chart_unit}`)}</h4>
                 <span className="spacer" />
                 {STACK.map((s) => (
                   <span key={s} className="usage-legend">
@@ -363,16 +367,13 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
               </section>
               <section className="usage-card">
                 <h4 className="m-0">{t("usage_failures")}</h4>
-                {p.failures.length === 0 && <p className="muted small m-0">{t("usage_no_failures")}</p>}
-                {p.failures.map((f, i) => {
-                  const label = reason(f.code) || reason(f.message) || f.message || f.code || t("no_output");
-                  return (
-                    <div key={i} className="usage-reason" title={label}>
-                      <span>{label}</span>
-                      <b>{f.count}</b>
-                    </div>
-                  );
-                })}
+                {failureRows.length === 0 && <p className="muted small m-0">{t("usage_no_failures")}</p>}
+                {failureRows.map((f) => (
+                  <div key={f.label} className="usage-reason" title={f.label}>
+                    <span>{f.label}</span>
+                    <b>{f.count}</b>
+                  </div>
+                ))}
               </section>
             </div>
           </main>

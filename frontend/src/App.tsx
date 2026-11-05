@@ -534,20 +534,22 @@ export default function App() {
   // composer's own auto-skip setting, every later copy is opted in, so the first
   // success cancels the remaining retries of *this* task only.
   const enqueue = useCallback(
-    (task: TaskSpec, count = 1) => {
+    (task: TaskSpec, count = 1): string => {
       const n = Math.max(1, Math.min(MAX_TASK_ATTEMPTS, Math.floor(count) || 1));
+      const id = uuid();
       setQueue((q) => {
         const dispatchAt = Date.now() + undoSeconds * 1000;
         const added: QueueTask[] = Array.from({ length: n }, (_, i) => ({
           ...task,
           skipIfPrecedingSucceeds:
             i === 0 ? task.skipIfPrecedingSucceeds : true,
-          id: uuid(),
+          id: i === 0 ? id : uuid(),
           status: "pending",
           dispatchAt,
         }));
         return [...q, ...added];
       });
+      return id;
     },
     [undoSeconds],
   );
@@ -691,7 +693,7 @@ export default function App() {
                 t.skipIfPrecedingSucceeds
                   ? {
                       ...t,
-                      status: "aborted" as const,
+                      status: "skipped" as const,
                       message: translate("skipped_by_preceding_success"),
                     } as QueueTask
                   : t,
@@ -922,6 +924,7 @@ export default function App() {
                 onChanged={bumpCounts}
                 refreshKey={draftVersion}
                 onQueue={enqueue}
+                onUnqueue={removeTask}
                 onOpenViewer={openViewer}
               />
             )}
@@ -1193,6 +1196,7 @@ export default function App() {
                         onChanged={bumpCounts}
                         refreshKey={draftVersion}
                         onQueue={enqueue}
+                        onUnqueue={removeTask}
                         onOpenViewer={openViewer}
                       />
                     ) : (
@@ -1259,6 +1263,7 @@ export default function App() {
           onChanged={bumpData}
           draftRefreshKey={draftVersion}
           onQueueDraft={enqueue}
+          onUnqueueTask={removeTask}
           historyLive={runningKey !== ""}
         />
       )}

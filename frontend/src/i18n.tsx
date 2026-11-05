@@ -226,6 +226,7 @@ const zh: Dict = {
   status_running: "生成中",
   status_cancelling: "取消中",
   status_aborted: "已取消",
+  status_skipped: "已跳过",
   queue_title: "队列",
   concurrency: "并行",
   concurrency_hint:
@@ -260,6 +261,7 @@ const zh: Dict = {
   usage: "用量",
   usage_series_hour: "每小时生成",
   usage_series_day: "每天生成",
+  usage_series_week: "每周生成",
   usage_series_month: "每月生成",
   usage_series_year: "每年生成",
   usage_kpi_success_sub: "成功 {n} 次",
@@ -367,6 +369,9 @@ const zh: Dict = {
   draft_queued_kept: "已加入队列，草稿仍保留。",
   draft_queued_deleted: "已加入队列并删除草稿。",
   draft_queued_delete_failed: "任务已入队，但草稿删除失败：{msg}",
+  draft_restored: "已恢复草稿并从队列撤回。",
+  draft_restore_failed: "无法恢复草稿：{msg}",
+  undo: "撤销",
   confirm_delete_draft_q: "删除这个草稿？图片不会被删除。",
   draft_outputs_n: "{n} 个附件",
 
@@ -877,6 +882,7 @@ const en: Dict = {
   status_running: "Generating",
   status_cancelling: "Cancelling",
   status_aborted: "Cancelled",
+  status_skipped: "Skipped",
   queue_title: "Queue",
   concurrency: "Parallel",
   concurrency_hint:
@@ -912,6 +918,7 @@ const en: Dict = {
   usage: "Usage",
   usage_series_hour: "Generations per hour",
   usage_series_day: "Generations per day",
+  usage_series_week: "Generations per week",
   usage_series_month: "Generations per month",
   usage_series_year: "Generations per year",
   usage_kpi_success_sub: "{n} succeeded",
@@ -1019,6 +1026,9 @@ const en: Dict = {
   draft_queued_kept: "Queued; draft kept.",
   draft_queued_deleted: "Queued and draft deleted.",
   draft_queued_delete_failed: "Task queued, but the draft could not be deleted: {msg}",
+  draft_restored: "Draft restored and task removed from the queue.",
+  draft_restore_failed: "Could not restore the draft: {msg}",
+  undo: "Undo",
   confirm_delete_draft_q: "Delete this draft? Its images are kept.",
   draft_outputs_n: "{n} attachments",
 

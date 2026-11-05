@@ -90,18 +90,79 @@ def _failure_reasons(rows, limit: int = 5):
     return [{"code": c, "message": m, "count": n} for (c, m), n in ranked]
 
 
+def _all_buckets(rows, first: date, last: date):
+    """Pick a readable unit for an unbounded window.
+
+    A four-month library used to draw one lone "2026" bar. Match the bucket to
+    the data span instead: days for under a month, weeks for under two months,
+    months for under two years, and years beyond that.
+    """
+    span = (last - first).days
+    if span <= 31:  # by day
+        days = [first + timedelta(days=i) for i in range(span + 1)]
+        return (
+            "day",
+            _series_from(
+                rows,
+                [(d.isoformat(), d.strftime("%m-%d")) for d in days],
+                lambda dt: dt.date().isoformat(),
+            ),
+        )
+    if span <= 60:  # by week (Monday-start)
+        start = first - timedelta(days=first.weekday())
+        weeks = []
+        d = start
+        while d <= last:
+            weeks.append(d)
+            d += timedelta(days=7)
+        return (
+            "week",
+            _series_from(
+                rows,
+                [(d.isoformat(), d.strftime("%m-%d")) for d in weeks],
+                lambda dt: (dt.date() - timedelta(days=dt.date().weekday())).isoformat(),
+            ),
+        )
+    if span <= 730:  # by month
+        months, y, m = [], first.year, first.month
+        while (y, m) <= (last.year, last.month):
+            months.append((y, m))
+            m += 1
+            if m == 13:
+                m, y = 1, y + 1
+        return (
+            "month",
+            _series_from(
+                rows,
+                [(f"{yy}-{mm:02d}", f"{yy}-{mm:02d}") for yy, mm in months],
+                lambda dt: f"{dt.year}-{dt.month:02d}",
+            ),
+        )
+    return (
+        "year",
+        _series_from(
+            rows,
+            [(str(yy), str(yy)) for yy in range(first.year, last.year + 1)],
+            lambda dt: str(dt.year),
+        ),
+    )
+
+
 def _chart(rows, period: str, today: date):
     """Trend bars for the window, sub-bucketed by a natural unit."""
     if period == "day":  # by hour
         keys = [(f"{h:02d}", f"{h:02d}") for h in range(24)]
-        return _series_from(rows, keys, lambda dt: f"{dt.hour:02d}")
+        return "hour", _series_from(rows, keys, lambda dt: f"{dt.hour:02d}")
     if period in ("week", "month"):  # by day
         n = 7 if period == "week" else 30
         days = [today - timedelta(days=i) for i in range(n - 1, -1, -1)]
-        return _series_from(
-            rows,
-            [(d.isoformat(), d.strftime("%m-%d")) for d in days],
-            lambda dt: dt.date().isoformat(),
+        return (
+            "day",
+            _series_from(
+                rows,
+                [(d.isoformat(), d.strftime("%m-%d")) for d in days],
+                lambda dt: dt.date().isoformat(),
+            ),
         )
     if period == "year":  # by month, last 12
         months, y, m = [], today.year, today.month
@@ -111,19 +172,30 @@ def _chart(rows, period: str, today: date):
             if m == 0:
                 m, y = 12, y - 1
         months.reverse()
-        return _series_from(
-            rows,
-            [(f"{yy}-{mm:02d}", f"{yy}-{mm:02d}") for yy, mm in months],
-            lambda dt: f"{dt.year}-{dt.month:02d}",
+        return (
+            "month",
+            _series_from(
+                rows,
+                [(f"{yy}-{mm:02d}", f"{yy}-{mm:02d}") for yy, mm in months],
+                lambda dt: f"{dt.year}-{dt.month:02d}",
+            ),
         )
-    # all → by year
-    yrs = [r[0].year for r in rows]
-    first = min(yrs, default=today.year)
-    return _series_from(
-        rows,
-        [(str(yy), str(yy)) for yy in range(first, today.year + 1)],
-        lambda dt: str(dt.year),
-    )
+    # all → unit follows the actual data span
+    dates = [r[0].date() for r in rows]
+    if not dates:
+        return "day", []
+    return _all_buckets(rows, min(dates), max(dates))
+
+
+def _period_range(period: str, today: date, gens) -> dict | None:
+    """Calendar bounds of the selected window (or the data span for "all")."""
+    if period == "all":
+        dates = [g[0].date() for g in gens]
+        if not dates:
+            return None
+        return {"from": min(dates).isoformat(), "to": max(dates).isoformat()}
+    days = {"day": 0, "week": 6, "month": 29, "year": 364}[period]
+    return {"from": (today - timedelta(days=days)).isoformat(), "to": today.isoformat()}
 
 
 @router.get("")
@@ -171,6 +243,7 @@ def get_stats():
             by_source[src] = by_source.get(src, 0) + 1
             bytes_sum += bs
 
+        unit, chart = _chart(gsub, p, today)
         periods[p] = {
             "total": len(gsub),
             "by_status": by_status,
@@ -178,7 +251,9 @@ def get_stats():
             "by_provider": by_provider,
             "cost_basis": _cost_rows(cost),
             "images": {"total": len(isub), "by_source": by_source, "bytes": bytes_sum},
-            "chart": _chart(gsub, p, today),
+            "chart": chart,
+            "chart_unit": unit,
+            "range": _period_range(p, today, gens),
             "failures": _failure_reasons(gsub),
         }
 
