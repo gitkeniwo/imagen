@@ -719,6 +719,7 @@ body.resizing-sidebar .side-panel {
 .badge.running { background: var(--badge-running-bg); color: var(--badge-running-text); border-color: var(--badge-running-border); }
 .badge.cancelling { background: var(--badge-blocked-bg); color: var(--badge-blocked-text); border-color: var(--badge-blocked-border); }
 .badge.aborted { background: var(--badge-pending-bg); color: var(--badge-pending-text); border-color: var(--badge-pending-border); }
+.badge.skipped { background: var(--panel-2); color: var(--muted); border-color: var(--border); }
 .badge.note { background: var(--badge-note-bg); color: var(--badge-note-text); border-color: var(--badge-note-border); }
 .notice { border-radius: var(--radius-lg); padding: var(--space-3) var(--space-3_5); white-space: pre-wrap; }
 .notice.blocked { background: var(--badge-blocked-bg); border: 1px solid var(--badge-blocked-border); color: var(--badge-blocked-text); }
@@ -2127,6 +2128,8 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 .hcard-status.q-live { align-items: center; justify-content: center; text-align: center; gap: var(--space-1_5); }
 .hcard-status.q-live .q-undo, .hcard-status.q-live .q-cancel { margin-top: var(--space-1); }
 .hcard-media.failed.aborted { background: var(--badge-pending-bg); }
+/* Skipped is a neutral result (the retry was not needed), not a failure. */
+.hcard-status.skipped { color: var(--muted); }
 
 /* ---- Hover preview for small thumbnails (HoverPeek) ---- */
 .hover-peek {

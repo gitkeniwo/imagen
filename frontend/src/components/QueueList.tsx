@@ -254,6 +254,8 @@ const QueueItem = memo(function QueueItem({
       : task.status === "aborted"
       ? task.message || t("aborted_fallback")
       : null;
+  // A skip is a neutral outcome, not a failure: no warning colour, no error icon.
+  const skipped = task.status === "skipped";
   const meta = [task.model.replace("-image", "").replace("-preview", ""), task.aspectRatio, task.resolution]
     .filter(Boolean)
     .join(" · ");
@@ -313,13 +315,17 @@ const QueueItem = memo(function QueueItem({
             </div>
           </>
         ) : (
-          <div className="hcard-status">
-            <Icon name="warning" />
+          <div className={`hcard-status${skipped ? " skipped" : ""}`}>
+            <Icon name={skipped ? "info" : "warning"} />
             <span className="hcard-status-label">{statusLabel}</span>
-            {failure && (
+            {(failure || (skipped && task.message)) && (
               <>
-                <span className="hcard-status-reason">{failure}</span>
-                <FullTextButton label={t("details")} title={statusLabel} text={failure} />
+                <span className="hcard-status-reason">{failure ?? task.message}</span>
+                <FullTextButton
+                  label={t("details")}
+                  title={statusLabel}
+                  text={(failure ?? task.message) ?? ""}
+                />
               </>
             )}
           </div>

@@ -73,7 +73,8 @@ export type TaskStatus =
   | "success"
   | "blocked"
   | "error"
-  | "aborted";
+  | "aborted"
+  | "skipped";
 
 // The durable, reusable part of a generation task. Composer, drafts and queue
 // all exchange this shape so fields cannot silently drift between features.
@@ -228,6 +229,11 @@ export interface PeriodStats {
   cost_basis: CostBasisRow[];
   images: { total: number; by_source: Record<string, number>; bytes: number };
   chart: SeriesPoint[];
+  // Bucket unit chosen by the backend for this window (the "all" window picks
+  // it from the actual data span).
+  chart_unit: "hour" | "day" | "week" | "month" | "year";
+  // Calendar bounds of this window; "all" uses the data span.
+  range: { from: string; to: string } | null;
   // Most common blocked/error causes: `code` is a raw_finish the UI localizes;
   // `message` is the stored text when there is no code.
   failures: { code: string | null; message: string | null; count: number }[];

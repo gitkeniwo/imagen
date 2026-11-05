@@ -27,6 +27,7 @@ export default function FullscreenManager({
   onChanged,
   draftRefreshKey,
   onQueueDraft,
+  onUnqueueTask,
   historyLive,
   counts,
   onCountsChanged,
@@ -40,7 +41,8 @@ export default function FullscreenManager({
   refreshKey: number;
   onChanged?: () => void;
   draftRefreshKey: number;
-  onQueueDraft: (task: TaskSpec) => void;
+  onQueueDraft: (task: TaskSpec) => string;
+  onUnqueueTask?: (id: string) => void;
   historyLive: boolean;
   counts: PanelCounts;
   onCountsChanged: () => void;
@@ -127,6 +129,7 @@ export default function FullscreenManager({
               onChanged={onCountsChanged}
               refreshKey={draftRefreshKey}
               onQueue={onQueueDraft}
+              onUnqueue={onUnqueueTask}
               onOpenViewer={onOpenViewer}
             />
           ) : (
