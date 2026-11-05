@@ -100,6 +100,7 @@ export default function GenerationCard({
   promptLines,
   inputs,
   onOpenInput,
+  onImageContextMenu,
   tags,
   actions,
   extra,
@@ -126,6 +127,7 @@ export default function GenerationCard({
   promptLines?: number;
   inputs: ImageRow[];
   onOpenInput?: (img: ImageRow) => void;
+  onImageContextMenu?: (img: ImageRow, trigger: HTMLElement, x: number, y: number) => void;
   tags?: TagRef[];
   actions: CardAction[];
   // Time-critical controls (undo send / cancel) rendered before "⋯".
@@ -168,7 +170,13 @@ export default function GenerationCard({
               alt={displayName(media.image, t)}
               title={t("open_viewer")}
               onClick={media.onOpen}
-              {...pressable(media.onOpen)}
+              {...pressable(
+                media.onOpen,
+                onImageContextMenu
+                  ? (trigger, x, y) =>
+                      onImageContextMenu(media.image, trigger, x, y)
+                  : undefined,
+              )}
             />
           ) : (
             <div className={`q-shimmer${media.active ? " active" : ""}`} />
@@ -214,7 +222,15 @@ export default function GenerationCard({
                   alt={displayName(im, t)}
                   title={displayName(im, t)}
                   onClick={onOpenInput ? () => onOpenInput(im) : undefined}
-                  {...(onOpenInput ? pressable(() => onOpenInput(im)) : {})}
+                  {...(onOpenInput || onImageContextMenu
+                    ? pressable(
+                        () => onOpenInput?.(im),
+                        onImageContextMenu
+                          ? (trigger, x, y) =>
+                              onImageContextMenu(im, trigger, x, y)
+                          : undefined,
+                      )
+                    : {})}
                 />
               ),
             )}

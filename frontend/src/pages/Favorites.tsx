@@ -7,10 +7,17 @@ import { pageSizedToColumns } from "../pageSize";
 import { useFitColumns } from "../useFitColumns";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
+import { copyText } from "../clipboard";
 import Icon from "../components/ui/Icon";
 import HistoryItem from "../components/HistoryItem";
+import { downloadImage } from "../components/GenerationCard";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
+import {
+  type ContextMenuSection,
+  type ContextMenuShortcut,
+  useContextMenu,
+} from "../components/ui/ContextMenu";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -30,6 +37,8 @@ export default function Favorites({
   onReuse,
   onRerun,
   onUseAsRef,
+  trayIds = [],
+  onRemoveFromTray,
   onOpenViewer,
   compact = false,
   refreshKey = 0,
@@ -39,6 +48,8 @@ export default function Favorites({
   onReuse: (g: Generation) => void;
   onRerun?: (g: Generation) => void;
   onUseAsRef?: (img: ImageRow) => void;
+  trayIds?: number[];
+  onRemoveFromTray?: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   compact?: boolean;
   refreshKey?: number;
@@ -48,6 +59,7 @@ export default function Favorites({
   const { t } = useI18n();
   const { isReady } = useProviders();
   const toast = useToast();
+  const { open: openContextMenu } = useContextMenu();
   const [gens, setGens] = useState<Generation[]>([]);
   const [query, setQuery] = useState("");
   const [notes, setNotes] = useState<Record<number, string>>({});
@@ -119,6 +131,97 @@ export default function Favorites({
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
+  };
+
+  const toggleContextStar = async (img: ImageRow) => {
+    const next = !img.starred;
+    try {
+      await api.patchImage(img.id, { starred: next });
+      img.starred = next ? 1 : 0;
+      load();
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const toggleTray = (img: ImageRow) => {
+    if (trayIds.includes(img.id) && onRemoveFromTray) onRemoveFromTray(img);
+    else onUseAsRef?.(img);
+  };
+
+  const openFavoriteMenu = (
+    generation: Generation,
+    img: ImageRow,
+    isOutput: boolean,
+    trigger: HTMLElement,
+    x: number,
+    y: number,
+    onView: () => void,
+  ) => {
+    const inTray = trayIds.includes(img.id);
+    const shortcuts: ContextMenuShortcut[] = [
+      {
+        icon: "view",
+        label: t("open_viewer"),
+        onSelect: onView,
+      },
+      ...(onUseAsRef
+        ? [
+            {
+              icon: inTray ? ("removeFromRefs" as const) : ("addToRefs" as const),
+              label: inTray ? t("shortcut_remove_ref") : t("shortcut_input"),
+              ariaLabel: inTray ? t("remove_ref") : t("add_to_input"),
+              onSelect: () => toggleTray(img),
+            },
+          ]
+        : []),
+      {
+        icon: "favorite",
+        label: img.starred ? t("favorited") : t("favorite"),
+        ariaLabel: img.starred ? t("unfavorite") : t("favorite"),
+        selected: !!img.starred,
+        filled: !!img.starred,
+        onSelect: () => toggleContextStar(img),
+      },
+      {
+        icon: "download",
+        label: t("download"),
+        onSelect: () => downloadImage(img),
+      },
+    ];
+    const recordActions: ContextMenuSection = [];
+    if (isOutput && generation.prompt) {
+      recordActions.push({
+        icon: "copy",
+        label: t("copy_prompt"),
+        onSelect: async () =>
+          toast((await copyText(generation.prompt)) ? t("copied") : t("copy_failed")),
+      });
+      recordActions.push({
+        icon: "reuse",
+        label: t("reuse"),
+        onSelect: () => onReuse(generation),
+      });
+      if (onRerun && generation.source !== "manual" && isReady(providerOf(generation))) {
+        recordActions.push({
+          icon: "rerun",
+          label: t("rerun_short"),
+          onSelect: () => onRerun(generation),
+        });
+      }
+    }
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      prompt: isOutput ? generation.prompt : undefined,
+      sourceLabel: generation.source === "manual" ? t("imported_badge") : undefined,
+      shortcuts,
+      sections: recordActions.length ? [recordActions] : [],
+      ariaLabel: t("image_menu"),
+    });
   };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -263,6 +366,9 @@ export default function Favorites({
                 onReuse={() => onReuse(g)}
                 onRerun={onRerun && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
                 onUseAsRef={onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined}
+                onImageContextMenu={(img, trigger, x, y, isOutput, onView) =>
+                  openFavoriteMenu(g, img, isOutput, trigger, x, y, onView)
+                }
                 onEdit={() => setEditingGen(g)}
                 onDuplicate={() => setDuplicatingGen(g)}
                 header={

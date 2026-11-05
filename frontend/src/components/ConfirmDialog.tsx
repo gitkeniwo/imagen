@@ -18,6 +18,8 @@ export interface ConfirmOptions {
   cancelLabel?: string;
   /** Destructive actions get the red confirm button. */
   danger?: boolean;
+  /** Raised above the image viewer when confirming from its context menu. */
+  aboveViewer?: boolean;
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
@@ -102,7 +104,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {request && (
         <div
-          className="overlay confirm-overlay"
+          className={`overlay confirm-overlay${request.aboveViewer ? " overlay-above-viewer" : ""}`}
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"

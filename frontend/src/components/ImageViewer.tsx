@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl } from "../api";
+import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl, Tag } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
 import TagPicker from "./TagPicker";
 import { useToast } from "./Toast";
+import { useConfirm } from "./ConfirmDialog";
 import AddHistoryModal from "./AddHistoryModal";
 import Icon from "./ui/Icon";
 import { Button, IconButton } from "./ui/Button";
@@ -15,6 +16,14 @@ import { useIsPhone } from "../useIsPhone";
 import { useBackLayer } from "../backStack";
 import { formatGenerationDuration } from "../generationMetrics";
 import { displayName } from "../displayName";
+import {
+  openContextMenuFromEvent,
+  openContextMenuFromKeyboard,
+  type ContextMenuSection,
+  type ContextMenuShortcut,
+  type ContextMenuTagSubmenu,
+  useContextMenu,
+} from "./ui/ContextMenu";
 
 // Full-screen lightbox: one rounded window with a dark stage (image + prev/next)
 // and a 360px inspector (metadata, actions, prompt, inputs, note, tags).
@@ -64,6 +73,9 @@ export default function ImageViewer({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const askConfirm = useConfirm();
+  const { open: openContextMenu } = useContextMenu();
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [items, setItems] = useState<ImageRow[]>(() => {
     const seen = new Set<number>();
     const seed = (list.length ? list : [image]).filter((img) => {
@@ -413,25 +425,178 @@ export default function ImageViewer({
       .catch(() => setGen(null));
   };
 
-  const applyTags = async (next: number[]) => {
-    const prev = tagIds;
+  const refreshTags = useCallback(() => {
+    api
+      .listTags()
+      .then((result) => setAllTags(result.tags))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshTags();
+  }, [refreshTags]);
+
+  const applyTagsToImage = async (img: ImageRow, next: number[]) => {
+    const prev = (img.tags ?? []).map((tag) => tag.id);
     const added = next.filter((x) => !prev.includes(x));
     const removed = prev.filter((x) => !next.includes(x));
-    setTagIds(next);
+    if (img.id === current.id) setTagIds(next);
     try {
-      if (added.length) await api.batchTag([current.id], added, "add");
-      if (removed.length) await api.batchTag([current.id], removed, "remove");
-      // Keep the in-memory row in sync so prev/next within this lightbox
-      // session (and re-open) shows the edited tags.
+      if (added.length) await api.batchTag([img.id], added, "add");
+      if (removed.length) await api.batchTag([img.id], removed, "remove");
       const { tags } = await api.listTags();
-      current.tags = tags
+      setAllTags(tags);
+      img.tags = tags
         .filter((tg) => next.includes(tg.id))
         .map(({ id, name, color }) => ({ id, name, color }));
+      if (img.id === current.id) setTagIds(next);
       onTagsChanged();
     } catch (e) {
-      setTagIds(prev);
+      if (img.id === current.id) setTagIds(prev);
       toast(t("op_failed", { msg: (e as Error).message }));
     }
+  };
+
+  const applyTags = (next: number[]) => applyTagsToImage(current, next);
+
+  const createTagForImage = async (img: ImageRow, next: number[], name: string) => {
+    try {
+      const tag = await api.createTag(name);
+      await applyTagsToImage(img, [...next, tag.id]);
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const toggleImageStar = async (img: ImageRow) => {
+    if (img.id === current.id) return toggleStar();
+    const next = !img.starred;
+    try {
+      await api.patchImage(img.id, { starred: next });
+      img.starred = next ? 1 : 0;
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const moveImageToBin = async (img: ImageRow) => {
+    const ok = await askConfirm({
+      message: t("confirm_delete"),
+      confirmLabel: t("move_to_bin"),
+      danger: true,
+      aboveViewer: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteImage(img.id);
+      onChanged?.();
+      if (img.id === current.id) {
+        if (inTrail) popTrail();
+        else close();
+      } else if (gen?.inputs?.some((input) => input.id === img.id)) {
+        setGen({ ...gen, inputs: gen.inputs.filter((input) => input.id !== img.id) });
+      }
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const tagSubmenuFor = (img: ImageRow): ContextMenuTagSubmenu => {
+    const selected =
+      img.id === current.id ? tagIds : (img.tags ?? []).map((tag) => tag.id);
+    return {
+      kind: "tags",
+      options: allTags.map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        count: tag.count,
+        checked: selected.includes(tag.id),
+      })),
+      onToggle: (tagId) =>
+        applyTagsToImage(
+          img,
+          selected.includes(tagId)
+            ? selected.filter((id) => id !== tagId)
+            : [...selected, tagId],
+        ),
+      createLabel: t("new_tag_placeholder"),
+      createPlaceholder: t("new_tag_placeholder"),
+      onCreate: (name) => createTagForImage(img, selected, name),
+    };
+  };
+
+  const openViewerImageMenu = (
+    img: ImageRow,
+    isInput: boolean,
+    trigger: HTMLElement,
+    x: number,
+    y: number,
+  ) => {
+    const isCurrent = img.id === current.id;
+    const imageStarred = isCurrent ? starred : !!img.starred;
+    const inTray = isRef(img.id);
+    const shortcuts: ContextMenuShortcut[] = [
+      {
+        icon: inTray ? "removeFromRefs" : "addToRefs",
+        label: inTray ? t("shortcut_remove_ref") : t("shortcut_input"),
+        ariaLabel: inTray ? t("remove_ref") : t("add_to_input"),
+        onSelect: () => toggleRef(img),
+      },
+      {
+        icon: "favorite",
+        label: imageStarred ? t("favorited") : t("favorite"),
+        ariaLabel: imageStarred ? t("unfavorite") : t("favorite"),
+        selected: imageStarred,
+        filled: imageStarred,
+        onSelect: () => toggleImageStar(img),
+      },
+      {
+        icon: "download",
+        label: t("download"),
+        onSelect: () => downloadImage(img),
+      },
+    ];
+    const records: ContextMenuSection = [];
+    if (!isInput && gen?.prompt) {
+      records.push({
+        icon: "copy",
+        label: t("copy_prompt"),
+        onSelect: async () =>
+          toast((await copyText(gen.prompt)) ? t("copied") : t("copy_failed")),
+      });
+    }
+    if (!isInput && gen && onReuse) {
+      records.push({
+        icon: "reuse",
+        label: t("reuse"),
+        onSelect: () => onReuse(gen),
+      });
+    }
+    records.push({
+      icon: "tag",
+      label: t("tags_label"),
+      hint: (isCurrent ? tagIds.length : img.tags?.length ?? 0),
+      submenu: tagSubmenuFor(img),
+    });
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      prompt: isInput ? undefined : gen?.prompt,
+      sourceLabel:
+        !isInput && gen?.source === "manual" ? t("imported_badge") : undefined,
+      shortcuts,
+      sections: [records, [
+        {
+          icon: "delete",
+          label: t("move_to_bin"),
+          danger: true,
+          onSelect: () => moveImageToBin(img),
+        },
+      ]],
+      ariaLabel: t("image_menu"),
+    });
   };
 
   const moreMenu = (
@@ -511,6 +676,9 @@ export default function ImageViewer({
           onNavigate={multi ? goTo : undefined}
           canNavigatePrev={!atStart}
           canNavigateNext={!atEnd}
+          onImageContextMenu={(img, trigger, x, y) =>
+            openViewerImageMenu(img, false, trigger, x, y)
+          }
         >
           {(phone || panelHidden) && !controlsHidden && (
             <div className="viewer-phone-top">
@@ -748,6 +916,16 @@ export default function ImageViewer({
                             hidePeek();
                             setTrail((all) => [...all, { img: im, label: t("peek_input", { n: i + 1 }) }]);
                           }}
+                          onContextMenu={(event) =>
+                            openContextMenuFromEvent(event, (trigger, x, y) =>
+                              openViewerImageMenu(im, true, trigger, x, y),
+                            )
+                          }
+                          onKeyDown={(event) =>
+                            openContextMenuFromKeyboard(event, (trigger, x, y) =>
+                              openViewerImageMenu(im, true, trigger, x, y),
+                            )
+                          }
                         >
                           <img src={imgThumbUrl(im)} alt="" />
                           <span className="pos">{i + 1}</span>

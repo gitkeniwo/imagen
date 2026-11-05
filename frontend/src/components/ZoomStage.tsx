@@ -4,6 +4,10 @@ import { useI18n } from "../i18n";
 import { IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
 import { displayName } from "../displayName";
+import {
+  openContextMenuFromEvent,
+  openContextMenuFromKeyboard,
+} from "./ui/ContextMenu";
 
 // Zoomable image stage for the viewer. Zoom stays clipped inside the stage,
 // never over the inspector.
@@ -37,6 +41,7 @@ export default function ZoomStage({
   onToggleControls,
   onZoomedChange,
   onNavigate,
+  onImageContextMenu,
   canNavigatePrev = true,
   canNavigateNext = true,
   children,
@@ -51,6 +56,12 @@ export default function ZoomStage({
   onZoomedChange: (zoomed: boolean) => void;
   // Fit only: horizontal swipe/flick to the previous (-1) or next (+1) image.
   onNavigate?: (delta: -1 | 1) => void;
+  onImageContextMenu?: (
+    image: ImageRow,
+    trigger: HTMLElement,
+    x: number,
+    y: number,
+  ) => void;
   canNavigatePrev?: boolean;
   canNavigateNext?: boolean;
   // Overlays drawn above the image (counter, prev/next).
@@ -492,7 +503,28 @@ export default function ZoomStage({
           visibility: size.w ? undefined : "hidden",
         }}
       >
-        <img src={src} alt={displayName(image, t)} draggable={false} />
+        <img
+          src={src}
+          alt={displayName(image, t)}
+          draggable={false}
+          tabIndex={onImageContextMenu ? 0 : undefined}
+          onContextMenu={
+            onImageContextMenu
+              ? (event) =>
+                  openContextMenuFromEvent(event, (trigger, x, y) =>
+                    onImageContextMenu(image, trigger, x, y),
+                  )
+              : undefined
+          }
+          onKeyDown={
+            onImageContextMenu
+              ? (event) =>
+                  openContextMenuFromKeyboard(event, (trigger, x, y) =>
+                    onImageContextMenu(image, trigger, x, y),
+                  )
+              : undefined
+          }
+        />
       </div>
 
       {children}

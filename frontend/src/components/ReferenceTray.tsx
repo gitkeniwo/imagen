@@ -9,6 +9,14 @@ import { isRefDrag, readImageDrag } from "../imageDrag";
 import { Button, IconButton } from "./ui/Button";
 import Menu from "./ui/Menu";
 import { displayName } from "../displayName";
+import { downloadImage } from "./GenerationCard";
+import { useToast } from "./Toast";
+import { pressable } from "../a11y";
+import {
+  type ContextMenuSection,
+  type ContextMenuShortcut,
+  useContextMenu,
+} from "./ui/ContextMenu";
 
 const UPLOAD_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
 const UPLOAD_EXT = /\.(png|jpe?g|webp|gif)$/i;
@@ -58,11 +66,71 @@ export default function ReferenceTray({
 }) {
   const { remote } = useRemote();
   const { t } = useI18n();
+  const toast = useToast();
+  const { open: openContextMenu } = useContextMenu();
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragIdx = useRef<number | null>(null);
+
+  const openReferenceMenu = (
+    img: ImageRow,
+    trigger: HTMLElement,
+    x: number,
+    y: number,
+  ) => {
+    const shortcuts: ContextMenuShortcut[] = [
+      ...(onOpen
+        ? [
+            {
+              icon: "view" as const,
+              label: t("open_viewer"),
+              onSelect: () => onOpen(img),
+            },
+          ]
+        : []),
+      {
+        icon: "favorite",
+        label: img.starred ? t("favorited") : t("favorite"),
+        ariaLabel: img.starred ? t("unfavorite") : t("favorite"),
+        selected: !!img.starred,
+        filled: !!img.starred,
+        onSelect: async () => {
+          const next = !img.starred;
+          try {
+            await api.patchImage(img.id, { starred: next });
+            img.starred = next ? 1 : 0;
+          } catch (e) {
+            toast(t("op_failed", { msg: (e as Error).message }));
+          }
+        },
+      },
+      {
+        icon: "download",
+        label: t("download"),
+        onSelect: () => downloadImage(img),
+      },
+    ];
+    const sections: ContextMenuSection[] = [
+      [
+        {
+          icon: "removeFromRefs",
+          label: t("remove_ref"),
+          onSelect: () => onRemove(img.id),
+        },
+      ],
+    ];
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      shortcuts,
+      sections,
+      ariaLabel: t("image_menu"),
+    });
+  };
 
   const upload = useCallback(async (files: FileList | File[]) => {
     const all = Array.from(files);
@@ -249,7 +317,15 @@ export default function ReferenceTray({
               dragIdx.current = null;
             }}
           >
-            <img src={imgThumbUrl(img)} alt={displayName(img, t)} draggable={false} />
+            <img
+              src={imgThumbUrl(img)}
+              alt={displayName(img, t)}
+              draggable={false}
+              {...pressable(
+                () => onOpen?.(img),
+                (trigger, x, y) => openReferenceMenu(img, trigger, x, y),
+              )}
+            />
             <span className="pos">{i + 1}</span>
             <IconButton
               className="x"

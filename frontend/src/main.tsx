@@ -7,6 +7,7 @@ import { ProvidersProvider } from "./useProviders";
 import { I18nProvider } from "./i18n";
 import { ToastProvider } from "./components/Toast";
 import { ConfirmProvider } from "./components/ConfirmDialog";
+import { ContextMenuProvider } from "./components/ui/ContextMenu";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -14,16 +15,18 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <I18nProvider>
       <ToastProvider>
         <ConfirmProvider>
-          {/* /login is served on the LAN listener without a session. */}
-          {location.pathname === "/login" ? (
-            <Login />
-          ) : (
-            <RemoteProvider>
-              <ProvidersProvider>
-                <App />
-              </ProvidersProvider>
-            </RemoteProvider>
-          )}
+          <ContextMenuProvider>
+            {/* /login is served on the LAN listener without a session. */}
+            {location.pathname === "/login" ? (
+              <Login />
+            ) : (
+              <RemoteProvider>
+                <ProvidersProvider>
+                  <App />
+                </ProvidersProvider>
+              </RemoteProvider>
+            )}
+          </ContextMenuProvider>
         </ConfirmProvider>
       </ToastProvider>
     </I18nProvider>

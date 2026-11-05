@@ -902,6 +902,8 @@ export default function App() {
               <Library
                 addToTray={addToTray}
                 addManyToTray={addManyToTray}
+                trayIds={trayIds}
+                onRemoveFromTray={removeFromTrayRow}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
@@ -912,6 +914,8 @@ export default function App() {
                 onReuse={reuse}
                 onRerun={rerunGeneration}
                 onUseAsRef={addToTray}
+                trayIds={trayIds}
+                onRemoveFromTray={removeFromTrayRow}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
@@ -922,6 +926,8 @@ export default function App() {
                 onReuse={reuse}
                 onRerun={rerunGeneration}
                 onUseAsRef={addToTray}
+                trayIds={trayIds}
+                onRemoveFromTray={removeFromTrayRow}
                 compact
                 refreshKey={completedRefreshKey}
                 onOpenViewer={openViewer}
@@ -934,6 +940,9 @@ export default function App() {
                 refreshKey={draftVersion}
                 onQueue={enqueue}
                 onUnqueue={removeTask}
+                onAddToTray={addToTray}
+                trayIds={trayIds}
+                onRemoveFromTray={removeFromTrayRow}
                 onOpenViewer={openViewer}
               />
             )}
@@ -1068,6 +1077,8 @@ export default function App() {
               prefill={prefill}
               consumePrefill={consumePrefill}
               addManyToTray={addManyToTray}
+              trayIds={trayIds}
+              onRemoveFromTray={removeFromTrayRow}
               removeFromTray={removeFromTray}
               moveInTray={moveInTray}
               keyConfigured={composerReady}
@@ -1103,6 +1114,8 @@ export default function App() {
                   <Library
                     addToTray={addToTray}
                     addManyToTray={addManyToTray}
+                    trayIds={trayIds}
+                    onRemoveFromTray={removeFromTrayRow}
                     compact
                     phone
                     onSelectModeChange={setPhoneSelecting}
@@ -1121,6 +1134,8 @@ export default function App() {
                     onReuse={reuse}
                     onRerun={rerunGeneration}
                     onUseAsRef={addToTray}
+                    trayIds={trayIds}
+                    onRemoveFromTray={removeFromTrayRow}
                     compact
                     phone
                     refreshKey={completedRefreshKey}
@@ -1149,6 +1164,8 @@ export default function App() {
                 prefill={prefill}
                 consumePrefill={consumePrefill}
                 addManyToTray={addManyToTray}
+                trayIds={trayIds}
+                onRemoveFromTray={removeFromTrayRow}
                 removeFromTray={removeFromTray}
                 moveInTray={moveInTray}
                 keyConfigured={composerReady}
@@ -1193,6 +1210,8 @@ export default function App() {
                         onReuse={reuse}
                         onRerun={rerunGeneration}
                         onUseAsRef={addToTray}
+                        trayIds={trayIds}
+                        onRemoveFromTray={removeFromTrayRow}
                         compact
                         phone
                         refreshKey={completedRefreshKey}
@@ -1207,6 +1226,9 @@ export default function App() {
                         refreshKey={draftVersion}
                         onQueue={enqueue}
                         onUnqueue={removeTask}
+                        onAddToTray={addToTray}
+                        trayIds={trayIds}
+                        onRemoveFromTray={removeFromTrayRow}
                         onOpenViewer={openViewer}
                       />
                     ) : (
@@ -1266,6 +1288,8 @@ export default function App() {
           initialPanel={managerPanel}
           onClose={() => setManagerOpen(false)}
           addToTray={addToTray}
+          trayIds={trayIds}
+          onRemoveFromTray={removeFromTrayRow}
           onOpenViewer={openViewer}
           onReuse={reuse}
           onRerun={rerunGeneration}

@@ -20,6 +20,8 @@ export default function FullscreenManager({
   initialPanel,
   onClose,
   addToTray,
+  trayIds,
+  onRemoveFromTray,
   onOpenViewer,
   onReuse,
   onRerun,
@@ -35,6 +37,8 @@ export default function FullscreenManager({
   initialPanel: ManagerPanel;
   onClose: () => void;
   addToTray: (img: ImageRow) => void;
+  trayIds: number[];
+  onRemoveFromTray: (img: ImageRow) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
   onReuse: (g: Generation) => void;
   onRerun?: (g: Generation) => void;
@@ -102,6 +106,8 @@ export default function FullscreenManager({
           {panel === "library" ? (
             <Library
               addToTray={addToTray}
+              trayIds={trayIds}
+              onRemoveFromTray={onRemoveFromTray}
               onOpenViewer={onOpenViewer}
               refreshKey={refreshKey}
               onChanged={onChanged}
@@ -111,6 +117,8 @@ export default function FullscreenManager({
               onReuse={handleReuse}
               onRerun={onRerun}
               onUseAsRef={addToTray}
+              trayIds={trayIds}
+              onRemoveFromTray={onRemoveFromTray}
               onOpenViewer={onOpenViewer}
               refreshKey={refreshKey}
               live={historyLive}
@@ -120,6 +128,8 @@ export default function FullscreenManager({
               onReuse={handleReuse}
               onRerun={onRerun}
               onUseAsRef={addToTray}
+              trayIds={trayIds}
+              onRemoveFromTray={onRemoveFromTray}
               onOpenViewer={onOpenViewer}
               refreshKey={refreshKey}
               onChanged={onChanged}
@@ -130,6 +140,9 @@ export default function FullscreenManager({
               refreshKey={draftRefreshKey}
               onQueue={onQueueDraft}
               onUnqueue={onUnqueueTask}
+              onAddToTray={addToTray}
+              trayIds={trayIds}
+              onRemoveFromTray={onRemoveFromTray}
               onOpenViewer={onOpenViewer}
             />
           ) : (

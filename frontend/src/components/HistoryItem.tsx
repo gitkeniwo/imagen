@@ -121,6 +121,7 @@ export default function HistoryItem({
   onReuse,
   onRerun,
   onUseAsRef,
+  onImageContextMenu,
   onEdit,
   onDuplicate,
   header,
@@ -136,6 +137,14 @@ export default function HistoryItem({
   onReuse: () => void;
   onRerun?: () => void;
   onUseAsRef?: () => void;
+  onImageContextMenu?: (
+    img: ImageRow,
+    trigger: HTMLElement,
+    x: number,
+    y: number,
+    isOutput: boolean,
+    onView: () => void,
+  ) => void;
   onEdit: () => void;
   onDuplicate: () => void;
   // Optional extra row above the meta (the favorites note).
@@ -198,7 +207,13 @@ export default function HistoryItem({
             draggable={false}
             title={t("open_viewer")}
             onClick={onOpen}
-            {...pressable(onOpen)}
+            {...pressable(
+              onOpen,
+              onImageContextMenu
+                ? (trigger, x, y) =>
+                    onImageContextMenu(output, trigger, x, y, true, onOpen)
+                : undefined,
+            )}
           />
           {onToggleStar && (
             <IconButton
@@ -277,7 +292,13 @@ export default function HistoryItem({
                 alt={displayName(im, t)}
                 {...peekProps(im, t("peek_input", { n: inputs.indexOf(im) + 1 }))}
                 onClick={() => onOpenInput(im)}
-                {...pressable(() => onOpenInput(im))}
+                {...pressable(
+                  () => onOpenInput(im),
+                  onImageContextMenu
+                    ? (trigger, x, y) =>
+                        onImageContextMenu(im, trigger, x, y, false, () => onOpenInput(im))
+                    : undefined,
+                )}
               />
             ),
           )}
