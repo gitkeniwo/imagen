@@ -217,6 +217,15 @@ export default function ImageViewer({
 
   // Warm the browser cache around the current image. On phones this is the
   // difference between a blank frame and an immediate full-resolution swap.
+  //
+  // Memory (measured 2026-11 in WKWebView, macOS 15, 4096² JPEG originals):
+  // WebKit does not keep decoded bitmaps for off-DOM images. Ten originals
+  // decoded here and held by reference left WebContent unchanged (74 -> 74 MB),
+  // and browsing 20 images settled at ~111 MB with this preload, with
+  // fetch()-only or no-decode prefetch, and with no preload at all. Those
+  // alternatives were worse: decoding moves onto the swap (30-50 MB transient
+  // spikes), and a fetch() prefetch is not reused by <img> in an ephemeral
+  // WebKit session (each original downloaded twice). Keep decode() here.
   const prevImage = items[idx - 1];
   const nextImage = items[idx + 1];
   const prevSrc = prevImage ? imgFileUrl(prevImage) : null;
