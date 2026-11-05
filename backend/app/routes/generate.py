@@ -2,13 +2,12 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .. import provider_config, providers, remote, storage, tagging
-from ..db import get_conn
+from ..db import get_conn, now_timestamp
 from ..models import GenerateRequest
 from ..remote_gate import is_lan
 
@@ -46,7 +45,7 @@ INFLIGHT: set[str] = set()
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return now_timestamp()
 
 
 @router.get("/generate/progress/{cid}")

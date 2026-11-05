@@ -54,6 +54,8 @@ export interface Generation {
   output_index?: number;
 }
 
+export type HistoryResult = "success" | "blocked" | "error";
+
 export type MarkerColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
 
 export const MARKER_COLORS: Array<{ id: MarkerColor; hex: string }> = [
@@ -589,6 +591,10 @@ export const api = {
       q?: string;
       starred?: boolean;
       kind?: "vertex" | "manual";
+      // Outcome: "error" also matches cancelled requests.
+      status?: HistoryResult;
+      model?: string;
+      provider?: ProviderId;
       withOutput?: boolean;
       uniqueOutputs?: boolean;
     } = {},
@@ -605,6 +611,9 @@ export const api = {
     if (params.q && params.q.trim()) q.set("q", params.q.trim());
     if (params.starred) q.set("starred", "true");
     if (params.kind) q.set("kind", params.kind);
+    if (params.status) q.set("status", params.status);
+    if (params.model) q.set("model", params.model);
+    if (params.provider) q.set("provider", params.provider);
     if (params.withOutput) q.set("with_output", "true");
     if (params.uniqueOutputs) q.set("unique_outputs", "true");
     return handle(await fetch(`/api/generations?${q.toString()}`));

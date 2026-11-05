@@ -1,6 +1,8 @@
-import { type CSSProperties, useEffect, useState } from "react";
-import { api, Generation, ImageRow, providerOf, Tag } from "../api";
+import { type CSSProperties, Fragment, useEffect, useRef, useState } from "react";
+import { api, Generation, HistoryResult, ImageRow, ProviderId, providerOf, Tag } from "../api";
 import { useI18n } from "../i18n";
+import { dayKey, dayLabel, parseTime } from "../historyTime";
+import { useFitColumns } from "../useFitColumns";
 import { useProviders } from "../useProviders";
 import AddHistoryModal from "../components/AddHistoryModal";
 import { pageSizedToColumns } from "../pageSize";
@@ -14,7 +16,7 @@ import appIcon from "../assets/app-icon.png";
 import HistoryItem, { type HistoryLayout } from "../components/HistoryItem";
 import { Button } from "../components/ui/Button";
 import Segmented from "../components/ui/Segmented";
-import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
+import { FilterPopover, PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import type { ViewerPager } from "../components/ImageViewer";
 
 const COMPACT_PAGE_SIZE = 12;
@@ -57,8 +59,8 @@ export default function History({
   live?: boolean;
   phone?: boolean;
 }) {
-  const { t } = useI18n();
-  const { isReady } = useProviders();
+  const { t, lang } = useI18n();
+  const { isReady, providers } = useProviders();
   const toast = useToast();
   const { remote } = useRemote();
   const [gens, setGens] = useState<Generation[]>([]);
@@ -66,6 +68,9 @@ export default function History({
   const [tagFilter, setTagFilter] = useState<number | null>(null);
   const [kindFilter, setKindFilter] = useState<"vertex" | "manual" | null>(null);
   const [onlyWithImage, setOnlyWithImage] = useState(false);
+  const [resultFilter, setResultFilter] = useState<HistoryResult | null>(null);
+  const [modelFilter, setModelFilter] = useState<string | null>(null);
+  const [providerFilter, setProviderFilter] = useState<ProviderId | null>(null);
   const [query, setQuery] = useState("");
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
@@ -77,12 +82,26 @@ export default function History({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Enter grid rows per page, never a ragged last row; list view has one item
-  // per row, so it keeps the plain target size. The phone grid is two columns.
-  const effectiveColumns = phone ? 2 : columns;
+  // per row, so it keeps the plain target size. The phone grid is two columns;
+  // elsewhere columns drop while cards would be too narrow for their buttons.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const fitColumns = useFitColumns(rootRef, columns);
+  const effectiveColumns = phone ? 2 : fitColumns;
   const pageSize = pageSizedToColumns(
     compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
     layout === "list" ? 1 : effectiveColumns,
   );
+
+  const filterParams = {
+    tag: tagFilter ?? undefined,
+    q: query || undefined,
+    kind: kindFilter ?? undefined,
+    status: resultFilter ?? undefined,
+    model: modelFilter ?? undefined,
+    provider: providerFilter ?? undefined,
+  };
+  const filterDeps = [tagFilter, kindFilter, onlyWithImage, query, resultFilter, modelFilter, providerFilter];
+  const moreFilters = [resultFilter, modelFilter, providerFilter].filter((v) => v !== null).length;
 
   const load = (quiet = false) => {
     if (!quiet) {
@@ -93,9 +112,7 @@ export default function History({
       api.listGenerations({
         limit: pageSize,
         offset: page * pageSize,
-        tag: tagFilter ?? undefined,
-        q: query || undefined,
-        kind: kindFilter ?? undefined,
+        ...filterParams,
         withOutput: onlyWithImage,
       }),
       api.listTags(),
@@ -119,7 +136,7 @@ export default function History({
       });
   };
 
-  useEffect(load, [page, pageSize, tagFilter, kindFilter, onlyWithImage, query, refreshKey]);
+  useEffect(load, [page, pageSize, refreshKey, ...filterDeps]);
 
   // While a request is in flight, poll only when History is actually mounted.
   // This makes the backend-created `running` placeholder appear without
@@ -128,7 +145,7 @@ export default function History({
     if (!live) return;
     const id = window.setInterval(() => load(true), 3000);
     return () => window.clearInterval(id);
-  }, [live, page, pageSize, tagFilter, kindFilter, onlyWithImage, query]);
+  }, [live, page, pageSize, ...filterDeps]);
 
   const toggleStar = async (img: ImageRow) => {
     try {
@@ -164,9 +181,7 @@ export default function History({
           const r = await api.listGenerations({
             limit,
             offset: nextOffset,
-            tag: tagFilter ?? undefined,
-            q: query || undefined,
-            kind: kindFilter ?? undefined,
+            ...filterParams,
             uniqueOutputs: true,
           });
           const outputs: ImageRow[] = [];
@@ -251,6 +266,69 @@ export default function History({
     />
   );
 
+  const clearMoreFilters = () => {
+    setResultFilter(null);
+    setModelFilter(null);
+    setProviderFilter(null);
+    setPage(0);
+  };
+  // Every model any provider serves (catalog order, one entry per id).
+  const modelOptions = providers
+    .flatMap((p) => p.models)
+    .filter((m, i, all) => all.findIndex((x) => x.id === m.id) === i);
+  const pickFilter = <T extends string>(setter: (v: T | null) => void) => (v: string) => {
+    setter(v === "all" ? null : (v as T));
+    setPage(0);
+  };
+  const moreFilterPopover = (
+    <FilterPopover active={moreFilters} onClear={clearMoreFilters}>
+      <PopoverSection label={t("hist_filter_result")}>
+        <Segmented<string>
+          value={resultFilter ?? "all"}
+          onChange={pickFilter<HistoryResult>(setResultFilter)}
+          options={[
+            { value: "all", label: t("filter_all") },
+            { value: "success", label: t("hist_result_success") },
+            { value: "blocked", label: t("hist_result_blocked") },
+            { value: "error", label: t("hist_result_error") },
+          ]}
+        />
+      </PopoverSection>
+      <PopoverSection label={t("hist_filter_model")}>
+        <Segmented<string>
+          value={modelFilter ?? "all"}
+          onChange={pickFilter<string>(setModelFilter)}
+          options={[
+            { value: "all", label: t("filter_all") },
+            ...modelOptions.map((m) => ({ value: m.id, label: m.label })),
+          ]}
+        />
+      </PopoverSection>
+      <PopoverSection label={t("hist_filter_provider")}>
+        <Segmented<string>
+          value={providerFilter ?? "all"}
+          onChange={pickFilter<ProviderId>(setProviderFilter)}
+          options={[
+            { value: "all", label: t("filter_all") },
+            ...providers.map((p) => ({ value: p.id, label: p.label })),
+          ]}
+        />
+      </PopoverSection>
+    </FilterPopover>
+  );
+
+  // List view: a heading before the first record of each local day.
+  const now = new Date();
+  const dayHeading = (index: number) => {
+    if (layout !== "list") return null;
+    const d = parseTime(gens[index].created_at);
+    const prev = index > 0 ? parseTime(gens[index - 1].created_at) : null;
+    if (index > 0 && (d ? dayKey(d) : "") === (prev ? dayKey(prev) : "")) return null;
+    return (
+      <h3 className="hlist-day">{d ? dayLabel(d, now, lang, t) : t("history_unknown_day")}</h3>
+    );
+  };
+
   // Collect unique tags from all images in a generation (inputs + output).
   const genTags = (g: Generation) => {
     const all = [...(g.inputs ?? []), ...(g.outputImage ? [g.outputImage] : [])];
@@ -263,7 +341,7 @@ export default function History({
   };
 
   return (
-    <div className={phone ? "history-phone" : undefined}>
+    <div ref={rootRef} className={phone ? "history-phone" : undefined}>
       {phone && (
         <div className="phone-head">
           <img className="phone-logo" src={appIcon} alt="" />
@@ -283,6 +361,7 @@ export default function History({
             }}
             placeholder={t("search_placeholder_history")}
           />
+          <div className="history-toolbar-controls">
           {layout === "grid" && !phone && (
           <ViewPopover>
             <PopoverSection label={t("columns_per_row")}>
@@ -310,6 +389,7 @@ export default function History({
               { value: "list", label: t("view_list"), icon: "listView", iconOnly: true, title: t("view_list") },
             ]}
           />
+          </div>
         </div>
         <div className={`filter-row${phone ? " phone-filter-row" : ""}`}>
           <Segmented
@@ -337,6 +417,7 @@ export default function History({
           >
             <span className="filter-label">{t("hist_filter_with_image")}</span>
           </Button>
+          {moreFilterPopover}
         </div>
         {tagBar}
       </div>
@@ -355,7 +436,7 @@ export default function History({
         </div>
       ) : gens.length === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
-          {query || tagFilter !== null || kindFilter !== null || onlyWithImage ? (
+          {query || tagFilter !== null || kindFilter !== null || onlyWithImage || moreFilters > 0 ? (
             <div className="empty-state">
               <span>{t("no_results")}</span>
               <button
@@ -364,6 +445,9 @@ export default function History({
                   setTagFilter(null);
                   setKindFilter(null);
                   setOnlyWithImage(false);
+                  setResultFilter(null);
+                  setModelFilter(null);
+                  setProviderFilter(null);
                   setPage(0);
                 }}
               >
@@ -383,8 +467,9 @@ export default function History({
             const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
             const missing = !!g.outputImage?.deleted_at || (g.status === "success" && !g.outputImage);
             return (
+              <Fragment key={g.id}>
+              {dayHeading(index)}
               <HistoryItem
-                key={g.id}
                 g={g}
                 layout={layout}
                 output={outImg}
@@ -399,6 +484,7 @@ export default function History({
                 onEdit={() => setEditingGen(g)}
                 onDuplicate={() => setDuplicatingGen(g)}
               />
+              </Fragment>
             );
           })}
         </div>

@@ -5,7 +5,7 @@ from types import ModuleType
 
 from . import gemini_api, vertex
 from .base import (  # noqa: F401 — re-exported for routes and test doubles
-    ASPECT_RATIOS, GenResult, InputImage, ModelSpec, normalize_model,
+    ASPECT_RATIOS, MODEL_ALIASES, GenResult, InputImage, ModelSpec, normalize_model,
 )
 
 PROVIDERS: dict[str, ModuleType] = {"vertex": vertex, "gemini": gemini_api}
