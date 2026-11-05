@@ -29,6 +29,25 @@ def _row_to_dict(row) -> dict:
     return {k: row[k] for k in row.keys()}
 
 
+# Local filesystem locations are backend-only. They are still needed inside the
+# app (file serving, purge, backups), but every API response must use
+# ``public_image`` so a library path never reaches a browser — including the
+# owner's. The frontend builds URLs from an image id.
+_PRIVATE_IMAGE_COLUMNS = ("file_path", "thumb_path")
+
+
+def public_image(row) -> dict:
+    """Return an image row without local filesystem paths, for API responses."""
+    data = _row_to_dict(row) if hasattr(row, "keys") else dict(row)
+    for column in _PRIVATE_IMAGE_COLUMNS:
+        data.pop(column, None)
+    return data
+
+
+def public_images(rows) -> list[dict]:
+    return [public_image(row) for row in rows]
+
+
 def get_image(conn, image_id: int) -> Optional[dict]:
     row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
     return _row_to_dict(row) if row else None

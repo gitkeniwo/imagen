@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import providers, tagging
+from .. import providers, storage, tagging
 from ..db import get_conn
 from ..models import DraftCreate, DraftUpdate
 
@@ -88,8 +88,8 @@ def _hydrate(conn, drafts: list[dict]) -> list[dict]:
 
     for draft in drafts:
         grouped = images_by_draft.get(draft["id"], {"input": [], "output": []})
-        draft["inputImages"] = grouped["input"]
-        draft["outputImages"] = grouped["output"]
+        draft["inputImages"] = storage.public_images(grouped["input"])
+        draft["outputImages"] = storage.public_images(grouped["output"])
         draft["tags"] = tags_by_draft.get(draft["id"], [])
     return drafts
 

@@ -45,6 +45,37 @@ if sys.argv[2] not in data:
 PY
 }
 
+assert_no_image_paths() { # file label [forbidden-path...]
+  python3 - "$@" <<'PY'
+import json, sys
+
+raw = open(sys.argv[1], encoding="utf-8").read()
+label = sys.argv[2]
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"{label}: not JSON response ({exc})")
+
+leaked = set()
+def walk(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in {"file_path", "thumb_path"}:
+                leaked.add(key)
+            walk(child)
+    elif isinstance(value, list):
+        for child in value:
+            walk(child)
+
+walk(data)
+if leaked:
+    raise SystemExit(f"{label}: image path field(s) leaked: {sorted(leaked)}")
+for path in sys.argv[3:]:
+    if path and path in raw:
+        raise SystemExit(f"{label}: library path leaked: {path}")
+PY
+}
+
 make_png() { # path
   python3 - "$1" <<'PY'
 import struct, sys, zlib
@@ -169,7 +200,10 @@ run_instance() { # name port mode
     code="$(get_code "http://127.0.0.1:$port$endpoint" "$TMP/body.json")"
     [ "$code" = "200" ] || die "[$name] GET $endpoint -> $code"
     case "$endpoint" in
-      /api/images) assert_json_key "$TMP/body.json" images ;;
+      /api/images)
+        assert_json_key "$TMP/body.json" images
+        assert_no_image_paths "$TMP/body.json" "[$name] GET $endpoint" "$TMP/data-$name"
+        ;;
       /api/drafts) assert_json_key "$TMP/body.json" drafts ;;
       /api/generations) assert_json_key "$TMP/body.json" generations ;;
       /api/stats) assert_json_key "$TMP/body.json" periods ;;
@@ -191,6 +225,7 @@ with open(sys.argv[1], encoding="utf-8") as fh:
     print(json.load(fh)["images"][0]["id"])
 PY
 )"
+  assert_no_image_paths "$TMP/upload-$port.json" "[$name] upload response" "$TMP/data-$name"
   code="$(curl -sS --max-time 30 -D "$TMP/thumb-$port.headers" -o "$TMP/thumb-$port.webp" \
     -w '%{http_code}' "http://127.0.0.1:$port/api/images/$image_id/thumb")"
   [ "$code" = "200" ] || die "[$name] GET thumb -> $code"
@@ -217,6 +252,28 @@ PY
     *) die "[$name] file Content-Disposition: $file_cd" ;;
   esac
   say "GET file -> 200 image/png; Content-Disposition: $file_cd"
+
+  # Image JSON never carries the backend's local filesystem paths.
+  code="$(curl -sS --max-time 30 -o "$TMP/lookup-$port.json" -w '%{http_code}' \
+    "http://127.0.0.1:$port/api/images/lookup?ids=$image_id")"
+  [ "$code" = "200" ] || die "[$name] GET lookup -> $code"
+  assert_no_image_paths "$TMP/lookup-$port.json" "[$name] lookup response" "$TMP/data-$name"
+  code="$(curl -sS --max-time 30 -o "$TMP/patch-$port.json" -w '%{http_code}' \
+    -X PATCH -H 'Content-Type: application/json' -d '{"starred":true}' \
+    "http://127.0.0.1:$port/api/images/$image_id")"
+  [ "$code" = "200" ] || die "[$name] PATCH image -> $code"
+  assert_no_image_paths "$TMP/patch-$port.json" "[$name] patch response" "$TMP/data-$name"
+  code="$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' -X DELETE \
+    "http://127.0.0.1:$port/api/images/$image_id")"
+  [ "$code" = "200" ] || die "[$name] DELETE image -> $code"
+  code="$(get_code "http://127.0.0.1:$port/api/images/bin" "$TMP/bin-$port.json")"
+  [ "$code" = "200" ] || die "[$name] GET bin -> $code"
+  assert_no_image_paths "$TMP/bin-$port.json" "[$name] bin response" "$TMP/data-$name"
+  code="$(curl -sS --max-time 30 -o "$TMP/restore-$port.json" -w '%{http_code}' -X POST \
+    "http://127.0.0.1:$port/api/images/$image_id/restore")"
+  [ "$code" = "200" ] || die "[$name] restore image -> $code"
+  assert_no_image_paths "$TMP/restore-$port.json" "[$name] restore response" "$TMP/data-$name"
+  say "image JSON omits file_path/thumb_path (upload, lookup, patch, bin, restore)"
 
   # Close the write end of the FIFO: the backend sees stdin EOF and must exit.
   exec 9>&-

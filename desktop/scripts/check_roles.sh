@@ -96,6 +96,35 @@ wait_health() {
   done
   return 1
 }
+assert_no_image_paths() { # file label forbidden-path
+  python3 - "$@" <<'PY'
+import json, sys
+
+raw = open(sys.argv[1], encoding="utf-8").read()
+label = sys.argv[2]
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"{label}: not JSON response ({exc})")
+
+leaked = set()
+def walk(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in {"file_path", "thumb_path"}:
+                leaked.add(key)
+            walk(child)
+    elif isinstance(value, list):
+        for child in value:
+            walk(child)
+
+walk(data)
+if leaked:
+    raise SystemExit(f"{label}: image path field(s) leaked: {sorted(leaked)}")
+if sys.argv[3] and sys.argv[3] in raw:
+    raise SystemExit(f"{label}: library path leaked: {sys.argv[3]}")
+PY
+}
 login() {
   local code="$1" jar="$2" name="$3" remember="$4" origin="$5" base="$6"
   code -c "$jar" -X POST -H "$origin" -H 'Content-Type: application/json' \
@@ -253,6 +282,30 @@ for path in sys.argv[2:]:
 PY
 say "LAN admin library info has opaque recents and no paths"
 expect "owner switch endpoint stays shell-only" 404 "$(switch_request "$MEMBER_JAR" "$LOOP_ORIGIN" "$LOOP" "$SWITCH_ID")"
+
+head2 "image responses omit local paths"
+for base in "$LOOP" "$LAN"; do
+  if [ "$base" = "$LOOP" ]; then
+    AUTH_ARGS=()
+  else
+    AUTH_ARGS=(-b "$MEMBER_JAR" -H "$LAN_ORIGIN")
+  fi
+  for endpoint in /api/images /api/images/bin /api/generations /api/drafts; do
+    out="$TMP/paths-$(basename "$endpoint").json"
+    expect "image paths: GET $base$endpoint" 200 \
+      "$(code ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} "$base$endpoint")"
+    cp "$TMP/body" "$out"
+    assert_no_image_paths "$out" "$base$endpoint" "$DATA_REAL"
+  done
+  IMAGE_ID="$(jget "$TMP/paths-images.json" images.0.id)"
+  [ -n "$IMAGE_ID" ] || die "seeded library has no image to look up"
+  out="$TMP/paths-lookup.json"
+  expect "image paths: GET $base/api/images/lookup" 200 \
+    "$(curl -sS --max-time 20 -o "$out" -w '%{http_code}' ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} \
+      "$base/api/images/lookup?ids=$IMAGE_ID")"
+  assert_no_image_paths "$out" "$base/api/images/lookup" "$DATA_REAL"
+done
+say "owner and LAN image/generation/draft responses omit file_path and thumb_path"
 
 head2 "library switch request lifecycle"
 expect "wrong recent id" 409 "$(code -b "$MEMBER_JAR" -X POST -H "$LAN_ORIGIN" \
