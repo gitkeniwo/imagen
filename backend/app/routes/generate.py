@@ -107,7 +107,7 @@ def _payload(
         "message": message,
         "text": text,
         "generation": generation,
-        "outputImage": output_image,
+        "outputImage": storage.public_image(output_image) if output_image else None,
         "inputImageIds": input_ids,
     }
 

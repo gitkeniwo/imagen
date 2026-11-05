@@ -29,7 +29,9 @@ def _inputs_for(conn, gen_id: int) -> list[dict]:
            ORDER BY gi.position""",
         (gen_id,),
     ).fetchall()
-    return tagging.attach_tags(conn, [dict(r) for r in rows])
+    return storage.public_images(
+        tagging.attach_tags(conn, [dict(r) for r in rows])
+    )
 
 
 def _hydrate(conn, gens: list[dict]) -> list[dict]:
@@ -68,8 +70,9 @@ def _hydrate(conn, gens: list[dict]) -> list[dict]:
 
     tagging.attach_tags(conn, all_images)
     for g in gens:
-        g["inputs"] = inputs_by_gen.get(g["id"], [])
-        g["outputImage"] = outputs.get(g["output_image_id"])
+        g["inputs"] = storage.public_images(inputs_by_gen.get(g["id"], []))
+        output = outputs.get(g["output_image_id"])
+        g["outputImage"] = storage.public_image(output) if output else None
     return gens
 
 
@@ -81,7 +84,7 @@ def _output_for(conn, output_image_id) -> dict | None:
     ).fetchone()
     if not row:
         return None
-    return tagging.attach_tags(conn, [dict(row)])[0]
+    return storage.public_image(tagging.attach_tags(conn, [dict(row)])[0])
 
 
 def _validate_manual_body(body: ManualGenerationRequest) -> None:

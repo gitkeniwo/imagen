@@ -39,7 +39,7 @@ async def upload_images(files: list[UploadFile] = File(...)):
         out = await asyncio.to_thread(_store)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"images": out}
+    return {"images": storage.public_images(out)}
 
 
 @router.get("")
@@ -89,7 +89,7 @@ def list_images(
         total = conn.execute(
             f"SELECT COUNT(*) c FROM images {where}", params
         ).fetchone()["c"]
-    return {"images": rows, "total": total}
+    return {"images": storage.public_images(rows), "total": total}
 
 
 MAX_LOOKUP_IDS = 50
@@ -123,7 +123,7 @@ def lookup_images(ids: str = Query(...)):
         by_id = {row["id"]: dict(row) for row in rows}
         images = [by_id[image_id] for image_id in id_list if image_id in by_id]
         tagging.attach_tags(conn, images)
-    return {"images": images}
+    return {"images": storage.public_images(images)}
 
 
 @router.get("/batch-download")
@@ -183,7 +183,7 @@ def list_bin(
         total = conn.execute(
             "SELECT COUNT(*) c FROM images WHERE deleted_at IS NOT NULL"
         ).fetchone()["c"]
-    return {"images": rows, "total": total}
+    return {"images": storage.public_images(rows), "total": total}
 
 
 @router.post("/bin/empty")
@@ -315,7 +315,7 @@ def patch_image(image_id: int, body: ImagePatch):
             f"UPDATE images SET {', '.join(sets)} WHERE id = ?", (*params, image_id)
         )
         conn.commit()
-        return storage.get_image(conn, image_id)
+        return storage.public_image(storage.get_image(conn, image_id))
 
 
 @router.delete("/{image_id}")
@@ -344,7 +344,7 @@ def restore_image(image_id: int):
             "UPDATE images SET deleted_at = NULL WHERE id = ?", (image_id,)
         )
         conn.commit()
-        return storage.get_image(conn, image_id)
+        return storage.public_image(storage.get_image(conn, image_id))
 
 
 @router.delete("/{image_id}/purge")
