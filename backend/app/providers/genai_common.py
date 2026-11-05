@@ -1,14 +1,23 @@
 """google-genai helpers shared by every provider: request/response mapping
-and the retry loop. Provider modules only build the client and config."""
+and the retry loop. Provider modules only build the client and config.
+
+google-genai is imported lazily (see `sdk()`): it costs ~33 MB RSS and ~1 s
+of CPU, and the desktop backend often idles for hours without generating.
+Nothing at module level may touch the SDK; annotations are strings only.
+"""
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
 import time
-from typing import Awaitable, Callable, Optional
-
-from google.genai import errors, types
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from .base import Gate, GenResult, InputImage
+
+if TYPE_CHECKING:
+    from google.genai import types
 
 # Dedicated logger so generation debug info shows up on the backend terminal at
 # INFO level without dragging in google-genai / grpc noise (own handler, no
@@ -20,6 +29,28 @@ if not logger.handlers:
     logger.addHandler(_h)
     logger.setLevel(logging.INFO)
     logger.propagate = False
+
+_SDK: Optional[SimpleNamespace] = None
+
+
+def sdk() -> SimpleNamespace:
+    """The google-genai SDK as (genai, Client, errors, types), imported on
+    first use. Blocking on the first call: from async code use `load_sdk()`."""
+    global _SDK
+    if _SDK is None:
+        from google import genai
+        from google.genai import errors, types
+
+        _SDK = SimpleNamespace(genai=genai, Client=genai.Client, errors=errors, types=types)
+    return _SDK
+
+
+async def load_sdk() -> SimpleNamespace:
+    """`sdk()` without stalling the event loop on the first (slow) import."""
+    if _SDK is not None:
+        return _SDK
+    return await asyncio.to_thread(sdk)
+
 
 MAX_ATTEMPTS = 30
 MAX_NON_429_ATTEMPTS = 6
@@ -68,6 +99,7 @@ TEXT_SAFETY_CATEGORIES = (
 
 
 def safety_off(categories) -> list[types.SafetySetting]:
+    types = sdk().types
     return [types.SafetySetting(category=c, threshold="OFF") for c in categories]
 
 
@@ -78,6 +110,7 @@ def _enum_name(v) -> Optional[str]:
 
 
 def build_contents(prompt: str, images: list[InputImage]) -> list[types.Content]:
+    types = sdk().types
     parts: list[types.Part] = []
     if prompt:
         parts.append(types.Part.from_text(text=prompt))
@@ -207,6 +240,8 @@ async def run_with_retry(
     (e.g. missing credentials) instead of retrying it.
     """
     start_ts = time.monotonic()
+    # Bound before the loop: the except clauses below need the classes.
+    errors = (await load_sdk()).errors
 
     def _emit(ev: dict) -> None:
         # Best-effort progress for the UI; never let a bad callback break gen.

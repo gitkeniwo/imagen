@@ -5,21 +5,24 @@ mode, so no format is requested and JPG is produced locally with Pillow; only
 the text-side safety categories are relaxed (whether the IMAGE_* ones are
 accepted here has not been verified).
 """
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import io
 import uuid
-from typing import Callable, Optional
-
-from google import genai
-from google.genai import errors, types
+from typing import TYPE_CHECKING, Callable, Optional
 
 from .. import provider_config
 from .base import GenResult, Gate, InputImage, ModelSpec, PRO_RESOLUTIONS
 from .genai_common import (
     MIN_ATTEMPT_SPACING, TEXT_SAFETY_CATEGORIES, build_contents, error_code,
-    logger, run_with_retry, safety_off,
+    load_sdk, logger, run_with_retry, safety_off, sdk,
 )
+
+if TYPE_CHECKING:
+    from google import genai
+    from google.genai import types
 
 ID = "gemini"
 LABEL = "Gemini API"
@@ -42,7 +45,8 @@ GATE = Gate(MIN_ATTEMPT_SPACING)
 JPEG_QUALITY = 95
 
 # One client per key, keyed by its hash so the cache never holds the key as a
-# dict key. Construction is sync, so it runs off the event loop.
+# dict key. Construction is sync, so it runs off the event loop (the first
+# call also imports google-genai there, see genai_common.sdk).
 _clients: dict[str, genai.Client] = {}
 
 
@@ -55,7 +59,7 @@ async def _get_client(key: str) -> genai.Client:
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
     client = _clients.get(digest)
     if client is None:
-        client = await asyncio.to_thread(genai.Client, api_key=key)
+        client = await asyncio.to_thread(lambda: sdk().Client(api_key=key))
         _clients.clear()
         _clients[digest] = client
     return client
@@ -76,6 +80,7 @@ def build_config(
     aspect_ratio: Optional[str],
     resolution: Optional[str],
 ) -> types.GenerateContentConfig:
+    types = sdk().types
     image_config = types.ImageConfig(
         aspect_ratio=aspect_ratio or None,
         image_size=resolution if (resolution and model.resolutions) else None,
@@ -191,6 +196,7 @@ async def check() -> dict:
     key, _ = provider_config.gemini_key()
     if not key:
         return {"ok": False, "message": "Gemini API key not set.", "models": [], "expected": []}
+    errors = (await load_sdk()).errors  # the except clause below needs it
     try:
         client = await _get_client(key)
         names: list[str] = []
