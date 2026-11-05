@@ -1149,6 +1149,43 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
   display: flex; align-items: center; justify-content: center;
 }
 .viewer-inputs .deleted-tile { width: 48px; height: 48px; }
+/* Input thumbs open the input in the viewer; the corner button adds it as a
+   reference. Mouse: the button appears on hover. Touch: always shown. */
+.viewer-input-wrap { position: relative; display: inline-flex; }
+.viewer-input-add {
+  position: absolute; top: -5px; right: -5px; width: 20px; height: 20px; padding: 0;
+  border-radius: 10px; border: 1.5px solid var(--panel); background: rgba(15, 23, 42, 0.82); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0;
+  transition: opacity 0.12s;
+}
+.viewer-input-add.on { background: var(--select-ring); color: var(--panel); opacity: 1; }
+.viewer-input-wrap:focus-within .viewer-input-add { opacity: 1; }
+@media (hover: hover) {
+  .viewer-input-wrap:hover .viewer-input-add { opacity: 1; }
+}
+@media (hover: none) {
+  .viewer-input-add { opacity: 1; width: 24px; height: 24px; border-radius: 12px; top: -7px; right: -7px; }
+}
+.viewer-back {
+  display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px 0 8px;
+  border: 0; border-radius: 15px; background: rgba(15, 23, 42, 0.72); color: #fff;
+  font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.viewer-back:hover { background: rgba(15, 23, 42, 0.9); }
+.viewer-stage-back { position: absolute; left: 16px; top: 16px; z-index: 3; }
+.viewer-trail {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: var(--space-2);
+  font-size: var(--fs-sm); color: var(--muted);
+}
+.viewer-trail-step { display: inline-flex; align-items: center; gap: 2px; }
+.viewer-trail button {
+  border: 0; background: transparent; padding: 2px 4px; border-radius: var(--radius-sm);
+  font: inherit; color: var(--ui-accent); cursor: pointer;
+}
+.viewer-trail button:hover { background: var(--panel-2); }
+.viewer-trail [aria-current] { padding: 2px 4px; color: var(--text); font-weight: 600; }
+.viewer-overlay.nested { z-index: 120; }
 .viewer-note {
   width: 100%; resize: vertical; font: inherit; font-size: var(--fs-md); line-height: 1.5;
   min-height: 60px; background: var(--sidebar-bg); border-color: transparent;
@@ -1699,13 +1736,33 @@ body.manager-open { overflow: hidden; }
   opacity: 0; transition: opacity 0.12s;
 }
 .lib-actions .is-starred { color: var(--warning); }
-.lib-tile:hover .lib-actions, .lib-tile:focus-within .lib-actions,
-.lib-tile:hover .lib-tags, .lib-tile:focus-within .lib-tags { opacity: 1; }
-.lib-tile:hover .lib-starred, .lib-tile:focus-within .lib-starred { opacity: 0; }
+.lib-tile:focus-within .lib-actions, .lib-tile:focus-within .lib-tags { opacity: 1; }
+.lib-tile:focus-within .lib-starred { opacity: 0; }
+/* Real hover only: a tap on a touch screen leaves :hover stuck on the tile. */
+@media (hover: hover) {
+  .lib-tile:hover .lib-actions, .lib-tile:hover .lib-tags { opacity: 1; }
+  .lib-tile:hover .lib-starred { opacity: 0; }
+}
 @media (hover: none) {
   .lib-actions { opacity: 1; }
 }
 .lib-tags .card-tag { background: rgba(2, 6, 23, 0.66); color: #fff; border-color: transparent; }
+/* Library picker: picked images keep a numbered check (click it to remove). */
+.lib-tile.picked { outline: 3px solid var(--select-ring); outline-offset: -3px; }
+.pick-badge {
+  position: absolute; top: 6px; right: 6px; z-index: 1; height: 24px; min-width: 24px; padding: 0 7px 0 5px;
+  display: inline-flex; align-items: center; gap: 2px; border: 0; border-radius: 12px;
+  background: var(--select-ring); color: var(--panel); font: inherit; font-size: var(--fs-sm); font-weight: 700;
+  font-variant-numeric: tabular-nums; cursor: pointer; box-shadow: 0 1px 4px rgba(2, 6, 23, 0.35);
+}
+.pick-view {
+  position: absolute; right: 6px; bottom: 6px; width: 30px; height: 30px; padding: 0; border: 0;
+  border-radius: 15px; background: rgba(2, 6, 23, 0.62); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* The picker header carries count + Done, so close joins the row instead of floating over it. */
+.picker-overlay .manager-close { position: static; }
+.picker-count { font-size: var(--fs-md); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ===== settings ===== */
 .settings-modal {

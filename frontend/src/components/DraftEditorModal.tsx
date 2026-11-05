@@ -244,6 +244,10 @@ export default function DraftEditorModal({
         <LibraryPickerModal
           mode="multi"
           onPick={(img) => addUnique(picker === "input" ? setInputs : setOutputs, img)}
+          pickedIds={(picker === "input" ? inputs : outputs).map((img) => img.id)}
+          onUnpick={(img) =>
+            (picker === "input" ? setInputs : setOutputs)((prev) => prev.filter((item) => item.id !== img.id))
+          }
           onClose={() => setPicker(null)}
         />
       )}

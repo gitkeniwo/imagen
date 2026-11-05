@@ -128,42 +128,45 @@ export function useComposerWorkspaces(libraryKey: string | null) {
     [updateWorkspace],
   );
 
-  const visibleInputIds = useCallback(
-    () =>
-      (workspacesRef.current.find(
-        (workspace) => workspace.id === activeIdRef.current,
-      )?.inputIds ?? []).filter((id) => imageCache.current.has(id)),
+  // Every tray edit is a functional update over the *latest* workspace state.
+  // Reading workspacesRef here would see the value from the last render, so
+  // several calls in one tick (e.g. adding a multi-selection one by one) would
+  // each start from the same stale list and only the last one would survive.
+  // Filtering through the cache drops references whose lookup failed.
+  const editInputIds = useCallback(
+    (edit: (visibleIds: number[]) => number[] | null) => {
+      composerTouched.current = true;
+      const id = activeIdRef.current;
+      setWorkspaces((current) =>
+        current.map((workspace) => {
+          if (workspace.id !== id) return workspace;
+          const visible = workspace.inputIds.filter((item) =>
+            imageCache.current.has(item),
+          );
+          const next = edit(visible);
+          if (!next) return workspace;
+          return {
+            ...workspace,
+            inputIds: [...new Set(next)],
+            updatedAt: Date.now(),
+          };
+        }),
+      );
+    },
     [],
   );
 
   const setInputIds = useCallback(
-    (ids: number[], markTouched = true) => {
-      if (markTouched) composerTouched.current = true;
-      const id = activeIdRef.current;
-      updateWorkspace(id, (workspace) => ({
-        ...workspace,
-        inputIds: [...new Set(ids)],
-        updatedAt: Date.now(),
-      }));
-    },
-    [updateWorkspace],
+    (ids: number[]) => editInputIds(() => ids),
+    [editInputIds],
   );
 
   const addManyToTray = useCallback(
     (images: ImageRow[]) => {
       cacheImages(images);
-      // Starting from the visible ids drops references whose lookup failed.
-      const ids = visibleInputIds();
-      const seen = new Set(ids);
-      for (const image of images) {
-        if (!seen.has(image.id)) {
-          seen.add(image.id);
-          ids.push(image.id);
-        }
-      }
-      setInputIds(ids);
+      editInputIds((ids) => [...ids, ...images.map((image) => image.id)]);
     },
-    [cacheImages, setInputIds, visibleInputIds],
+    [cacheImages, editInputIds],
   );
 
   const addToTray = useCallback(
@@ -172,21 +175,20 @@ export function useComposerWorkspaces(libraryKey: string | null) {
   );
 
   const removeFromTray = useCallback(
-    (id: number) => {
-      setInputIds(visibleInputIds().filter((item) => item !== id));
-    },
-    [setInputIds, visibleInputIds],
+    (id: number) => editInputIds((ids) => ids.filter((item) => item !== id)),
+    [editInputIds],
   );
 
   const moveInTray = useCallback(
-    (from: number, to: number) => {
-      const ids = visibleInputIds();
-      if (from < 0 || from >= ids.length || to < 0 || to >= ids.length) return;
-      const [moved] = ids.splice(from, 1);
-      ids.splice(to, 0, moved);
-      setInputIds(ids);
-    },
-    [setInputIds, visibleInputIds],
+    (from: number, to: number) =>
+      editInputIds((ids) => {
+        if (from < 0 || from >= ids.length || to < 0 || to >= ids.length) return null;
+        const copy = [...ids];
+        const [moved] = copy.splice(from, 1);
+        copy.splice(to, 0, moved);
+        return copy;
+      }),
+    [editInputIds],
   );
 
   const replaceReferences = useCallback(
