@@ -14,6 +14,12 @@ import { RemoteChip } from "../components/RemoteIndicator";
 import Icon from "../components/ui/Icon";
 import Sheet from "../components/ui/Sheet";
 import { Button, IconButton } from "../components/ui/Button";
+import {
+  type ContextMenuSection,
+  type ContextMenuShortcut,
+  type ContextMenuTagSubmenu,
+  useContextMenu,
+} from "../components/ui/ContextMenu";
 import appIcon from "../assets/app-icon.png";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
@@ -48,12 +54,16 @@ export default function Library({
   phone = false,
   onSelectModeChange,
   addManyToTray,
+  trayIds = [],
+  onRemoveFromTray,
   picker,
 }: {
   addToTray: (img: ImageRow) => void;
   // One call for a whole selection. Without it, selections are added one by
   // one through `addToTray`, which must then be safe to call in a loop.
   addManyToTray?: (imgs: ImageRow[]) => void;
+  trayIds?: number[];
+  onRemoveFromTray?: (img: ImageRow) => void;
   // Picking images into a form (LibraryPickerModal): picked tiles keep a
   // numbered check that removes them again, deleting is hidden, and on the
   // phone a tap toggles the pick (a corner button opens the viewer).
@@ -79,6 +89,7 @@ export default function Library({
   const { t } = useI18n();
   const toast = useToast();
   const askConfirm = useConfirm();
+  const { open: openContextMenu } = useContextMenu();
   const { remote } = useRemote();
   const [images, setImages] = useState<ImageRow[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -316,11 +327,233 @@ export default function Library({
     }
   };
 
-  const downloadSelected = () => {
+  const downloadSelected = (ids: number[] = [...selected]) => {
     const a = document.createElement("a");
-    a.href = batchDownloadUrl([...selected]);
-    a.download = "";
+    a.href = batchDownloadUrl(ids);
+    a.download = "imagen-images.zip";
     a.click();
+  };
+
+  const inTray = (img: ImageRow) => trayIds.includes(img.id);
+  const toggleTray = (img: ImageRow) => {
+    if (inTray(img) && onRemoveFromTray) onRemoveFromTray(img);
+    else addToTray(img);
+  };
+
+  const tagOptions = (imgs: ImageRow[]) =>
+    tags.map((tag) => ({
+      id: tag.id,
+      name: tag.name,
+      count: tag.count,
+      checked:
+        imgs.length > 0 &&
+        imgs.every((img) => (img.tags ?? []).some((item) => item.id === tag.id)),
+    }));
+
+  const toggleImageTag = async (img: ImageRow, tagId: number) => {
+    const on = (img.tags ?? []).some((tag) => tag.id === tagId);
+    try {
+      await api.batchTag([img.id], [tagId], on ? "remove" : "add");
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const createImageTag = async (img: ImageRow, name: string) => {
+    try {
+      const tag = await api.createTag(name);
+      await api.batchTag([img.id], [tag.id], "add");
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const applyBatchTag = async (ids: number[], tagId: number, op: "add" | "remove") => {
+    try {
+      await api.batchTag(ids, [tagId], op);
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const createBatchTag = async (ids: number[], name: string) => {
+    try {
+      const tag = await api.createTag(name);
+      await api.batchTag(ids, [tag.id], "add");
+      load();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const batchTagSubmenu = (
+    imgs: ImageRow[],
+    op: "add" | "remove",
+    allowCreate = false,
+  ): ContextMenuTagSubmenu => ({
+    kind: "tags",
+    options: tagOptions(imgs),
+    onToggle: (tagId) => applyBatchTag(imgs.map((img) => img.id), tagId, op),
+    ...(allowCreate
+      ? {
+          createLabel: t("new_tag_placeholder"),
+          createPlaceholder: t("new_tag_placeholder"),
+          onCreate: (name: string) =>
+            createBatchTag(imgs.map((img) => img.id), name),
+        }
+      : {}),
+  });
+
+  const removeMany = async (ids: number[]) => {
+    if (ids.length === 0) return;
+    const ok = await askConfirm({
+      message: t("confirm_delete_n", { n: ids.length }),
+      confirmLabel: t("move_to_bin"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const results = await Promise.allSettled(ids.map((id) => api.deleteImage(id)));
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw failed.reason;
+      setSelected(new Set());
+      load();
+      onChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+      load();
+      onChanged?.();
+    }
+  };
+
+  const openImageMenu = (img: ImageRow, trigger: HTMLElement, x: number, y: number) => {
+    if (selectMode) {
+      let ids = selected;
+      if (!ids.has(img.id)) {
+        ids = new Set(ids);
+        ids.add(img.id);
+        setSelected(ids);
+      }
+      const selectedImages = [...ids]
+        .map((id) => rowsById.current.get(id))
+        .filter((row): row is ImageRow => !!row);
+      const images = selectedImages.length ? selectedImages : [img];
+      const count = images.length;
+      const folders: ContextMenuSection[] = [
+        [
+          {
+            icon: "download",
+            label: t("batch_download"),
+            hint: ".zip",
+            onSelect: () => downloadSelected(images.map((row) => row.id)),
+          },
+          {
+            icon: "tag",
+            label: t("batch_add_tag"),
+            submenu: batchTagSubmenu(images, "add", true),
+          },
+          {
+            icon: "untag",
+            label: t("batch_remove_tag"),
+            submenu: batchTagSubmenu(images, "remove"),
+          },
+        ],
+        [
+          {
+            icon: "delete",
+            label: t("move_to_bin"),
+            danger: true,
+            hint: count,
+            onSelect: () => removeMany(images.map((row) => row.id)),
+          },
+        ],
+      ];
+      openContextMenu({
+        x,
+        y,
+        trigger,
+        images,
+        title: t("picker_selected_n", { n: count }),
+        subtitle: t("batch_actions"),
+        sections: folders,
+        ariaLabel: t("batch_actions"),
+      });
+      return;
+    }
+
+    const hasTags = (img.tags ?? []).length;
+    const tagMenu: ContextMenuTagSubmenu = {
+      kind: "tags",
+      options: tagOptions([img]),
+      onToggle: (tagId) => toggleImageTag(img, tagId),
+      createLabel: t("new_tag_placeholder"),
+      createPlaceholder: t("new_tag_placeholder"),
+      onCreate: (name) => createImageTag(img, name),
+    };
+    const shortcutItems: ContextMenuShortcut[] = [
+      {
+        icon: "view",
+        label: t("open_viewer"),
+        onSelect: () => openInViewer(img),
+      },
+      {
+        icon: inTray(img) ? "removeFromRefs" : "addToRefs",
+        label: inTray(img) ? t("shortcut_remove_ref") : t("shortcut_input"),
+        ariaLabel: inTray(img) ? t("remove_ref") : t("add_to_input"),
+        onSelect: () => toggleTray(img),
+      },
+      {
+        icon: "favorite",
+        label: img.starred ? t("favorited") : t("favorite"),
+        ariaLabel: img.starred ? t("unfavorite") : t("favorite"),
+        selected: !!img.starred,
+        filled: !!img.starred,
+        onSelect: () => toggleStar(img),
+      },
+      {
+        icon: "download",
+        label: t("download"),
+        onSelect: () => download(img),
+      },
+    ];
+    const sections: ContextMenuSection[] = [
+      [
+        {
+          icon: "tag",
+          label: t("tags_label"),
+          hint: hasTags,
+          submenu: tagMenu,
+        },
+      ],
+      ...(!picker
+        ? [
+            [
+              {
+                icon: "delete" as const,
+                label: t("move_to_bin"),
+                danger: true,
+                onSelect: () => remove(img),
+              },
+            ],
+          ]
+        : []),
+    ];
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      promptLoader:
+        img.source === "generated"
+          ? () => api.generationByOutput(img.id).then((generation) => generation?.prompt)
+          : undefined,
+      shortcuts: shortcutItems,
+      sections,
+      ariaLabel: t("image_menu"),
+    });
   };
 
   const createAndApply = async () => {
@@ -640,7 +873,7 @@ export default function Library({
                 title={t("batch_download")}
                 aria-label={t("batch_download")}
                 disabled={selected.size === 0}
-                onClick={downloadSelected}
+                onClick={() => downloadSelected()}
               >
                 <span className="batch-btn-label">{t("batch_download")}</span>
               </Button>
@@ -758,7 +991,10 @@ export default function Library({
                   draggable={false}
                   title={peeks ? undefined : [displayName(img, t), ...tagNames].join(" · ")}
                   onClick={() => onCardClick(img)}
-                  {...pressable(() => onCardClick(img))}
+                  {...pressable(
+                    () => onCardClick(img),
+                    (trigger, x, y) => openImageMenu(img, trigger, x, y),
+                  )}
                   {...(peeks ? peekProps(img) : {})}
                 />
                 <span
@@ -877,7 +1113,7 @@ export default function Library({
           <button
             type="button"
             disabled={selected.size === 0}
-            onClick={downloadSelected}
+            onClick={() => downloadSelected()}
           >
             <Icon name="download" />
             <span>{t("batch_download")}</span>

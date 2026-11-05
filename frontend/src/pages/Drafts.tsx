@@ -7,12 +7,16 @@ import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
-import GenerationCard from "../components/GenerationCard";
+import GenerationCard, { downloadImage } from "../components/GenerationCard";
 import type { MenuItem } from "../components/ui/Menu";
 import Icon from "../components/ui/Icon";
 import { IconButton } from "../components/ui/Button";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import Segmented from "../components/ui/Segmented";
+import {
+  type ContextMenuShortcut,
+  useContextMenu,
+} from "../components/ui/ContextMenu";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -32,6 +36,9 @@ export default function Drafts({
   onQueue,
   onUnqueue,
   onOpenViewer,
+  onAddToTray,
+  trayIds = [],
+  onRemoveFromTray,
   onChanged,
   phone = false,
 }: {
@@ -42,6 +49,9 @@ export default function Drafts({
   // Removes an added task if it has not been sent yet.
   onUnqueue?: (id: string) => void;
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  onAddToTray?: (img: ImageRow) => void;
+  trayIds?: number[];
+  onRemoveFromTray?: (img: ImageRow) => void;
   // Called after a draft is created or removed, so counts elsewhere refresh.
   onChanged?: () => void;
   phone?: boolean;
@@ -50,6 +60,7 @@ export default function Drafts({
   const toast = useToast();
   const { isReady } = useProviders();
   const askConfirm = useConfirm();
+  const { open: openContextMenu } = useContextMenu();
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -163,6 +174,76 @@ export default function Drafts({
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
+  };
+
+  const toggleDraftImage = async (img: ImageRow) => {
+    const next = !img.starred;
+    try {
+      await api.patchImage(img.id, { starred: next });
+      img.starred = next ? 1 : 0;
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const openDraftImageMenu = (
+    draft: Draft,
+    img: ImageRow,
+    trigger: HTMLElement,
+    x: number,
+    y: number,
+  ) => {
+    const isOutput = draft.outputImages.some((item) => item.id === img.id);
+    const inTray = trayIds.includes(img.id);
+    const shortcuts: ContextMenuShortcut[] = [
+      {
+        icon: "view",
+        label: t("open_viewer"),
+        onSelect: () =>
+          onOpenViewer(
+            img,
+            isOutput
+              ? draft.outputImages.filter((item) => !item.deleted_at)
+              : draft.inputImages.filter((item) => !item.deleted_at),
+          ),
+      },
+      ...(onAddToTray
+        ? [
+            {
+              icon: inTray ? ("removeFromRefs" as const) : ("addToRefs" as const),
+              label: inTray ? t("shortcut_remove_ref") : t("shortcut_input"),
+              ariaLabel: inTray ? t("remove_ref") : t("add_to_input"),
+              onSelect: () => {
+                if (inTray && onRemoveFromTray) onRemoveFromTray(img);
+                else onAddToTray(img);
+              },
+            },
+          ]
+        : []),
+      {
+        icon: "favorite",
+        label: img.starred ? t("favorited") : t("favorite"),
+        ariaLabel: img.starred ? t("unfavorite") : t("favorite"),
+        selected: !!img.starred,
+        filled: !!img.starred,
+        onSelect: () => toggleDraftImage(img),
+      },
+      {
+        icon: "download",
+        label: t("download"),
+        onSelect: () => downloadImage(img),
+      },
+    ];
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      prompt: draft.prompt,
+      shortcuts,
+      sections: [],
+      ariaLabel: t("image_menu"),
+    });
   };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -313,6 +394,9 @@ export default function Drafts({
                 promptLines={compact ? 3 : 4}
                 inputs={draft.inputImages}
                 onOpenInput={(img) => onOpenViewer(img, draft.inputImages.filter((item) => !item.deleted_at))}
+                onImageContextMenu={(img, trigger, x, y) =>
+                  openDraftImageMenu(draft, img, trigger, x, y)
+                }
                 tags={draft.tags}
                 actions={[
                   {

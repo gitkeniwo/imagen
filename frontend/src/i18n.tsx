@@ -122,6 +122,7 @@ const zh: Dict = {
   empty_bin: "清空回收站",
   deleted_label: "已删除",
   confirm_delete: "将这张图片移入回收站？",
+  confirm_delete_n: "将 {n} 张图片移入回收站？",
   confirm_purge: "永久删除这张图片？此操作不可撤销。",
   confirm_empty_bin: "清空回收站？所有图片将被永久删除。",
   search_placeholder_library: "搜索文件名 / 标签…",
@@ -192,6 +193,12 @@ const zh: Dict = {
   delete: "删除",
   add_ref: "加为参考图",
   open_viewer: "查看",
+  shortcut_input: "加入输入",
+  shortcut_remove_ref: "移除参考图",
+  image_menu: "图片操作",
+  favorited: "已收藏",
+  move_to_bin: "移到回收站",
+  batch_actions: "批量操作",
 
   // tags
   no_tags: "还没有标签",
@@ -808,6 +815,7 @@ const en: Dict = {
   empty_bin: "Empty bin",
   deleted_label: "Deleted",
   confirm_delete: "Move this image to the recycle bin?",
+  confirm_delete_n: "Move {n} images to the recycle bin?",
   confirm_purge: "Permanently delete this image? This cannot be undone.",
   confirm_empty_bin: "Empty the recycle bin? All images will be permanently deleted.",
   search_placeholder_library: "Search filename / tag…",
@@ -878,6 +886,12 @@ const en: Dict = {
   delete: "Delete",
   add_ref: "Add as reference",
   open_viewer: "View",
+  shortcut_input: "Input",
+  shortcut_remove_ref: "Remove",
+  image_menu: "Image actions",
+  favorited: "Favorited",
+  move_to_bin: "Move to Bin",
+  batch_actions: "Batch actions",
 
   // tags
   no_tags: "No tags yet",

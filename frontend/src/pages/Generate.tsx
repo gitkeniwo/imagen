@@ -44,6 +44,8 @@ export default function Generate({
   prefill,
   consumePrefill,
   addManyToTray,
+  trayIds,
+  onRemoveFromTray,
   removeFromTray,
   moveInTray,
   keyConfigured,
@@ -79,6 +81,8 @@ export default function Generate({
   prefill: Prefill | null;
   consumePrefill: () => void;
   addManyToTray: (imgs: ImageRow[]) => void;
+  trayIds: number[];
+  onRemoveFromTray: (img: ImageRow) => void;
   removeFromTray: (id: number) => void;
   moveInTray: (from: number, to: number) => void;
   keyConfigured: boolean;
@@ -432,6 +436,8 @@ export default function Generate({
             onAbort={abortTask}
             onClearDone={clearDone}
             onUseAsRef={useAsRef}
+            trayIds={trayIds}
+            onRemoveFromTray={onRemoveFromTray}
             onReuse={onReuseTask}
             onReuseGenerate={onReuseGenerateTask}
             onSaveDraft={onSaveQueueTaskAsDraft}
@@ -525,6 +531,8 @@ export default function Generate({
           onAbort={abortTask}
           onClearDone={clearDone}
           onUseAsRef={useAsRef}
+          trayIds={trayIds}
+          onRemoveFromTray={onRemoveFromTray}
           onReuse={onReuseTask}
           onReuseGenerate={onReuseGenerateTask}
           onSaveDraft={onSaveQueueTaskAsDraft}

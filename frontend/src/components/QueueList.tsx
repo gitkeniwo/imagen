@@ -1,5 +1,5 @@
 import { type CSSProperties, memo, useEffect, useState } from "react";
-import { ImageRow, MARKER_COLORS, MarkerColor, QueueTask } from "../api";
+import { api, ImageRow, MARKER_COLORS, MarkerColor, QueueTask } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
 import { Button } from "./ui/Button";
@@ -19,6 +19,11 @@ import { pressable } from "../a11y";
 import ProviderBadge from "./ProviderBadge";
 import { generationRuntime } from "../generationMetrics";
 import { displayName } from "../displayName";
+import {
+  type ContextMenuSection,
+  type ContextMenuShortcut,
+  useContextMenu,
+} from "./ui/ContextMenu";
 
 // v2: the old key held the pre-card horizontal layout's 1-column default.
 const QUEUE_COLUMNS_KEY = "imagen-queue-columns-v2";
@@ -87,6 +92,8 @@ export default function QueueList({
   onAbort,
   onClearDone,
   onUseAsRef,
+  trayIds = [],
+  onRemoveFromTray,
   onReuse,
   onReuseGenerate,
   onSaveDraft,
@@ -102,6 +109,8 @@ export default function QueueList({
   onAbort: (id: string) => void;
   onClearDone: () => void;
   onUseAsRef: (img: ImageRow) => void;
+  trayIds?: number[];
+  onRemoveFromTray?: (img: ImageRow) => void;
   onReuse: (task: QueueTask) => void;
   onReuseGenerate: (task: QueueTask) => void;
   onSaveDraft: (task: QueueTask, move: boolean) => void;
@@ -171,6 +180,8 @@ export default function QueueList({
             onRemove={onRemove}
             onAbort={onAbort}
             onUseAsRef={onUseAsRef}
+            trayIds={trayIds}
+            onRemoveFromTray={onRemoveFromTray}
             onReuse={onReuse}
             onReuseGenerate={onReuseGenerate}
             onSaveDraft={onSaveDraft}
@@ -192,6 +203,8 @@ const QueueItem = memo(function QueueItem({
   onRemove,
   onAbort,
   onUseAsRef,
+  trayIds,
+  onRemoveFromTray,
   onReuse,
   onReuseGenerate,
   onSaveDraft,
@@ -204,6 +217,8 @@ const QueueItem = memo(function QueueItem({
   onRemove: (id: string) => void;
   onAbort: (id: string) => void;
   onUseAsRef: (img: ImageRow) => void;
+  trayIds: number[];
+  onRemoveFromTray?: (img: ImageRow) => void;
   onReuse: (task: QueueTask) => void;
   onReuseGenerate: (task: QueueTask) => void;
   onSaveDraft: (task: QueueTask, move: boolean) => void;
@@ -214,6 +229,7 @@ const QueueItem = memo(function QueueItem({
 }) {
   const { t, reason } = useI18n();
   const toast = useToast();
+  const { open: openContextMenu } = useContextMenu();
   const [now, setNow] = useState(() => Date.now());
   const counting = task.status === "pending" && task.dispatchAt > now;
   useEffect(() => {
@@ -248,6 +264,10 @@ const QueueItem = memo(function QueueItem({
   }
 
   const output = task.status === "success" ? task.outputImage ?? null : null;
+  const [starred, setStarred] = useState(!!output?.starred);
+  useEffect(() => {
+    setStarred(!!output?.starred);
+  }, [output?.id, output?.starred]);
   const failure =
     task.status === "blocked" || task.status === "error"
       ? reason(task.rawFinish, task.provider) ||
@@ -291,6 +311,83 @@ const QueueItem = memo(function QueueItem({
     />
   );
 
+  const toggleStar = async () => {
+    if (!output) return;
+    const next = !starred;
+    try {
+      await api.patchImage(output.id, { starred: next });
+      output.starred = next ? 1 : 0;
+      setStarred(next);
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const openQueueImageMenu = (trigger: HTMLElement, x: number, y: number) => {
+    if (!output) return;
+    const shortcuts: ContextMenuShortcut[] = [
+      {
+        icon: "view",
+        label: t("open_viewer"),
+        onSelect: () => onOpenViewer(output, []),
+      },
+      {
+        icon: trayIds.includes(output.id) ? "removeFromRefs" : "addToRefs",
+        label: trayIds.includes(output.id) ? t("shortcut_remove_ref") : t("shortcut_input"),
+        ariaLabel: trayIds.includes(output.id) ? t("remove_ref") : t("add_to_input"),
+        onSelect: () => {
+          if (trayIds.includes(output.id) && onRemoveFromTray) {
+            onRemoveFromTray(output);
+          } else {
+            onUseAsRef(output);
+          }
+        },
+      },
+      {
+        icon: "favorite",
+        label: starred ? t("favorited") : t("favorite"),
+        ariaLabel: starred ? t("unfavorite") : t("favorite"),
+        selected: starred,
+        filled: starred,
+        onSelect: toggleStar,
+      },
+      {
+        icon: "download",
+        label: t("download"),
+        onSelect: () => downloadImage(output),
+      },
+    ];
+    const recordActions: ContextMenuSection = [];
+    if (task.prompt) {
+      recordActions.push({
+        icon: "copy",
+        label: t("copy_prompt"),
+        onSelect: async () =>
+          toast((await copyText(task.prompt)) ? t("copied") : t("copy_failed")),
+      });
+      recordActions.push({
+        icon: "reuse",
+        label: t("reuse"),
+        onSelect: () => onReuse(task),
+      });
+      recordActions.push({
+        icon: "rerun",
+        label: t("rerun_short"),
+        onSelect: () => onReuseGenerate(task),
+      });
+    }
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [output],
+      prompt: task.prompt,
+      shortcuts,
+      sections: recordActions.length ? [recordActions] : [],
+      ariaLabel: t("image_menu"),
+    });
+  };
+
   return (
     <article className="hcard grid">
       <div className={`hcard-media${failure ? ` failed ${task.status}` : ""}`}>
@@ -300,7 +397,10 @@ const QueueItem = memo(function QueueItem({
             alt={displayName(output, t)}
             title={t("open_viewer")}
             onClick={() => onOpenViewer(output, [])}
-            {...pressable(() => onOpenViewer(output, []))}
+            {...pressable(
+              () => onOpenViewer(output, []),
+              openQueueImageMenu,
+            )}
           />
         ) : active ? (
           <>
