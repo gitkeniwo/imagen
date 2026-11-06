@@ -25,6 +25,11 @@ import {
   useContextMenu,
 } from "../components/ui/ContextMenu";
 import { downloadImage } from "../components/GenerationCard";
+import CustomSelect from "../components/CustomSelect";
+import Popover from "../components/ui/Popover";
+import { SeriesChip } from "../components/SeriesBits";
+import { useSeriesActions } from "../components/SeriesMenu";
+import { seriesPathText, useSeries } from "../seriesStore";
 
 const COMPACT_PAGE_SIZE = 12;
 const FULL_PAGE_SIZE = 30;
@@ -83,6 +88,14 @@ export default function History({
   const [resultFilter, setResultFilter] = useState<HistoryResult | null>(null);
   const [modelFilter, setModelFilter] = useState<string | null>(null);
   const [providerFilter, setProviderFilter] = useState<ProviderId | null>(null);
+  // null = any, "none" = not in a series, otherwise one series id.
+  const [seriesFilter, setSeriesFilter] = useState<number | "none" | null>(null);
+  const seriesStore = useSeries();
+  // Multi-select: generation ids. Long-press (phone) or the toolbar enters it.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [batchSeriesOpen, setBatchSeriesOpen] = useState(false);
+  const longPress = useRef<number | null>(null);
   const [query, setQuery] = useState("");
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
@@ -111,9 +124,10 @@ export default function History({
     status: resultFilter ?? undefined,
     model: modelFilter ?? undefined,
     provider: providerFilter ?? undefined,
+    series: seriesFilter ?? undefined,
   };
-  const filterDeps = [tagFilter, kindFilter, onlyWithImage, query, resultFilter, modelFilter, providerFilter];
-  const moreFilters = [resultFilter, modelFilter, providerFilter].filter((v) => v !== null).length;
+  const filterDeps = [tagFilter, kindFilter, onlyWithImage, query, resultFilter, modelFilter, providerFilter, seriesFilter];
+  const moreFilters = [resultFilter, modelFilter, providerFilter, seriesFilter].filter((v) => v !== null).length;
 
   const load = (quiet = false) => {
     if (!quiet) {
@@ -184,6 +198,76 @@ export default function History({
     else onUseAsRef?.(img);
   };
 
+  const series = useSeriesActions(() => load(true));
+  const targetFor = (list: Generation[]) => ({
+    body: { generationIds: list.map((g) => g.id) },
+    members: list.map((g) => g.series_id ?? null),
+  });
+  const selectedGens = () => gens.filter((g) => selected.has(g.id));
+  const toggleSelected = (id: number) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const exitSelect = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+    setBatchSeriesOpen(false);
+  };
+
+  const openBatchMenu = (generation: Generation, trigger: HTMLElement, x: number, y: number) => {
+    let ids = selected;
+    if (!ids.has(generation.id)) {
+      ids = new Set(ids);
+      ids.add(generation.id);
+      setSelected(ids);
+    }
+    const list = gens.filter((g) => ids.has(g.id));
+    const counts = { success: 0, blocked: 0, error: 0 };
+    for (const g of list) {
+      if (g.status === "success") counts.success++;
+      else if (g.status === "blocked") counts.blocked++;
+      else counts.error++;
+    }
+    const sameSeries = list[0]?.series_id && list.every((g) => g.series_id === list[0].series_id) ? list[0].series_id : null;
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: list.flatMap((g) => (g.outputImage && !g.outputImage.deleted_at ? [g.outputImage] : [])).slice(0, 3),
+      title: t("series_n_generations", { n: list.length }),
+      subtitle: [
+        counts.success ? `${counts.success} ${t("hist_result_success")}` : null,
+        counts.blocked ? `${counts.blocked} ${t("hist_result_blocked")}` : null,
+        counts.error ? `${counts.error} ${t("hist_result_error")}` : null,
+      ].filter(Boolean).join(" · "),
+      sections: [
+        [series.menuItem(targetFor(list))],
+        [
+          {
+            icon: "copy",
+            label: t("series_copy_prompts"),
+            onSelect: async () =>
+              toast((await copyText(list.map((g) => g.prompt).filter(Boolean).join("\n\n"))) ? t("copied") : t("copy_failed")),
+          },
+          ...(sameSeries
+            ? [{
+                icon: "selectAll" as const,
+                label: t("series_select_all_in"),
+                onSelect: () => {
+                  setSeriesFilter(sameSeries);
+                  setPage(0);
+                },
+              }]
+            : []),
+        ],
+      ],
+      ariaLabel: t("batch_actions"),
+    });
+  };
+
   const openHistoryMenu = (
     generation: Generation,
     img: ImageRow,
@@ -225,6 +309,10 @@ export default function History({
         onSelect: () => downloadImage(img),
       },
     ];
+    if (selectMode) {
+      openBatchMenu(generation, trigger, x, y);
+      return;
+    }
     const recordActions: ContextMenuSection = [];
     if (isOutput && generation.prompt) {
       recordActions.push({
@@ -246,6 +334,7 @@ export default function History({
         });
       }
     }
+    const seriesSection: ContextMenuSection = isOutput ? [series.menuItem(targetFor([generation]))] : [];
     openContextMenu({
       x,
       y,
@@ -254,7 +343,7 @@ export default function History({
       prompt: isOutput ? generation.prompt : undefined,
       sourceLabel: generation.source === "manual" ? t("imported_badge") : undefined,
       shortcuts,
-      sections: recordActions.length ? [recordActions] : [],
+      sections: [recordActions, seriesSection].filter((section) => section.length > 0),
       ariaLabel: t("image_menu"),
     });
   };
@@ -373,6 +462,7 @@ export default function History({
     setResultFilter(null);
     setModelFilter(null);
     setProviderFilter(null);
+    setSeriesFilter(null);
     setPage(0);
   };
   // Every model any provider serves (catalog order, one entry per id).
@@ -404,6 +494,23 @@ export default function History({
           options={[
             { value: "all", label: t("filter_all") },
             ...modelOptions.map((m) => ({ value: m.id, label: m.label })),
+          ]}
+        />
+      </PopoverSection>
+      <PopoverSection label={t("series_series")}>
+        <CustomSelect<string>
+          value={seriesFilter === null ? "all" : String(seriesFilter)}
+          onChange={(v) => {
+            setSeriesFilter(v === "all" ? null : v === "none" ? "none" : Number(v));
+            setPage(0);
+          }}
+          options={[
+            { id: "all", label: t("series_filter_any") },
+            { id: "none", label: t("series_filter_none") },
+            ...seriesStore.leaves.map((leaf) => ({
+              id: String(leaf.id),
+              label: seriesPathText(seriesStore.get(leaf.id), t("series_no_theme")),
+            })),
           ]}
         />
       </PopoverSection>
@@ -521,7 +628,33 @@ export default function History({
             <span className="filter-label">{t("hist_filter_with_image")}</span>
           </Button>
           {moreFilterPopover}
+          {!phone && (
+            <Button
+              className={`skip-toggle${selectMode ? " on" : ""}`}
+              icon="selectMode"
+              title={t("select_mode")}
+              aria-label={t("select_mode")}
+              aria-pressed={selectMode}
+              onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+            >
+              <span className="filter-label">{t("select_mode")}</span>
+            </Button>
+          )}
         </div>
+        {seriesFilter !== null && (
+          <div className="series-filter-active">
+            <span>
+              {seriesFilter === "none"
+                ? t("series_filter_none")
+                : t("series_filter_is", {
+                    name: seriesPathText(seriesStore.get(seriesFilter), t("series_no_theme")),
+                  })}
+            </span>
+            <Button variant="link" onClick={() => { setSeriesFilter(null); setPage(0); }}>
+              {t("clear_filters")}
+            </Button>
+          </div>
+        )}
         {tagBar}
       </div>
       {phone ? phonePager : pager}
@@ -551,6 +684,7 @@ export default function History({
                   setResultFilter(null);
                   setModelFilter(null);
                   setProviderFilter(null);
+                  setSeriesFilter(null);
                   setPage(0);
                 }}
               >
@@ -572,7 +706,21 @@ export default function History({
             return (
               <Fragment key={g.id}>
               {dayHeading(index)}
+              <div
+                className={`hsel-wrap${selectMode ? " selecting" : ""}${selected.has(g.id) ? " selected" : ""}`}
+                onPointerDown={(e) => {
+                  if (selectMode || e.pointerType === "mouse") return;
+                  longPress.current = window.setTimeout(() => {
+                    setSelectMode(true);
+                    setSelected(new Set([g.id]));
+                  }, 500);
+                }}
+                onPointerUp={() => longPress.current && window.clearTimeout(longPress.current)}
+                onPointerCancel={() => longPress.current && window.clearTimeout(longPress.current)}
+                onPointerMove={() => longPress.current && window.clearTimeout(longPress.current)}
+              >
               <HistoryItem
+                seriesChip={g.series_id ? <SeriesChip seriesId={g.series_id} /> : undefined}
                 g={g}
                 layout={layout}
                 output={outImg}
@@ -590,6 +738,23 @@ export default function History({
                 onEdit={() => setEditingGen(g)}
                 onDuplicate={() => setDuplicatingGen(g)}
               />
+              {selectMode && (
+                <button
+                  type="button"
+                  className="hsel-cover"
+                  aria-pressed={selected.has(g.id)}
+                  aria-label={t("select_image")}
+                  onClick={() => toggleSelected(g.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    if ((e.nativeEvent as PointerEvent).pointerType && (e.nativeEvent as PointerEvent).pointerType !== "mouse") return;
+                    openBatchMenu(g, e.currentTarget, e.clientX, e.clientY);
+                  }}
+                >
+                  <span className="hsel-check">{selected.has(g.id) && <Icon name="check" size="sm" />}</span>
+                </button>
+              )}
+              </div>
               </Fragment>
             );
           })}
@@ -597,6 +762,46 @@ export default function History({
       )}
 
       {!phone && pager}
+
+      {selectMode && (
+        <div className={`batch-bar history-batch${phone ? " phone" : ""}`}>
+          <div className="batch-bar-row">
+            <span className="batch-count">{t("selected_n", { n: selected.size })}</span>
+            <Button
+              variant="link"
+              disabled={gens.length === 0 || gens.every((g) => selected.has(g.id))}
+              onClick={() => setSelected(new Set([...selected, ...gens.map((g) => g.id)]))}
+            >
+              {t("select_all")}
+            </Button>
+            <div className="spacer" />
+            <Popover
+              fixed
+              align="end"
+              open={batchSeriesOpen}
+              onClose={() => setBatchSeriesOpen(false)}
+              panelClassName="series-popover"
+              panelProps={{ role: "dialog", "aria-label": t("series_add_to") }}
+              trigger={
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon="series"
+                  disabled={selected.size === 0}
+                  aria-expanded={batchSeriesOpen}
+                  onClick={() => setBatchSeriesOpen((v) => !v)}
+                >
+                  {t("series_add_to_ellipsis")}
+                </Button>
+              }
+            >
+              {series.picker(targetFor(selectedGens()), () => setBatchSeriesOpen(false), true)}
+            </Popover>
+            <Button size="sm" icon="check" onClick={exitSelect}>{t("done")}</Button>
+          </div>
+        </div>
+      )}
+      {series.dialog}
 
       {editingGen && (
         <AddHistoryModal

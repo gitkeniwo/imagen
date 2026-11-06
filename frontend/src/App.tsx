@@ -55,8 +55,10 @@ import { isRefDrag } from "./imageDrag";
 import { uuid } from "./uuid";
 import { useComposerWorkspaces } from "./useComposerWorkspaces";
 import { shellAction } from "./shell";
+import Series from "./pages/Series";
+import { SeriesContextProvider, useSeriesState } from "./seriesStore";
 
-export type SidebarPanel = "library" | "history" | "favorites" | "drafts";
+export type SidebarPanel = "library" | "history" | "favorites" | "drafts" | "series";
 
 export interface Prefill {
   prompt: string;
@@ -112,7 +114,7 @@ function initialSidebarWidth() {
 
 function initialPhoneTab(): PhoneTab {
   const saved = localStorage.getItem(PHONE_TAB_KEY);
-  return saved === "create" || saved === "history" || saved === "more"
+  return saved === "create" || saved === "history" || saved === "series" || saved === "more"
     ? saved
     : "library";
 }
@@ -213,6 +215,11 @@ export default function App() {
   } | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [draftVersion, setDraftVersion] = useState(0);
+  const [seriesOpenId, setSeriesOpenId] = useState<number | null>(null);
+  const seriesStore = useSeriesState(libraryKey, dataVersion);
+  // Stable handle for callbacks that must not re-create on every reload.
+  const seriesStoreRef = useRef(seriesStore);
+  seriesStoreRef.current = seriesStore;
   const openViewer = useCallback(
     (
       image: ImageRow,
@@ -361,6 +368,12 @@ export default function App() {
     }
     if (Object.keys(patch).length > 0) fitDraft(patch);
   }, [catalogLoaded, fitProvider, specOf, fitDraft, draft]);
+
+  // A workspace bound to a series that no longer exists is unbound.
+  useEffect(() => {
+    if (!seriesStore.loaded || !draft.seriesId) return;
+    if (!seriesStore.get(draft.seriesId)) fitDraft({ seriesId: null });
+  }, [seriesStore, draft.seriesId, fitDraft]);
 
   // Reusing a record whose provider is off lands on the first enabled one;
   // say so, since the result may differ from the original.
@@ -654,6 +667,8 @@ export default function App() {
           tagIds: task.tagIds,
           clientTaskId: task.id,
           markerColor: task.markerColor,
+          // A series deleted after the task was queued is dropped, not a 404.
+          seriesId: seriesStoreRef.current.get(task.seriesId) ? task.seriesId : null,
         })
         // The original request stays open through cancellation, so its result
         // (success / aborted / blocked / error) is the true final state and
@@ -735,27 +750,35 @@ export default function App() {
     });
   }, [queue, dispatchTick, concurrency, remote, conn, reportNetworkError]);
 
-  // Reuse replaces the current workspace's prompt and references.
+  // Reuse replaces the current workspace's prompt and references, and files
+  // the workspace under the record's series (a record without one keeps the
+  // workspace's current binding).
   const reuse = useCallback((g: Generation) => {
     replaceReferences(g.inputs ?? []);
+    if (g.series_id) {
+      updateDraft({ seriesId: g.series_id });
+      seriesStoreRef.current.markRecent(g.series_id);
+    }
+    if (isPhone) setPhoneTab("create");
     setPrefill({
       prompt: g.prompt,
       ...fitReused(providerOf(g), g.model),
       aspectRatio: g.aspect_ratio,
       resolution: g.resolution,
     });
-  }, [replaceReferences, fitReused]);
+  }, [replaceReferences, fitReused, updateDraft, isPhone]);
 
   // Reuse a queued task's settings (prompt/model/ratio/resolution + inputs).
   const reuseTask = useCallback((task: QueueTask) => {
     replaceReferences(task.inputs ?? []);
+    if (task.seriesId) updateDraft({ seriesId: task.seriesId });
     setPrefill({
       prompt: task.prompt,
       ...fitReused(task.provider, task.model),
       aspectRatio: task.aspectRatio,
       resolution: task.resolution,
     });
-  }, [replaceReferences, fitReused]);
+  }, [replaceReferences, fitReused, updateDraft]);
 
   // Reuse a queued task's settings AND enqueue it immediately (skip the form).
   const reuseGenerateTask = useCallback(
@@ -778,15 +801,18 @@ export default function App() {
         outputImages: task.outputImages ?? [],
         tagIds: task.tagIds,
         skipIfPrecedingSucceeds: task.skipIfPrecedingSucceeds,
+        seriesId: task.seriesId ?? null,
       });
+      if (task.seriesId) updateDraft({ seriesId: task.seriesId });
     },
-    [enqueue, fitReused, isReady, providerInfo, t, toast],
+    [enqueue, fitReused, isReady, providerInfo, t, toast, updateDraft],
   );
 
   // Re-run a history record as-is (its live inputs, default format/no tags).
   // Lists only offer it while the record's own provider is ready.
+  // Inherits the record's series and binds the current workspace to it.
   const rerunGeneration = useCallback(
-    (g: Generation) =>
+    (g: Generation) => {
       enqueue({
         prompt: g.prompt,
         provider: providerOf(g),
@@ -796,8 +822,14 @@ export default function App() {
         format: "image/jpeg",
         inputs: (g.inputs ?? []).filter((im) => !im.deleted_at),
         tagIds: [],
-      }),
-    [enqueue],
+        seriesId: g.series_id ?? null,
+      });
+      if (g.series_id) {
+        updateDraft({ seriesId: g.series_id });
+        seriesStoreRef.current.markRecent(g.series_id);
+      }
+    },
+    [enqueue, updateDraft],
   );
 
   const taskToDraftBody = useCallback((task: TaskSpec): DraftBody => ({
@@ -811,6 +843,7 @@ export default function App() {
     inputImageIds: task.inputs.map((img) => img.id),
     outputImageIds: (task.outputImages ?? []).map((img) => img.id),
     tagIds: task.tagIds,
+    seriesId: seriesStoreRef.current.get(task.seriesId) ? task.seriesId ?? null : null,
   }), []);
 
   const saveTaskAsDraft = useCallback(async (task: TaskSpec) => {
@@ -849,6 +882,48 @@ export default function App() {
     `${completedRefreshKey}:${draftVersion}:${countsVersion}:${sidebarPanel}`,
   );
 
+  // Finished generations change series counts (and "#N" in the composer).
+  useEffect(() => {
+    void seriesStoreRef.current.reload();
+  }, [completedRefreshKey]);
+
+  // Series binding: which workspace numbers point at each series.
+  const boundSeries = useMemo(() => {
+    const map = new Map<number, number[]>();
+    for (const ws of workspaces) {
+      if (!ws.seriesId) continue;
+      map.set(ws.seriesId, [...(map.get(ws.seriesId) ?? []), ws.number].sort((a, b) => a - b));
+    }
+    return map;
+  }, [workspaces]);
+
+  // Open a series in the composer: switch to a workspace already bound to it,
+  // otherwise bind the current one.
+  const openSeriesInWorkspace = useCallback(
+    (id: number) => {
+      const existing = workspaces.find((ws) => ws.seriesId === id);
+      if (existing) selectWorkspace(existing.id);
+      else updateDraft({ seriesId: id });
+      seriesStoreRef.current.markRecent(id);
+      if (isPhone) setPhoneTab("create");
+    },
+    [workspaces, selectWorkspace, updateDraft, isPhone],
+  );
+
+  const seriesPage = (phone: boolean) => (
+    <Series
+      phone={phone}
+      refreshKey={completedRefreshKey}
+      bound={boundSeries}
+      openId={seriesOpenId}
+      onOpenIdChange={setSeriesOpenId}
+      onOpenViewer={openViewer}
+      onReuse={reuse}
+      onRerun={rerunGeneration}
+      onOpenInWorkspace={openSeriesInWorkspace}
+    />
+  );
+
   const phoneActiveCount = queue.filter(
     (task) =>
       task.status === "pending" ||
@@ -857,7 +932,7 @@ export default function App() {
   ).length;
 
   return (
-    <>
+    <SeriesContextProvider value={seriesStore}>
       {!isPhone && (
       <div
         className={`app-shell${remote ? " remote" : ""}`}
@@ -878,6 +953,7 @@ export default function App() {
                 { id: "history", label: t("tab_history"), icon: "history", count: counts.history },
                 { id: "favorites", label: t("tab_favorites"), icon: "favorite", count: counts.favorites },
                 { id: "drafts", label: t("tab_drafts"), icon: "drafts", count: counts.drafts },
+                { id: "series", label: t("tab_series"), icon: "series", count: seriesStore.loaded ? seriesStore.leaves.filter((s) => !seriesStore.get(s.id)?.archived).length : undefined },
               ]}
             />
             <IconButton
@@ -894,7 +970,7 @@ export default function App() {
               size="md"
               icon="fullscreen"
               label={t("fullscreen_manage")}
-              onClick={() => openManager(sidebarPanel)}
+              onClick={() => openManager(sidebarPanel === "series" ? "library" : sidebarPanel)}
             />
           </div>
           <div className="side-scroll">
@@ -933,6 +1009,8 @@ export default function App() {
                 onOpenViewer={openViewer}
                 onChanged={bumpData}
               />
+            ) : sidebarPanel === "series" ? (
+              seriesPage(false)
             ) : (
               <Drafts
                 compact
@@ -1146,6 +1224,12 @@ export default function App() {
               </section>
             </div>
 
+            <div className="phone-panel" hidden={phoneTab !== "series"}>
+              <section className="side-panel phone-island">
+                <div className="side-scroll phone-island-scroll">{seriesPage(true)}</div>
+              </section>
+            </div>
+
             <div className="phone-panel" hidden={phoneTab !== "create"}>
               <Generate
                 tray={tray}
@@ -1323,6 +1407,6 @@ export default function App() {
           onChanged={bumpData}
         />
       )}
-    </>
+    </SeriesContextProvider>
   );
 }

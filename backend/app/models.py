@@ -18,6 +18,8 @@ class GenerateRequest(BaseModel):
     # Client-side queue task id, used to publish live progress (see PROGRESS).
     clientTaskId: Optional[str] = None
     markerColor: Optional[str] = None
+    # Series (leaf) this attempt belongs to; a theme or unknown id is a 4xx.
+    seriesId: Optional[int] = None
 
 
 class ManualGenerationRequest(BaseModel):
@@ -34,6 +36,8 @@ class ManualGenerationRequest(BaseModel):
     outputImageId: Optional[int] = None
     tagIds: list[int] = Field(default_factory=list)
     createdAt: Optional[str] = None  # ISO-8601; defaults to now if omitted
+    # Omitted on PATCH = keep the stored series; explicit null = no series.
+    seriesId: Optional[int] = None
 
 
 class DraftCreate(BaseModel):
@@ -48,6 +52,7 @@ class DraftCreate(BaseModel):
     inputImageIds: list[int] = Field(default_factory=list)
     outputImageIds: list[int] = Field(default_factory=list)
     tagIds: list[int] = Field(default_factory=list)
+    seriesId: Optional[int] = None
 
 
 class DraftUpdate(BaseModel):
@@ -62,6 +67,7 @@ class DraftUpdate(BaseModel):
     inputImageIds: Optional[list[int]] = None
     outputImageIds: Optional[list[int]] = None
     tagIds: Optional[list[int]] = None
+    seriesId: Optional[int] = None  # explicit null clears it
 
 
 class MarkerPatch(BaseModel):
@@ -84,6 +90,40 @@ class BatchTag(BaseModel):
     imageIds: list[int] = Field(default_factory=list)
     tagIds: list[int] = Field(default_factory=list)
     op: str = "add"  # "add" | "remove"
+
+
+class SeriesCreate(BaseModel):
+    kind: Literal["theme", "series"] = "series"
+    name: str
+    parentId: Optional[int] = None  # series only: the theme it sits under
+    color: Optional[str] = None
+
+
+class SeriesUpdate(BaseModel):
+    """Partial update; a field that is present but null clears it (parentId →
+    "No theme", bestImageId → automatic cover)."""
+    name: Optional[str] = None
+    color: Optional[str] = None
+    parentId: Optional[int] = None
+    archived: Optional[bool] = None
+    bestImageId: Optional[int] = None
+
+
+class SeriesAssign(BaseModel):
+    """Records to put into (or take out of) a series. Library images map to
+    the generations that produced them."""
+    generationIds: list[int] = Field(default_factory=list)
+    draftIds: list[int] = Field(default_factory=list)
+    imageIds: list[int] = Field(default_factory=list)
+
+
+class SeriesImport(BaseModel):
+    tagId: int
+    name: str
+    parentId: Optional[int] = None
+    color: Optional[str] = None
+    # Also pull blocked/failed attempts whose prompt equals a tagged one.
+    includeFailed: bool = False
 
 
 class VertexConfig(BaseModel):

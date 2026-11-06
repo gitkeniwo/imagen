@@ -1,12 +1,13 @@
 import { useI18n } from "../i18n";
 import Icon, { type IconName } from "./ui/Icon";
 
-export type PhoneTab = "library" | "create" | "history" | "more";
+export type PhoneTab = "library" | "create" | "history" | "series" | "more";
 
 const TABS: { id: PhoneTab; icon: IconName }[] = [
   { id: "library", icon: "library" },
   { id: "create", icon: "generated" },
   { id: "history", icon: "history" },
+  { id: "series", icon: "series" },
   { id: "more", icon: "more" },
 ];
 

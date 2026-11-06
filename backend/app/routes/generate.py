@@ -11,6 +11,7 @@ from .. import provider_config, providers, remote, storage, tagging
 from ..db import get_conn, now_timestamp
 from ..models import GenerateRequest
 from ..remote_gate import is_lan
+from .series import require_leaf
 
 router = APIRouter(prefix="/api", tags=["generate"])
 logger = logging.getLogger("imagen.generate")
@@ -137,6 +138,7 @@ async def generate(body: GenerateRequest, request: Request):
     # loop so a batch of large inputs can't stall concurrent requests.
     input_rows: list[dict] = []
     with get_conn() as conn:
+        require_leaf(conn, body.seriesId)
         for img_id in ordered_ids:
             row = storage.get_image(conn, img_id)
             if not row:
@@ -162,10 +164,10 @@ async def generate(body: GenerateRequest, request: Request):
                 """INSERT INTO generations
                    (prompt, model, aspect_ratio, resolution, status, error_message,
                     raw_finish, output_image_id, created_at, source,
-                    client_task_id, marker_color, provider)
-                   VALUES (?, ?, ?, ?, 'running', NULL, NULL, NULL, ?, 'vertex', ?, ?, ?)""",
+                    client_task_id, marker_color, provider, series_id)
+                   VALUES (?, ?, ?, ?, 'running', NULL, NULL, NULL, ?, 'vertex', ?, ?, ?, ?)""",
                 (body.prompt, model, body.aspectRatio, resolution, _now(),
-                 body.clientTaskId, body.markerColor, provider.ID),
+                 body.clientTaskId, body.markerColor, provider.ID, body.seriesId),
             )
             gen_id = cur.lastrowid
             for pos, img_id in enumerate(ordered_ids):

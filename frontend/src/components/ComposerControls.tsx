@@ -5,6 +5,7 @@ import Icon from "./ui/Icon";
 import Segmented from "./ui/Segmented";
 import TagPicker from "./TagPicker";
 import ModelMenu from "./ModelMenu";
+import SeriesField from "./SeriesField";
 
 // Outline of the ratio, its long side fitted to `size` px.
 export function AspectShape({ ratio, size = 22 }: { ratio: string; size?: number }) {
@@ -29,6 +30,8 @@ export function ComposerParams({
   setFormat,
   tagIds,
   setTagIds,
+  seriesId,
+  setSeriesId,
 }: {
   provider: ProviderId;
   model: string;
@@ -42,6 +45,9 @@ export function ComposerParams({
   setFormat: (v: string) => void;
   tagIds: number[];
   setTagIds: (ids: number[]) => void;
+  // Omitted where the composer has no workspace binding.
+  seriesId?: number | null;
+  setSeriesId?: (id: number | null) => void;
 }) {
   const { t } = useI18n();
   const { spec: specOf } = useProviders();
@@ -112,6 +118,13 @@ export function ComposerParams({
 
       <span className="param-label" title={t("archive_to")}>{t("archive_short")}</span>
       <TagPicker selected={tagIds} onChange={setTagIds} />
+
+      {setSeriesId && (
+        <>
+          <span className="param-label" title={t("series_row_hint")}>{t("series_series")}</span>
+          <SeriesField value={seriesId ?? null} onChange={setSeriesId} />
+        </>
+      )}
     </div>
   );
 }

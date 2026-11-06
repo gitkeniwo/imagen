@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .. import providers, storage, tagging
 from ..db import get_conn
 from ..models import DraftCreate, DraftUpdate
+from .series import require_leaf
 
 router = APIRouter(prefix="/api/drafts", tags=["drafts"])
 
@@ -145,14 +146,15 @@ def create_draft(body: DraftCreate):
     _validate_provider(body.provider)
     with get_conn() as conn:
         _validate_refs(conn, [*input_ids, *output_ids], tag_ids)
+        require_leaf(conn, body.seriesId)
         cur = conn.execute(
             """INSERT INTO drafts
                (prompt, provider, model, aspect_ratio, resolution, output_format,
-                skip_if_preceding_succeeds, pinned, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                skip_if_preceding_succeeds, pinned, created_at, updated_at, series_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.prompt, body.provider, body.model, body.aspectRatio, body.resolution,
              body.outputFormat, int(body.skipIfPrecedingSucceeds), int(body.pinned),
-             now, now),
+             now, now, body.seriesId),
         )
         draft_id = cur.lastrowid
         _replace_images(conn, draft_id, "input", input_ids)
@@ -187,7 +189,10 @@ def update_draft(draft_id: int, body: DraftUpdate):
             "outputFormat": "output_format",
             "skipIfPrecedingSucceeds": "skip_if_preceding_succeeds",
             "pinned": "pinned",
+            "seriesId": "series_id",
         }
+        if "seriesId" in data:
+            require_leaf(conn, data["seriesId"])
         sets: list[str] = []
         params: list[object] = []
         for key, column in column_map.items():

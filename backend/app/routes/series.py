@@ -1,0 +1,643 @@
+"""Series: two-level grouping (theme / series) of one line of iterative work.
+
+A generation or draft belongs to at most one series (``series_id`` column, no
+join table). Themes only group series; records always point at a leaf series.
+Counting follows History and the usage dashboard: legacy ``status='note'``
+rows are never counted, running placeholders are not attempts yet, and user
+cancellations (``aborted``) are counted on their own and left out of the
+success-rate denominator (#39).
+"""
+import re
+import sqlite3
+
+from fastapi import APIRouter, HTTPException, Query
+
+from .. import storage
+from ..db import GENERATION_SORT_AT, get_conn, now_timestamp
+from ..models import SeriesAssign, SeriesCreate, SeriesImport, SeriesUpdate
+from .generations import _RESULT_FILTERS, _hydrate
+
+router = APIRouter(prefix="/api/series", tags=["series"])
+
+# Default colors, assigned round-robin by id when the client sends none.
+PALETTE = [
+    "#ea580c", "#0891b2", "#7c3aed", "#ca8a04", "#16a34a",
+    "#db2777", "#2563eb", "#475569",
+]
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+STRIP_LEN = 24   # recent statuses per series for the status bar
+COVER_LEN = 3    # collage: best first, then newest successes
+FILM_LEN = 200   # successful outputs listed on the detail page
+_FINISHED = ("success", "blocked", "error", "aborted")
+_SORT_G = GENERATION_SORT_AT.replace("created_at", "g.created_at")
+
+
+def _clean_name(name: str | None) -> str:
+    cleaned = " ".join((name or "").split())
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Name required")
+    if len(cleaned) > 120:
+        raise HTTPException(status_code=400, detail="Name too long")
+    return cleaned
+
+
+def _clean_color(color: str | None) -> str | None:
+    if color is None:
+        return None
+    if not _HEX.match(color):
+        raise HTTPException(status_code=400, detail="Invalid color")
+    return color.lower()
+
+
+def _row(conn, series_id: int) -> dict:
+    row = conn.execute("SELECT * FROM series WHERE id = ?", (series_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Series not found")
+    return dict(row)
+
+
+def require_leaf(conn, series_id: int | None) -> None:
+    """4xx unless ``series_id`` is None or an existing kind='series' row."""
+    if series_id is None:
+        return
+    row = conn.execute("SELECT kind FROM series WHERE id = ?", (series_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Series {series_id} does not exist.")
+    if row["kind"] != "series":
+        raise HTTPException(
+            status_code=400, detail="Records can only belong to a series, not a theme."
+        )
+
+
+def _require_theme(conn, theme_id: int | None) -> None:
+    if theme_id is None:
+        return
+    row = conn.execute("SELECT kind FROM series WHERE id = ?", (theme_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Theme {theme_id} does not exist.")
+    if row["kind"] != "theme":
+        raise HTTPException(status_code=400, detail="A series can only sit under a theme.")
+
+
+def _name_taken(conn, kind: str, parent_id: int | None, name: str, exclude: int | None = None) -> bool:
+    row = conn.execute(
+        """SELECT id FROM series
+           WHERE kind = ? AND COALESCE(parent_id, 0) = COALESCE(?, 0)
+             AND name = ? COLLATE NOCASE AND id != COALESCE(?, -1)""",
+        (kind, parent_id, name, exclude),
+    ).fetchone()
+    return row is not None
+
+
+def _free_name(conn, kind: str, parent_id: int | None, name: str) -> str:
+    """``name``, or ``name (2)``, ``name (3)``… — first one free under parent."""
+    if not _name_taken(conn, kind, parent_id, name):
+        return name
+    n = 2
+    while _name_taken(conn, kind, parent_id, f"{name} ({n})"):
+        n += 1
+    return f"{name} ({n})"
+
+
+def _insert(conn, kind: str, name: str, parent_id: int | None, color: str | None) -> int:
+    if kind == "theme" and parent_id is not None:
+        raise HTTPException(status_code=400, detail="A theme cannot have a parent.")
+    if kind == "series":
+        _require_theme(conn, parent_id)
+    if _name_taken(conn, kind, parent_id, name):
+        raise HTTPException(status_code=409, detail="name_taken")
+    now = now_timestamp()
+    if color is None:
+        count = conn.execute("SELECT COUNT(*) c FROM series").fetchone()["c"]
+        color = PALETTE[count % len(PALETTE)]
+    try:
+        cur = conn.execute(
+            """INSERT INTO series (kind, parent_id, name, color, archived, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 0, ?, ?)""",
+            (kind, parent_id, name, color, now, now),
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="name_taken")
+    return cur.lastrowid
+
+
+# --- tree + statistics ------------------------------------------------------
+
+
+def _empty_stats() -> dict:
+    return {
+        "tries": 0, "success": 0, "blocked": 0, "error": 0, "aborted": 0,
+        "running": 0, "records": 0, "drafts": 0, "last_at": None,
+        "strip": [], "cover": [],
+    }
+
+
+def _stats(conn, ids: list[int] | None = None) -> dict[int, dict]:
+    """Per-series counters, recent status strip and collage cover."""
+    where, params = "series_id IS NOT NULL", []
+    if ids is not None:
+        if not ids:
+            return {}
+        where = f"series_id IN ({','.join('?' * len(ids))})"
+        params = list(ids)
+    out: dict[int, dict] = {}
+    rows = conn.execute(
+        f"""SELECT series_id, status, created_at FROM generations
+            WHERE {where} AND status != 'note'
+            ORDER BY {GENERATION_SORT_AT} ASC, id ASC""",
+        params,
+    ).fetchall()
+    for r in rows:
+        s = out.setdefault(r["series_id"], _empty_stats())
+        s["records"] += 1
+        st = r["status"]
+        if st in _FINISHED:
+            s["tries"] += 1
+            s[st] += 1
+            s["strip"].append(st)
+        elif st == "running":
+            s["running"] += 1
+        if r["created_at"] and (s["last_at"] is None or r["created_at"] > s["last_at"]):
+            s["last_at"] = r["created_at"]
+    for s in out.values():
+        s["strip"] = s["strip"][-STRIP_LEN:]
+
+    for r in conn.execute(
+        f"SELECT series_id, COUNT(*) c, MAX(updated_at) u FROM drafts WHERE {where} GROUP BY series_id",
+        params,
+    ).fetchall():
+        s = out.setdefault(r["series_id"], _empty_stats())
+        s["drafts"] = r["c"]
+
+    # Collage: the chosen best image (when still live) first, then the newest
+    # live successful outputs, de-duplicated.
+    best = {
+        r["id"]: r["best_image_id"]
+        for r in conn.execute(
+            "SELECT id, best_image_id FROM series WHERE best_image_id IS NOT NULL"
+        ).fetchall()
+    }
+    best_rows = {}
+    if best:
+        ph = ",".join("?" * len(best))
+        best_rows = {
+            r["id"]: dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM images WHERE id IN ({ph}) AND deleted_at IS NULL",
+                list(best.values()),
+            ).fetchall()
+        }
+    for sid, image_id in best.items():
+        if image_id in best_rows and (ids is None or sid in ids):
+            out.setdefault(sid, _empty_stats())["cover"].append(
+                storage.public_image(best_rows[image_id])
+            )
+    for r in conn.execute(
+        f"""SELECT g.series_id AS sid, i.* FROM generations g
+            JOIN images i ON i.id = g.output_image_id
+            WHERE g.{where} AND g.status = 'success' AND i.deleted_at IS NULL
+            ORDER BY {_SORT_G} DESC, g.id DESC""",
+        params,
+    ).fetchall():
+        s = out.setdefault(r["sid"], _empty_stats())
+        if len(s["cover"]) >= COVER_LEN:
+            continue
+        img = dict(r)
+        img.pop("sid")
+        if any(c["id"] == img["id"] for c in s["cover"]):
+            continue
+        s["cover"].append(storage.public_image(img))
+    return out
+
+
+def _node(row: dict, stats: dict | None) -> dict:
+    node = dict(row)
+    node.update(stats or _empty_stats())
+    node["next_seq"] = node["records"] + 1
+    return node
+
+
+def _sum_theme(theme: dict, children: list[dict]) -> dict:
+    agg = _empty_stats()
+    for c in children:
+        for k in ("tries", "success", "blocked", "error", "aborted", "running", "records", "drafts"):
+            agg[k] += c[k]
+        if c["last_at"] and (agg["last_at"] is None or c["last_at"] > agg["last_at"]):
+            agg["last_at"] = c["last_at"]
+    # Theme collage: each series' first cover image (its best, if set).
+    agg["cover"] = [c["cover"][0] for c in children if c["cover"]][:COVER_LEN]
+    node = dict(theme)
+    node.update(agg)
+    node["series"] = children
+    return node
+
+
+def _activity_key(node: dict) -> str:
+    return node.get("last_at") or node.get("updated_at") or ""
+
+
+def _tree(conn, archived: str) -> dict:
+    rows = [dict(r) for r in conn.execute("SELECT * FROM series ORDER BY id").fetchall()]
+    stats = _stats(conn)
+    themes = {r["id"]: r for r in rows if r["kind"] == "theme"}
+    leaves = [_node(r, stats.get(r["id"])) for r in rows if r["kind"] == "series"]
+
+    def visible_leaf(leaf: dict) -> bool:
+        theme = themes.get(leaf["parent_id"])
+        hidden = bool(leaf["archived"]) or bool(theme and theme["archived"])
+        if archived == "1":
+            return hidden
+        if archived == "0":
+            return not hidden
+        return True
+
+    by_theme: dict[int, list[dict]] = {}
+    unthemed: list[dict] = []
+    for leaf in leaves:
+        if not visible_leaf(leaf):
+            continue
+        if leaf["parent_id"] in themes:
+            by_theme.setdefault(leaf["parent_id"], []).append(leaf)
+        else:
+            unthemed.append(leaf)
+    out_themes = []
+    for tid, theme in themes.items():
+        children = sorted(by_theme.get(tid, []), key=_activity_key, reverse=True)
+        if archived == "1" and not theme["archived"] and not children:
+            continue
+        if archived == "0" and theme["archived"]:
+            continue
+        out_themes.append(_sum_theme(theme, children))
+    out_themes.sort(key=_activity_key, reverse=True)
+    unthemed.sort(key=_activity_key, reverse=True)
+    return {"themes": out_themes, "unthemed": unthemed}
+
+
+def _detail(conn, series_id: int) -> dict:
+    row = _row(conn, series_id)
+    if row["kind"] == "theme":
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM series WHERE parent_id = ? ORDER BY id", (series_id,)
+            ).fetchall()
+        ]
+        stats = _stats(conn, [r["id"] for r in rows])
+        children = [_node(r, stats.get(r["id"])) for r in rows]
+        children.sort(key=_activity_key, reverse=True)
+        return _sum_theme(row, children)
+    node = _node(row, _stats(conn, [series_id]).get(series_id))
+    node["theme"] = None
+    if row["parent_id"]:
+        theme = conn.execute(
+            "SELECT id, name, color, archived FROM series WHERE id = ?", (row["parent_id"],)
+        ).fetchone()
+        node["theme"] = dict(theme) if theme else None
+    # Every live successful output, oldest first, for the detail film strip.
+    film = conn.execute(
+        f"""SELECT g.id AS generation_id, i.* FROM generations g
+            JOIN images i ON i.id = g.output_image_id
+            WHERE g.series_id = ? AND g.status = 'success' AND i.deleted_at IS NULL
+            ORDER BY {_SORT_G} ASC, g.id ASC
+            LIMIT ?""",
+        (series_id, FILM_LEN),
+    ).fetchall()
+    node["outputs"] = []
+    seen: set[int] = set()
+    for r in film:
+        img = dict(r)
+        gid = img.pop("generation_id")
+        if img["id"] in seen:
+            continue
+        seen.add(img["id"])
+        node["outputs"].append({"generation_id": gid, "image": storage.public_image(img)})
+    best = None
+    if row["best_image_id"]:
+        b = conn.execute(
+            "SELECT * FROM images WHERE id = ? AND deleted_at IS NULL", (row["best_image_id"],)
+        ).fetchone()
+        best = storage.public_image(dict(b)) if b else None
+    node["best_image"] = best
+    return node
+
+
+@router.get("")
+def list_series(archived: str = Query("all", pattern="^(0|1|all)$")):
+    """The theme → series tree with statistics.
+
+    ``archived=0`` hides archived rows (a series under an archived theme counts
+    as archived), ``archived=1`` shows only those, ``all`` (default) both.
+    """
+    with get_conn() as conn:
+        return _tree(conn, archived)
+
+
+@router.get("/membership")
+def membership(image_ids: str = Query("", alias="imageIds")):
+    """Map library images to the series of the generations that produced them.
+
+    Uploads with no generation come back with ``generationIds: []`` so the UI
+    can disable "Add to series" for them.
+    """
+    try:
+        ids = [int(x) for x in image_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid image ids")
+    ids = list(dict.fromkeys(ids))[:500]
+    items = {i: {"imageId": i, "generationIds": [], "seriesIds": []} for i in ids}
+    if ids:
+        with get_conn() as conn:
+            for r in conn.execute(
+                f"""SELECT id, output_image_id, series_id FROM generations
+                    WHERE output_image_id IN ({','.join('?' * len(ids))})
+                      AND status != 'note' ORDER BY id""",
+                ids,
+            ).fetchall():
+                item = items[r["output_image_id"]]
+                item["generationIds"].append(r["id"])
+                if r["series_id"] is not None and r["series_id"] not in item["seriesIds"]:
+                    item["seriesIds"].append(r["series_id"])
+    return {"items": list(items.values())}
+
+
+@router.get("/import/preview")
+def import_preview(tag: int, include_failed: bool = False):
+    with get_conn() as conn:
+        return _import_plan(conn, tag, include_failed)["preview"]
+
+
+def _import_plan(conn, tag_id: int, include_failed: bool) -> dict:
+    if not conn.execute("SELECT 1 FROM tags WHERE id = ?", (tag_id,)).fetchone():
+        raise HTTPException(status_code=404, detail="Tag not found")
+    tagged = conn.execute(
+        """SELECT id, prompt, series_id FROM generations
+           WHERE status != 'note' AND output_image_id IN
+                 (SELECT image_id FROM image_tags WHERE tag_id = ?)""",
+        (tag_id,),
+    ).fetchall()
+    ids = [r["id"] for r in tagged]
+    extra: list[sqlite3.Row] = []
+    prompts = sorted({r["prompt"] for r in tagged if r["prompt"]})
+    if prompts:
+        ph = ",".join("?" * len(prompts))
+        candidates = conn.execute(
+            f"""SELECT id, prompt, series_id FROM generations
+                WHERE status IN ('blocked', 'error', 'aborted') AND prompt IN ({ph})""",
+            prompts,
+        ).fetchall()
+        taken = set(ids)
+        extra = [r for r in candidates if r["id"] not in taken]
+    chosen = [*tagged, *(extra if include_failed else [])]
+    return {
+        "ids": [r["id"] for r in chosen],
+        "preview": {
+            "tagId": tag_id,
+            "found": len(tagged),
+            "inOtherSeries": sum(1 for r in tagged if r["series_id"] is not None),
+            "failedSamePrompt": len(extra),
+            "failedInOtherSeries": sum(1 for r in extra if r["series_id"] is not None),
+            "total": len(chosen),
+        },
+    }
+
+
+@router.post("/import")
+def import_from_tag(body: SeriesImport):
+    """Create a series from the generations whose output carries a tag."""
+    name = _clean_name(body.name)
+    color = _clean_color(body.color)
+    with get_conn() as conn:
+        plan = _import_plan(conn, body.tagId, body.includeFailed)
+        series_id = _insert(conn, "series", name, body.parentId, color)
+        _assign(conn, series_id, plan["ids"], [])
+        detail = _detail(conn, series_id)
+    return {"series": detail, "assigned": len(plan["ids"]), "preview": plan["preview"]}
+
+
+@router.post("")
+def create_series(body: SeriesCreate):
+    name = _clean_name(body.name)
+    color = _clean_color(body.color)
+    with get_conn() as conn:
+        series_id = _insert(conn, body.kind, name, body.parentId, color)
+        return _detail(conn, series_id)
+
+
+@router.get("/{series_id}")
+def get_series(series_id: int):
+    with get_conn() as conn:
+        return _detail(conn, series_id)
+
+
+@router.patch("/{series_id}")
+def update_series(series_id: int, body: SeriesUpdate):
+    fields = body.model_fields_set
+    with get_conn() as conn:
+        row = _row(conn, series_id)
+        sets: dict[str, object] = {}
+        name = row["name"]
+        parent_id = row["parent_id"]
+        if "name" in fields:
+            name = _clean_name(body.name)
+            sets["name"] = name
+        if "parentId" in fields:
+            if row["kind"] == "theme":
+                if body.parentId is not None:
+                    raise HTTPException(status_code=400, detail="A theme cannot have a parent.")
+            else:
+                _require_theme(conn, body.parentId)
+            parent_id = body.parentId
+            sets["parent_id"] = parent_id
+        if ("name" in fields or "parentId" in fields) and _name_taken(
+            conn, row["kind"], parent_id, name, exclude=series_id
+        ):
+            raise HTTPException(status_code=409, detail="name_taken")
+        if "color" in fields:
+            sets["color"] = _clean_color(body.color) if body.color else None
+        if "archived" in fields and body.archived is not None:
+            sets["archived"] = 1 if body.archived else 0
+        if "bestImageId" in fields:
+            if row["kind"] != "series":
+                raise HTTPException(status_code=400, detail="Only a series has a best image.")
+            if body.bestImageId is not None and not storage.get_image(conn, body.bestImageId):
+                raise HTTPException(status_code=404, detail="Image not found")
+            sets["best_image_id"] = body.bestImageId
+        if not sets:
+            raise HTTPException(status_code=400, detail="Nothing to update")
+        sets["updated_at"] = now_timestamp()
+        try:
+            conn.execute(
+                f"UPDATE series SET {', '.join(f'{k} = ?' for k in sets)} WHERE id = ?",
+                (*sets.values(), series_id),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="name_taken")
+        return _detail(conn, series_id)
+
+
+@router.delete("/{series_id}")
+def delete_series(series_id: int):
+    """Delete a series (its records just lose the reference) or a theme (its
+    series move to "No theme", renamed ``name (2)`` on a clash)."""
+    with get_conn() as conn:
+        row = _row(conn, series_id)
+        moved = 0
+        if row["kind"] == "theme":
+            children = conn.execute(
+                "SELECT id, name FROM series WHERE parent_id = ? ORDER BY id", (series_id,)
+            ).fetchall()
+            for child in children:
+                new_name = _free_name(conn, "series", None, child["name"])
+                conn.execute(
+                    "UPDATE series SET parent_id = NULL, name = ?, updated_at = ? WHERE id = ?",
+                    (new_name, now_timestamp(), child["id"]),
+                )
+                moved += 1
+        cleared = conn.execute(
+            "SELECT COUNT(*) c FROM generations WHERE series_id = ?", (series_id,)
+        ).fetchone()["c"]
+        # ON DELETE SET NULL covers this too; explicit so it never depends on
+        # the foreign_keys pragma of whoever opens the database.
+        conn.execute("UPDATE generations SET series_id = NULL WHERE series_id = ?", (series_id,))
+        conn.execute("UPDATE drafts SET series_id = NULL WHERE series_id = ?", (series_id,))
+        conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
+    return {"deleted": series_id, "movedSeries": moved, "clearedGenerations": cleared}
+
+
+def _generation_ids_for_images(conn, image_ids: list[int]) -> list[int]:
+    if not image_ids:
+        return []
+    ph = ",".join("?" * len(image_ids))
+    return [
+        r["id"]
+        for r in conn.execute(
+            f"SELECT id FROM generations WHERE output_image_id IN ({ph}) AND status != 'note'",
+            image_ids,
+        ).fetchall()
+    ]
+
+
+def _assign(conn, series_id: int | None, generation_ids: list[int], draft_ids: list[int]) -> dict:
+    gen_ids = list(dict.fromkeys(generation_ids))
+    d_ids = list(dict.fromkeys(draft_ids))
+    moved = 0
+    if gen_ids:
+        ph = ",".join("?" * len(gen_ids))
+        if series_id is not None:
+            moved = conn.execute(
+                f"""SELECT COUNT(*) c FROM generations WHERE id IN ({ph})
+                    AND series_id IS NOT NULL AND series_id != ?""",
+                (*gen_ids, series_id),
+            ).fetchone()["c"]
+        conn.execute(
+            f"UPDATE generations SET series_id = ? WHERE id IN ({ph}) AND status != 'note'",
+            (series_id, *gen_ids),
+        )
+    if d_ids:
+        ph = ",".join("?" * len(d_ids))
+        conn.execute(f"UPDATE drafts SET series_id = ? WHERE id IN ({ph})", (series_id, *d_ids))
+    if series_id is not None:
+        conn.execute("UPDATE series SET updated_at = ? WHERE id = ?", (now_timestamp(), series_id))
+    return {"generations": len(gen_ids), "drafts": len(d_ids), "moved": moved}
+
+
+@router.post("/unassign")
+def unassign(body: SeriesAssign):
+    """Take records out of whatever series they are in."""
+    with get_conn() as conn:
+        gen_ids = [*body.generationIds, *_generation_ids_for_images(conn, body.imageIds)]
+        return _assign(conn, None, gen_ids, body.draftIds)
+
+
+@router.post("/{series_id}/assign")
+def assign(series_id: int, body: SeriesAssign):
+    """Put records into this series, moving them out of any other one."""
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        gen_ids = [*body.generationIds, *_generation_ids_for_images(conn, body.imageIds)]
+        return _assign(conn, series_id, gen_ids, body.draftIds)
+
+
+@router.get("/{series_id}/generations")
+def series_generations(
+    series_id: int,
+    status: str | None = None,
+    limit: int = Query(40, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """The series timeline, newest first, using History's row shape.
+
+    Each row carries ``seq`` (1-based, oldest = #1, over every attempt in the
+    series regardless of the filter) and ``previous``: the attempt right before
+    it in time, so the client can diff prompts and parameters.
+    """
+    status_sql, status_params = "", []
+    if status:
+        if status not in _RESULT_FILTERS:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        wanted = _RESULT_FILTERS[status]
+        status_sql = f"WHERE status IN ({','.join('?' * len(wanted))})"
+        status_params = list(wanted)
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        seqd = f"""
+            SELECT g.*,
+                   ROW_NUMBER() OVER (ORDER BY {GENERATION_SORT_AT} ASC, id ASC) AS seq,
+                   LAG(id) OVER (ORDER BY {GENERATION_SORT_AT} ASC, id ASC) AS prev_id
+            FROM generations g
+            WHERE series_id = ? AND status != 'note'
+        """
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"WITH seqd AS ({seqd}) SELECT * FROM seqd {status_sql} "
+                "ORDER BY seq DESC LIMIT ? OFFSET ?",
+                (series_id, *status_params, limit, offset),
+            ).fetchall()
+        ]
+        total = conn.execute(
+            f"WITH seqd AS ({seqd}) SELECT COUNT(*) c FROM seqd {status_sql}",
+            (series_id, *status_params),
+        ).fetchone()["c"]
+        counts = {"all": 0, "success": 0, "blocked": 0, "error": 0}
+        for r in conn.execute(
+            "SELECT status, COUNT(*) c FROM generations WHERE series_id = ? AND status != 'note' GROUP BY status",
+            (series_id,),
+        ).fetchall():
+            counts["all"] += r["c"]
+            for key, statuses in _RESULT_FILTERS.items():
+                if r["status"] in statuses:
+                    counts[key] += r["c"]
+        prev_ids = [r["prev_id"] for r in rows if r["prev_id"]]
+        previous: dict[int, dict] = {}
+        if prev_ids:
+            ph = ",".join("?" * len(prev_ids))
+            prev_rows = conn.execute(
+                f"WITH seqd AS ({seqd}) SELECT * FROM seqd WHERE id IN ({ph})",
+                (series_id, *prev_ids),
+            ).fetchall()
+            input_rows = conn.execute(
+                f"""SELECT generation_id, image_id FROM generation_inputs
+                    WHERE generation_id IN ({ph}) ORDER BY generation_id, position""",
+                prev_ids,
+            ).fetchall()
+            inputs: dict[int, list[int]] = {}
+            for ir in input_rows:
+                inputs.setdefault(ir["generation_id"], []).append(ir["image_id"])
+            for p in prev_rows:
+                previous[p["id"]] = {
+                    "id": p["id"],
+                    "seq": p["seq"],
+                    "prompt": p["prompt"],
+                    "provider": p["provider"],
+                    "model": p["model"],
+                    "aspect_ratio": p["aspect_ratio"],
+                    "resolution": p["resolution"],
+                    "status": p["status"],
+                    "input_ids": inputs.get(p["id"], []),
+                }
+        out = _hydrate(conn, rows)
+        for g in out:
+            pid = g.pop("prev_id", None)
+            g["previous"] = previous.get(pid) if pid else None
+    return {"generations": out, "total": total, "counts": counts}

@@ -15,6 +15,8 @@ import { Button } from "./ui/Button";
 import Sheet from "./ui/Sheet";
 import { useBackLayer } from "../backStack";
 import { seenLabel } from "./RemoteIndicator";
+import { seriesPathText, useSeries } from "../seriesStore";
+import { SeriesDot } from "./SeriesBits";
 
 function workspaceTone(workspace: WorkspaceRecord): string {
   const empty = workspace.prompt.trim() === "" && workspace.inputIds.length === 0;
@@ -45,6 +47,7 @@ export default function ComposerTabs({
   onClose: (id: string) => boolean;
 }) {
   const { t } = useI18n();
+  const seriesStore = useSeries();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [nameValue, setNameValue] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -226,9 +229,14 @@ export default function ComposerTabs({
         {workspaces.map((workspace) => {
           const isActive = workspace.id === activeId;
           const label = workspace.name ?? String(workspace.number);
-          const aria = workspace.name
-            ? `${t("ws_label", { n: workspace.number })}: ${workspace.name}`
-            : t("ws_label", { n: workspace.number });
+          const series = seriesStore.get(workspace.seriesId);
+          const seriesText = series ? seriesPathText(series, t("series_no_theme")) : null;
+          const aria = [
+            workspace.name
+              ? `${t("ws_label", { n: workspace.number })}: ${workspace.name}`
+              : t("ws_label", { n: workspace.number }),
+            seriesText,
+          ].filter(Boolean).join(" · ");
           return (
             <Popover
               key={workspace.id}
@@ -326,7 +334,7 @@ export default function ComposerTabs({
                             role="tab"
                             aria-selected={isActive}
                             aria-label={aria}
-                            title={workspace.name ?? aria}
+                            title={seriesText ? `${workspace.name ?? label} · ${seriesText}` : workspace.name ?? aria}
                             tabIndex={isActive ? 0 : -1}
                             className="ws-tab"
                             onClick={() => {
@@ -347,6 +355,12 @@ export default function ComposerTabs({
                             }}
                           >
                             <span className="ws-tab-name">{label}</span>
+                            {series && (
+                              <span className="ws-tab-series">
+                                <SeriesDot color={series.color} />
+                                <span>{series.name}</span>
+                              </span>
+                            )}
                           </button>
                           {!phone && workspaces.length > 1 && (
                             <button

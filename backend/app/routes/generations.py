@@ -124,6 +124,9 @@ def _resolved_source(body: ManualGenerationRequest) -> str:
 
 
 def _check_images_exist(conn, body: ManualGenerationRequest) -> None:
+    from .series import require_leaf  # late import: series imports this module
+
+    require_leaf(conn, body.seriesId)
     for img_id in [*body.inputImageIds, *([body.outputImageId] if body.outputImageId else [])]:
         if not storage.get_image(conn, img_id):
             raise HTTPException(status_code=404, detail=f"Image {img_id} does not exist.")
@@ -152,11 +155,11 @@ def create_manual_generation(body: ManualGenerationRequest):
         cur = conn.execute(
             """INSERT INTO generations
                (prompt, model, aspect_ratio, resolution, status, error_message,
-                raw_finish, output_image_id, created_at, source, provider)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                raw_finish, output_image_id, created_at, source, provider, series_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (body.prompt, body.model, body.aspectRatio, body.resolution,
              body.status, body.errorMessage, None, body.outputImageId, created_at,
-             _resolved_source(body), body.provider),
+             _resolved_source(body), body.provider, body.seriesId),
         )
         gen_id = cur.lastrowid
         _mark_output_generated(conn, body.outputImageId)
@@ -206,6 +209,10 @@ def update_generation(gen_id: int, body: ManualGenerationRequest):
              body.status, body.errorMessage, body.outputImageId, created_at,
              _resolved_source(body), body.provider, gen_id),
         )
+        if "seriesId" in body.model_fields_set:
+            conn.execute(
+                "UPDATE generations SET series_id = ? WHERE id = ?", (body.seriesId, gen_id)
+            )
         _mark_output_generated(conn, body.outputImageId)
         conn.execute("DELETE FROM generation_inputs WHERE generation_id = ?", (gen_id,))
         for pos, img_id in enumerate(body.inputImageIds):
@@ -239,6 +246,7 @@ def list_generations(
     provider: str | None = None,
     with_output: bool = False,
     unique_outputs: bool = False,
+    series: str | None = None,
 ):
     # Filter by the output image's tag (i.e. generations archived into that tag),
     # by a substring of the prompt, by whether the output is starred (the
@@ -281,6 +289,16 @@ def list_generations(
     if provider:
         base_clauses.append("provider = ?")
         params.append(provider)
+    if series:
+        # "none" = not in any series; otherwise one series id.
+        if series == "none":
+            base_clauses.append("series_id IS NULL")
+        else:
+            try:
+                base_clauses.append("series_id = ?")
+                params.append(int(series))
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid series: {series}")
     clauses = [*base_clauses]
     if with_output or unique_outputs:
         # Only retain records with a live output image. This deliberately
