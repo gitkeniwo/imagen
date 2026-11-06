@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 
 from .. import storage, tagging
-from ..db import get_conn
+from ..db import GENERATION_SORT_AT, get_conn
 from ..models import ImagePatch
 
 router = APIRouter(prefix="/api/images", tags=["images"])
@@ -202,6 +202,71 @@ def empty_bin():
             _purge(conn, row)
         conn.commit()
     return {"purged": len(rows)}
+
+
+DERIVED_PROMPT_CHARS = 200
+
+
+@router.get("/{image_id}/derived")
+def derived_generations(
+    image_id: int,
+    limit: int = Query(24, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Generations that used this image as an input (reverse lineage).
+
+    Newest first. Every outcome is listed (blocked / error / running rows have
+    no output); an output in the bin is returned with its ``deleted_at`` set so
+    the viewer can mark it. Legacy note rows stay hidden, as in History.
+    """
+    with get_conn() as conn:
+        if not storage.get_image(conn, image_id):
+            raise HTTPException(status_code=404, detail="Image not found")
+        where = (
+            "FROM generations g WHERE g.status != 'note' AND g.id IN "
+            "(SELECT generation_id FROM generation_inputs WHERE image_id = ?)"
+        )
+        total = conn.execute(f"SELECT COUNT(*) c {where}", (image_id,)).fetchone()["c"]
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"""SELECT g.id, g.status, g.prompt, g.model, g.provider, g.source,
+                           g.error_message, g.raw_finish, g.created_at, g.output_image_id
+                    {where}
+                    ORDER BY {GENERATION_SORT_AT} DESC, g.id DESC
+                    LIMIT ? OFFSET ?""",
+                (image_id, limit, offset),
+            ).fetchall()
+        ]
+        output_ids = sorted({r["output_image_id"] for r in rows if r["output_image_id"]})
+        outputs: dict[int, dict] = {}
+        if output_ids:
+            ph = ",".join("?" * len(output_ids))
+            outputs = {
+                r["id"]: dict(r)
+                for r in conn.execute(
+                    f"SELECT * FROM images WHERE id IN ({ph})", output_ids
+                ).fetchall()
+            }
+            tagging.attach_tags(conn, list(outputs.values()))
+    items = []
+    for r in rows:
+        prompt = r["prompt"] or ""
+        output = outputs.get(r["output_image_id"])
+        items.append({
+            "id": r["id"],
+            "status": r["status"],
+            "prompt": prompt[:DERIVED_PROMPT_CHARS],
+            "promptTruncated": len(prompt) > DERIVED_PROMPT_CHARS,
+            "model": r["model"],
+            "provider": r["provider"],
+            "source": r["source"],
+            "error_message": r["error_message"],
+            "raw_finish": r["raw_finish"],
+            "created_at": r["created_at"],
+            "outputImage": storage.public_image(output) if output else None,
+        })
+    return {"generations": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{image_id}/file")

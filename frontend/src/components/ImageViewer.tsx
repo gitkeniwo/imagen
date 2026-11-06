@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { api, Generation, ImageRow, imgFileUrl, imgThumbUrl, Tag } from "../api";
+import { api, DerivedGeneration, Generation, ImageRow, imgFileUrl, imgThumbUrl, Tag } from "../api";
 import { useI18n } from "../i18n";
 import { copyText } from "../clipboard";
 import TagPicker from "./TagPicker";
@@ -417,6 +417,65 @@ export default function ImageViewer({
     return () => window.removeEventListener("keydown", onKey);
   }, [close, goTo, editingGen, duplicatingGen, togglePanel, inTrail, popTrail]);
 
+  // Reverse lineage: later generations that used this image as an input.
+  // Every image (upload or generated) can have them; loaded a page at a time.
+  const [derived, setDerived] = useState<DerivedGeneration[]>([]);
+  const [derivedTotal, setDerivedTotal] = useState(0);
+  const [derivedLoading, setDerivedLoading] = useState(false);
+  const derivedFor = useRef(current.id);
+  useEffect(() => {
+    let alive = true;
+    derivedFor.current = current.id;
+    setDerived([]);
+    setDerivedTotal(0);
+    api
+      .derivedGenerations(current.id, 0, DERIVED_PAGE)
+      .then((page) => {
+        if (!alive) return;
+        setDerived(page.generations);
+        setDerivedTotal(page.total);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [current.id]);
+  const loadMoreDerived = async () => {
+    const id = current.id;
+    setDerivedLoading(true);
+    try {
+      const page = await api.derivedGenerations(id, derived.length, DERIVED_PAGE);
+      if (derivedFor.current !== id) return;
+      setDerived((all) => {
+        const seen = new Set(all.map((d) => d.id));
+        return [...all, ...page.generations.filter((d) => !seen.has(d.id))];
+      });
+      setDerivedTotal(page.total);
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    } finally {
+      setDerivedLoading(false);
+    }
+  };
+  const derivedStatusLabel = (d: DerivedGeneration) => {
+    switch (d.status) {
+      case "blocked":
+        return t("status_blocked");
+      case "error":
+        return t("status_error");
+      case "aborted":
+        return t("status_aborted");
+      case "running":
+        return t("status_running");
+      default:
+        return t("deleted_label");
+    }
+  };
+  const derivedTitle = (d: DerivedGeneration, status?: string) =>
+    [status, fmtTime(d.created_at), d.prompt ? `${d.prompt}${d.promptTruncated ? "…" : ""}` : ""]
+      .filter(Boolean)
+      .join(" · ");
+
   const refreshGeneration = () => {
     if (source !== "generated") return;
     api
@@ -493,8 +552,19 @@ export default function ImageViewer({
       if (img.id === current.id) {
         if (inTrail) popTrail();
         else close();
-      } else if (gen?.inputs?.some((input) => input.id === img.id)) {
-        setGen({ ...gen, inputs: gen.inputs.filter((input) => input.id !== img.id) });
+      } else {
+        if (gen?.inputs?.some((input) => input.id === img.id)) {
+          setGen({ ...gen, inputs: gen.inputs.filter((input) => input.id !== img.id) });
+        }
+        // A derived output stays listed, now marked as in the bin.
+        const deletedAt = new Date().toISOString();
+        setDerived((all) =>
+          all.map((d) =>
+            d.outputImage?.id === img.id
+              ? { ...d, outputImage: { ...d.outputImage, deleted_at: deletedAt } }
+              : d,
+          ),
+        );
       }
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
@@ -947,6 +1017,80 @@ export default function ImageViewer({
               </section>
             )}
 
+            {derivedTotal > 0 && (
+              <section className="viewer-section">
+                <h3>{t("viewer_derived", { n: derivedTotal })}</h3>
+                <div className="viewer-inputs viewer-derived">
+                  {derived.map((d, i) => {
+                    const out = d.outputImage;
+                    if (!out) {
+                      const status = derivedStatusLabel(d);
+                      const failed = d.status === "blocked" || d.status === "error";
+                      return (
+                        <span
+                          key={d.id}
+                          role="img"
+                          className={`viewer-derived-status ${d.status}`}
+                          aria-label={derivedTitle(d, status)}
+                          title={derivedTitle(d, status)}
+                        >
+                          <Icon
+                            name={d.status === "blocked" ? "shield" : failed ? "warning" : d.status === "running" ? "refresh" : "imageMissing"}
+                            size="sm"
+                          />
+                          <span className="small">{status}</span>
+                        </span>
+                      );
+                    }
+                    const inBin = !!out.deleted_at;
+                    const label = t("peek_derived", { n: i + 1 });
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        className={`viewer-input${inBin ? " in-bin" : ""}`}
+                        aria-label={`${displayName(out, t)} · ${t("viewer_open_derived")}${inBin ? ` · ${t("viewer_derived_in_bin")}` : ""}`}
+                        title={derivedTitle(d, inBin ? t("viewer_derived_in_bin") : undefined)}
+                        {...peekProps(out, inBin ? `${label} · ${t("viewer_derived_in_bin")}` : label)}
+                        onClick={() => {
+                          hidePeek();
+                          setTrail((all) => [...all, { img: out, label }]);
+                        }}
+                        onContextMenu={(event) =>
+                          openContextMenuFromEvent(event, (trigger, x, y) =>
+                            openViewerImageMenu(out, true, trigger, x, y),
+                          )
+                        }
+                        onKeyDown={(event) =>
+                          openContextMenuFromKeyboard(event, (trigger, x, y) =>
+                            openViewerImageMenu(out, true, trigger, x, y),
+                          )
+                        }
+                      >
+                        <img src={imgThumbUrl(out)} alt="" />
+                        {inBin && (
+                          <span className="viewer-derived-bin" aria-hidden="true">
+                            <Icon name="bin" size="sm" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {derived.length < derivedTotal && (
+                    <button
+                      type="button"
+                      className="viewer-derived-more"
+                      disabled={derivedLoading}
+                      title={t("viewer_derived_more")}
+                      onClick={() => void loadMoreDerived()}
+                    >
+                      +{derivedTotal - derived.length}
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
+
             {(current.tags ?? []).length > 0 && (
               <div className="viewer-phone-tags">
                 {(current.tags ?? []).map((tg) => <span key={tg.id}>{tg.name}</span>)}
@@ -1002,6 +1146,8 @@ export default function ImageViewer({
     </div>
   );
 }
+
+const DERIVED_PAGE = 24;
 
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;

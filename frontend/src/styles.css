@@ -1410,6 +1410,32 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 @media (hover: none) {
   .viewer-input-add { opacity: 1; width: 24px; height: 24px; border-radius: 12px; top: -7px; right: -7px; }
 }
+/* "Used in": later generations' outputs. Outputs in the bin stay openable but
+   are dimmed with a bin badge; records without an output show their status. */
+.viewer-input.in-bin img { opacity: 0.45; filter: grayscale(0.6); }
+.viewer-derived-bin {
+  position: absolute; right: 3px; bottom: 3px; width: 18px; height: 18px; border-radius: 9px;
+  background: rgba(15, 23, 42, 0.8); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.viewer-derived-bin .icon { width: 12px; height: 12px; }
+.viewer-derived-status {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  width: 48px; height: 48px; flex: 0 0 auto; padding: 0 2px; box-sizing: border-box;
+  border: 1px dashed var(--border); border-radius: var(--radius-md);
+  background: var(--panel-2); color: var(--muted-2); cursor: default;
+}
+.viewer-derived-status .small {
+  max-width: 100%; font-size: 10px; line-height: 1.1; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.viewer-derived-status.blocked { color: var(--warning); border-color: currentColor; }
+.viewer-derived-status.error { color: var(--danger); border-color: currentColor; }
+.viewer-derived-more {
+  width: 48px; height: 48px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--panel-2); color: var(--muted); font-size: var(--fs-sm); cursor: pointer;
+}
+.viewer-derived-more:disabled { opacity: 0.6; cursor: progress; }
 .viewer-back {
   display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px 0 8px;
   border: 0; border-radius: 15px; background: rgba(15, 23, 42, 0.72); color: #fff;
