@@ -9,9 +9,6 @@ name: UI check
 # it and will not build or publish unless it passes.
 
 on:
-  # TEMP (debugging only): remove before merging.
-  push:
-    branches: [ci/ui-check]
   workflow_dispatch:
   workflow_call:
     inputs:
