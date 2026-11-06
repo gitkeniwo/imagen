@@ -18,6 +18,7 @@ import {
   type ContextMenuSection,
   type ContextMenuShortcut,
   type ContextMenuTagSubmenu,
+  openContextMenuFromEvent,
   useContextMenu,
 } from "../components/ui/ContextMenu";
 import appIcon from "../assets/app-icon.png";
@@ -1044,7 +1045,17 @@ export default function Library({
                   </div>
                 )}
                 {!selectMode && (
-                  <div className="lib-actions">
+                  <div
+                    className="lib-actions"
+                    onContextMenu={(event) =>
+                      openContextMenuFromEvent(
+                        event,
+                        (trigger, x, y) => openImageMenu(img, trigger, x, y),
+                        event.currentTarget.parentElement?.querySelector<HTMLImageElement>("img") ??
+                          event.currentTarget,
+                      )
+                    }
+                  >
                     {picked ? (
                       <IconButton
                         variant="overlay"
