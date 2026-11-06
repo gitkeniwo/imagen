@@ -58,6 +58,31 @@ export interface Generation {
   output_index?: number;
 }
 
+// A later generation that used an image as one of its inputs (reverse
+// lineage, GET /api/images/{id}/derived). `prompt` is capped server-side.
+export interface DerivedGeneration {
+  id: number;
+  status: Generation["status"];
+  prompt: string;
+  promptTruncated: boolean;
+  model: string;
+  provider?: ProviderId;
+  source: "vertex" | "manual";
+  error_message: string | null;
+  raw_finish: string | null;
+  created_at: string;
+  // null for blocked / failed / running records and purged outputs; an output
+  // in the recycle bin keeps its row with `deleted_at` set.
+  outputImage: ImageRow | null;
+}
+
+export interface DerivedPage {
+  generations: DerivedGeneration[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export type HistoryResult = "success" | "blocked" | "error";
 
 export type MarkerColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
@@ -628,6 +653,9 @@ export const api = {
     if (params.withOutput) q.set("with_output", "true");
     if (params.uniqueOutputs) q.set("unique_outputs", "true");
     return handle(await fetch(`/api/generations?${q.toString()}`));
+  },
+  async derivedGenerations(imageId: number, offset = 0, limit = 24): Promise<DerivedPage> {
+    return handle(await fetch(`/api/images/${imageId}/derived?offset=${offset}&limit=${limit}`));
   },
   async generationByOutput(imageId: number): Promise<Generation | null> {
     return handle(await fetch(`/api/generations/by-output/${imageId}`));

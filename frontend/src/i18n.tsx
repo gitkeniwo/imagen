@@ -452,6 +452,11 @@ const zh: Dict = {
   viewer_back_to_original: "返回原图",
   viewer_crumb_original: "原图",
   viewer_trail: "查看路径",
+  viewer_derived: "被用于 · {n}",
+  peek_derived: "后续 {n}",
+  viewer_open_derived: "在查看器中打开这次生成的结果",
+  viewer_derived_in_bin: "在回收站中",
+  viewer_derived_more: "加载更多",
   note_no_output: "这是一条备注——没有输出图片。",
 
   skip_if_preceding_succeeds: "自动跳过",
@@ -1145,6 +1150,11 @@ const en: Dict = {
   viewer_back_to_original: "Back to original",
   viewer_crumb_original: "Original",
   viewer_trail: "Viewing path",
+  viewer_derived: "Used in · {n}",
+  peek_derived: "Derived {n}",
+  viewer_open_derived: "Open this generation's result in the viewer",
+  viewer_derived_in_bin: "In the recycle bin",
+  viewer_derived_more: "Load more",
   note_no_output: "This is a note — no output image.",
 
   skip_if_preceding_succeeds: "Auto-skip",

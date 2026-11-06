@@ -304,7 +304,24 @@ for base in "$LOOP" "$LAN"; do
     "$(curl -sS --max-time 20 -o "$out" -w '%{http_code}' ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} \
       "$base/api/images/lookup?ids=$IMAGE_ID")"
   assert_no_image_paths "$out" "$base/api/images/lookup" "$DATA_REAL"
+  # Reverse lineage is an ordinary image read: same access as /lookup for
+  # owner and member, and its output rows go through the public serializer.
+  DERIVED_ID="$(python3 -c 'import json,sys
+for g in json.load(open(sys.argv[1]))["generations"]:
+    if g.get("inputs") and g.get("outputImage"):
+        print(g["inputs"][0]["id"]); break' "$TMP/paths-generations.json")"
+  [ -n "$DERIVED_ID" ] || die "seeded library has no generation with inputs"
+  out="$TMP/paths-derived.json"
+  expect "image paths: GET $base/api/images/$DERIVED_ID/derived" 200 \
+    "$(curl -sS --max-time 20 -o "$out" -w '%{http_code}' ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} \
+      "$base/api/images/$DERIVED_ID/derived")"
+  python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+assert d["total"] >= 1 and any(g["outputImage"] for g in d["generations"]), d' "$out" \
+    || die "derived list for image $DERIVED_ID is empty"
+  assert_no_image_paths "$out" "$base/api/images/$DERIVED_ID/derived" "$DATA_REAL"
 done
+expect "anonymous LAN derived denied" 401 "$(code "$LAN/api/images/$DERIVED_ID/derived")"
 say "owner and LAN image/generation/draft responses omit file_path and thumb_path"
 
 head2 "library switch request lifecycle"
