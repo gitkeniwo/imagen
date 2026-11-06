@@ -25,8 +25,7 @@ import { useBackLayer } from "../backStack";
 
 const PRICES_KEY = "imagen-cost-prices";
 const PERIODS: StatPeriod[] = ["day", "week", "month", "year", "all"];
-// Stacked from the baseline up; whatever is left (aborted …) sits on top.
-const STACK = ["success", "blocked", "error"] as const;
+const STACK = ["success", "blocked", "error", "aborted", "other"] as const;
 
 interface PriceRow {
   key: string;
@@ -185,7 +184,16 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
   const money = (v: number) => `${currency}${v.toFixed(2)}`;
 
   const ok = p?.by_status.success ?? 0;
-  const successRate = p && p.total > 0 ? Math.round((ok / p.total) * 100) : 0;
+  const blocked = p?.by_status.blocked ?? 0;
+  const failed = p?.by_status.error ?? 0;
+  const cancelled = p?.by_status.aborted ?? 0;
+  // User cancellations are neither attempts that failed nor part of the
+  // success-rate denominator.
+  const finished = ok + blocked + failed;
+  const successRate = finished > 0 ? Math.round((ok / finished) * 100) : 0;
+  const chartStatuses = STACK.filter(
+    (s) => s === "success" || s === "blocked" || s === "error" || (p?.by_status[s] ?? 0) > 0,
+  );
   const chartPoints = p?.chart ?? [];
   const chartMax = Math.max(1, ...chartPoints.map((d) => d.total));
   const hovered = hover !== null ? chartPoints[hover] : undefined;
@@ -258,7 +266,9 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
               <Kpi
                 label={t("stat_success_rate")}
                 value={`${successRate}%`}
-                sub={t("usage_kpi_fail_sub", { b: p.by_status.blocked ?? 0, e: p.by_status.error ?? 0 })}
+                sub={cancelled > 0
+                  ? t("usage_kpi_fail_sub_cancelled", { b: blocked, e: failed, c: cancelled })
+                  : t("usage_kpi_fail_sub", { b: blocked, e: failed })}
               />
               <Kpi
                 label={t("usage_kpi_library")}
@@ -280,17 +290,16 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
               <div className="usage-card-head">
                 <h4 className="m-0">{t(`usage_series_${p.chart_unit}`)}</h4>
                 <span className="spacer" />
-                {STACK.map((s) => (
+                {chartStatuses.map((s) => (
                   <span key={s} className="usage-legend">
                     <i className={`usage-swatch ${s}`} />
-                    {t(`status_${s}`)}
+                    {s === "other" ? t("stat_other") : t(`status_${s}`)}
                   </span>
                 ))}
               </div>
               <div className="usage-chart-wrap" onMouseLeave={() => setHover(null)}>
                 <div className="usage-chart">
                   {chartPoints.map((d, i) => {
-                    const rest = d.total - d.success - d.blocked - d.error;
                     return (
                       <div
                         key={`${d.label}-${i}`}
@@ -302,7 +311,8 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
                           className={`usage-stack${d.total ? "" : " empty"}`}
                           style={{ height: d.total ? `${Math.max(3, (d.total / chartMax) * 88)}%` : undefined }}
                         >
-                          {rest > 0 && <span className="other" style={{ flexGrow: rest }} />}
+                          <span className="other" style={{ flexGrow: d.other }} />
+                          <span className="aborted" style={{ flexGrow: d.aborted }} />
                           <span className="error" style={{ flexGrow: d.error }} />
                           <span className="blocked" style={{ flexGrow: d.blocked }} />
                           <span className="success" style={{ flexGrow: d.success }} />
@@ -331,9 +341,12 @@ export default function UsageDashboard({ onClose }: { onClose: () => void }) {
                       <span>{t("stat_total")}</span>
                       <b>{hovered.total}</b>
                     </div>
-                    {STACK.filter((s) => hovered[s] > 0).map((s) => (
+                    {chartStatuses.filter((s) => hovered[s] > 0).map((s) => (
                       <div key={s} className="daily-tip-row">
-                        <span><i className={`usage-swatch ${s}`} /> {t(`status_${s}`)}</span>
+                        <span>
+                          <i className={`usage-swatch ${s}`} />{" "}
+                          {s === "other" ? t("stat_other") : t(`status_${s}`)}
+                        </span>
                         <b>{hovered[s]}</b>
                       </div>
                     ))}

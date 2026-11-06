@@ -46,17 +46,23 @@ def _series_from(rows, ordered_keys, keyfn):
 
     Each bucket carries its own ``cost_basis`` (same shape as the period-level
     one) so the chart tooltip can price a single day/hour/month with the user's
-    unit prices without a second request, plus blocked/error counts for the
-    stacked bars (anything else, e.g. aborted, is total minus the three).
+    unit prices without a second request, plus success/blocked/error/aborted
+    counts for the stacked bars. ``other`` keeps every bucket's segments equal
+    to ``total`` if a future status is introduced.
     """
-    agg = {k: {"total": 0, "success": 0, "blocked": 0, "error": 0} for k, _ in ordered_keys}
+    agg = {
+        k: {"total": 0, "success": 0, "blocked": 0, "error": 0, "aborted": 0, "other": 0}
+        for k, _ in ordered_keys
+    }
     cost = {k: {} for k, _ in ordered_keys}
     for dt, st, model, res, _rf, _msg, provider in rows:
         k = keyfn(dt)
         if k in agg:
             agg[k]["total"] += 1
-            if st in ("success", "blocked", "error"):
+            if st in ("success", "blocked", "error", "aborted"):
                 agg[k][st] += 1
+            else:
+                agg[k]["other"] += 1
             if st == "success":
                 ck = (provider, model, res)
                 cost[k][ck] = cost[k].get(ck, 0) + 1
