@@ -23,6 +23,13 @@ if ! (cd "$ROOT/backend" && uv sync --frozen); then
   exit 1
 fi
 
+# check_roles (and others) serve frontend/dist; build it before any check.
+if ! (cd "$ROOT/frontend" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build); then
+  echo "FAIL: frontend build" >&2
+  printf '\nRELEASE CHECK FAIL\n'
+  exit 1
+fi
+
 CHECKS=(check_frontend check_roles check_providers check_generate_stream smoke_backend check_ui)
 RESULTS=()
 FAILED=0
