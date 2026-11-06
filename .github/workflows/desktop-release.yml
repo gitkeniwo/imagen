@@ -38,7 +38,15 @@ env:
   HOMEBREW_NO_INSTALL_CLEANUP: '1'
 
 jobs:
+  # Pre-release UI/backend checks. Nothing below runs unless they pass: no
+  # build, no GitHub Release, no Homebrew tap update.
+  ui-check:
+    uses: ./.github/workflows/ui-check.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
+
   release:
+    needs: ui-check
     # Apple silicon runner; the app is arm64-only.
     runs-on: macos-15
     timeout-minutes: 90
