@@ -182,6 +182,22 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
     [clearHighlight],
   );
 
+  const closeSubmenu = useCallback(
+    (restoreFocus = false) => {
+      const current = submenu;
+      setSubmenu(null);
+      setSubPos(null);
+      setCreatingTag(false);
+      setNewTagName("");
+      if (restoreFocus && current) {
+        window.requestAnimationFrame(() =>
+          rowRefs.current.get(current.id)?.focus({ preventScroll: true }),
+        );
+      }
+    },
+    [submenu],
+  );
+
   const open = useCallback(
     (config: ContextMenuConfig) => {
       if (menuRef.current) close(false);
@@ -226,7 +242,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
-      close(true);
+      if (submenu) closeSubmenu(true);
+      else close(true);
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
@@ -240,7 +257,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("blur", onBlur);
     };
-  }, [menu?.key, close]);
+  }, [menu?.key, submenu, close, closeSubmenu]);
 
   useEffect(() => {
     if (!menu?.promptLoader) return;
@@ -363,16 +380,18 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
   const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     const inTextInput = target.matches("input, textarea, [contenteditable='true']");
+    // Menu shortcuts are local to the menu. Keep every key away from
+    // page-level shortcuts, including while typing in the new-tag field.
+    event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
-      event.stopPropagation();
-      close(true);
+      if (submenu) closeSubmenu(true);
+      else close(true);
       return;
     }
     if (inTextInput) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      event.stopPropagation();
       const scope = target.closest(".context-menu-submenu")
         ? submenuRef.current
         : panelRef.current;
@@ -380,27 +399,19 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
       focusRelative(scope, event.key === "ArrowDown" ? 1 : -1);
       return;
     }
-    if (event.key === "ArrowRight") {
-      if (submenu) return;
-      const inMain = target.closest(".context-menu-panel");
-      if (!inMain) return;
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      if (event.key === "ArrowLeft") {
+        if (submenu) closeSubmenu(true);
+        return;
+      }
+      if (submenu || !target.closest(".context-menu-panel")) return;
       const row = target.closest<HTMLButtonElement>("[data-context-item]");
       if (!row) return;
       const id = row.dataset.contextItem;
       if (!id) return;
       const item = displaySections.flat().find((entry) => itemId(entry) === id);
-      if (!item?.submenu) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openSubmenu(id, item, row, true);
-      return;
-    }
-    if (event.key === "ArrowLeft" && submenu) {
-      event.preventDefault();
-      event.stopPropagation();
-      const parent = rowRefs.current.get(submenu.id);
-      setSubmenu(null);
-      parent?.focus({ preventScroll: true });
+      if (item?.submenu) openSubmenu(id, item, row, true);
       return;
     }
     if (event.key === "Tab") {
