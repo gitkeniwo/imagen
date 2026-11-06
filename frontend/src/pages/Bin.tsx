@@ -6,6 +6,8 @@ import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import { Button } from "../components/ui/Button";
 import { displayName } from "../displayName";
+import { downloadImage } from "../components/GenerationCard";
+import { useContextMenu } from "../components/ui/ContextMenu";
 
 const PAGE_SIZE = 60;
 
@@ -22,6 +24,7 @@ export default function Bin({
   const { t } = useI18n();
   const toast = useToast();
   const askConfirm = useConfirm();
+  const { open: openContextMenu } = useContextMenu();
   const [images, setImages] = useState<ImageRow[]>([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -70,6 +73,26 @@ export default function Bin({
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
+  };
+
+  // Bin images can only be viewed, downloaded, restored or purged; no
+  // reference, favorite or tag actions while they are soft-deleted.
+  const openBinMenu = (img: ImageRow, trigger: HTMLElement, x: number, y: number) => {
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      shortcuts: [
+        { icon: "view", label: t("open_viewer"), onSelect: () => onOpenViewer(img, images) },
+        { icon: "download", label: t("download"), onSelect: () => downloadImage(img) },
+      ],
+      sections: [
+        [{ icon: "restore", label: t("restore"), onSelect: () => restore(img) }],
+        [{ icon: "delete", label: t("delete_forever"), danger: true, onSelect: () => purge(img) }],
+      ],
+      ariaLabel: t("image_menu"),
+    });
   };
 
   const emptyBin = async () => {
@@ -143,7 +166,10 @@ export default function Bin({
                   alt={displayName(img, t)}
                   title={t("open_viewer")}
                   onClick={() => onOpenViewer(img, images)}
-                  {...pressable(() => onOpenViewer(img, images))}
+                  {...pressable(
+                    () => onOpenViewer(img, images),
+                    (trigger, x, y) => openBinMenu(img, trigger, x, y),
+                  )}
                 />
               </div>
               <div className="meta bin-meta">

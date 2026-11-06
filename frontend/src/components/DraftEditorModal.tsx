@@ -17,6 +17,11 @@ import OptionBar from "./OptionBar";
 import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
 import Icon from "./ui/Icon";
+import ImageViewer from "./ImageViewer";
+import { downloadImage } from "./GenerationCard";
+import { useToast } from "./Toast";
+import { pressable } from "../a11y";
+import { useContextMenu } from "./ui/ContextMenu";
 import { Button, IconButton } from "./ui/Button";
 import { useBackLayer } from "../backStack";
 import { displayName } from "../displayName";
@@ -33,6 +38,9 @@ export default function DraftEditorModal({
   onSaved: (draft: Draft) => void;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
+  const { open: openContextMenu } = useContextMenu();
+  const [viewing, setViewing] = useState<ImageRow | null>(null);
   const [prompt, setPrompt] = useState(existing?.prompt ?? seed?.prompt ?? "");
   const { enabled: enabledProviders, spec: specOf } = useProviders();
   // A draft keeps its provider even if that provider is off; it can be
@@ -75,6 +83,49 @@ export default function DraftEditorModal({
       const [item] = next.splice(from, 1);
       next.splice(to, 0, item);
       return next;
+    });
+  };
+
+  const removeOutput = (id: number) => setOutputs((prev) => prev.filter((x) => x.id !== id));
+
+  // Output attachments only detach from the draft; the image stays in the
+  // library, so removing needs no confirmation.
+  const openOutputMenu = (img: ImageRow, trigger: HTMLElement, x: number, y: number) => {
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      shortcuts: [
+        { icon: "view", label: t("open_viewer"), onSelect: () => setViewing(img) },
+        {
+          icon: "favorite",
+          label: img.starred ? t("favorited") : t("favorite"),
+          ariaLabel: img.starred ? t("unfavorite") : t("favorite"),
+          selected: !!img.starred,
+          filled: !!img.starred,
+          onSelect: async () => {
+            const starred = img.starred ? 0 : 1;
+            try {
+              await api.patchImage(img.id, { starred: !!starred });
+              setOutputs((prev) => prev.map((x) => (x.id === img.id ? { ...x, starred } : x)));
+            } catch (e) {
+              toast(t("op_failed", { msg: (e as Error).message }));
+            }
+          },
+        },
+        { icon: "download", label: t("download"), onSelect: () => downloadImage(img) },
+      ],
+      sections: [
+        [
+          {
+            icon: "removeFromRefs",
+            label: t("remove_from_outputs"),
+            onSelect: () => removeOutput(img.id),
+          },
+        ],
+      ],
+      ariaLabel: t("image_menu"),
     });
   };
 
@@ -160,13 +211,20 @@ export default function DraftEditorModal({
           <div className="tray dropzone-wrap">
             {outputs.map((img) => (
               <div className="chip" key={img.id} title={displayName(img, t)}>
-                <img src={imgThumbUrl(img)} alt={displayName(img, t)} />
+                <img
+                  src={imgThumbUrl(img)}
+                  alt={displayName(img, t)}
+                  {...pressable(
+                    () => setViewing(img),
+                    (trigger, x, y) => openOutputMenu(img, trigger, x, y),
+                  )}
+                />
                 <IconButton
                   className="x"
                   variant="overlay"
                   icon="close"
                   label={t("remove_ref")}
-                  onClick={() => setOutputs((prev) => prev.filter((x) => x.id !== img.id))}
+                  onClick={() => removeOutput(img.id)}
                 />
               </div>
             ))}
@@ -240,6 +298,19 @@ export default function DraftEditorModal({
           </button>
         </div>
       </div>
+
+      {viewing && (
+        <ImageViewer
+          nested
+          image={viewing}
+          list={[viewing]}
+          onClose={() => setViewing(null)}
+          onAddToTray={(img) => addUnique(setInputs, img)}
+          trayIds={inputs.map((img) => img.id)}
+          onRemoveFromTray={(img) => setInputs((prev) => prev.filter((item) => item.id !== img.id))}
+          onTagsChanged={() => {}}
+        />
+      )}
 
       {picker && (
         <LibraryPickerModal

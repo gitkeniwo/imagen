@@ -17,6 +17,10 @@ import ReferenceTray from "./ReferenceTray";
 import TagPicker from "./TagPicker";
 import { isRefDrag, readImageDrag } from "../imageDrag";
 import Icon from "./ui/Icon";
+import ImageViewer from "./ImageViewer";
+import { downloadImage } from "./GenerationCard";
+import { pressable } from "../a11y";
+import { useContextMenu } from "./ui/ContextMenu";
 import { Button, IconButton } from "./ui/Button";
 import Segmented from "./ui/Segmented";
 import { useBackLayer } from "../backStack";
@@ -63,6 +67,8 @@ export default function AddHistoryModal({
   aboveViewer?: boolean;
 }) {
   const { t } = useI18n();
+  const { open: openContextMenu } = useContextMenu();
+  const [viewing, setViewing] = useState<ImageRow | null>(null);
   // Source record to pre-fill from: an explicit edit target, else a duplicate.
   // createdAt is only carried over in true edit mode, not when duplicating.
   const src = existing ?? duplicate;
@@ -108,6 +114,28 @@ export default function AddHistoryModal({
   useBackLayer(true, onClose);
 
   const isCreate = !existing;
+
+  // Picked output images: view, download or deselect. Deselecting only drops
+  // the pick from this form, so it is neither destructive nor confirmed.
+  const openOutputMenu = (img: ImageRow, trigger: HTMLElement, x: number, y: number) => {
+    openContextMenu({
+      x,
+      y,
+      trigger,
+      images: [img],
+      shortcuts: [
+        { icon: "view", label: t("open_viewer"), onSelect: () => setViewing(img) },
+        {
+          icon: "removeFromRefs",
+          label: t("unselect_image"),
+          onSelect: () => removeOutput(img.id),
+        },
+        { icon: "download", label: t("download"), onSelect: () => downloadImage(img) },
+      ],
+      sections: [],
+      ariaLabel: t("image_menu"),
+    });
+  };
 
   const addInputImage = (img: ImageRow) =>
     setInputImages((prev) => (prev.some((i) => i.id === img.id) ? prev : [...prev, img]));
@@ -296,7 +324,15 @@ export default function AddHistoryModal({
               >
                 {outputImages.map((im) => (
                   <div className="chip" key={im.id} title={displayName(im, t)}>
-                    <img src={imgThumbUrl(im)} alt={displayName(im, t)} draggable={false} />
+                    <img
+                      src={imgThumbUrl(im)}
+                      alt={displayName(im, t)}
+                      draggable={false}
+                      {...pressable(
+                        () => setViewing(im),
+                        (trigger, x, y) => openOutputMenu(im, trigger, x, y),
+                      )}
+                    />
                     <IconButton
                       className="x"
                       variant="overlay"
@@ -479,6 +515,21 @@ export default function AddHistoryModal({
           </Button>
         </div>
       </div>
+      {viewing && (
+        <ImageViewer
+          nested
+          image={viewing}
+          list={[viewing]}
+          onClose={() => setViewing(null)}
+          onAddToTray={addInputImage}
+          trayIds={inputImages.map((img) => img.id)}
+          onRemoveFromTray={(img) =>
+            setInputImages((prev) => prev.filter((item) => item.id !== img.id))
+          }
+          onTagsChanged={() => {}}
+        />
+      )}
+
       {picker && (
         <LibraryPickerModal
           mode={picker === "input" || (picker === "output" && isCreate) ? "multi" : "single"}

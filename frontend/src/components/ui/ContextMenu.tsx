@@ -224,6 +224,26 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
     [clearHighlight],
   );
 
+  // Fallback for images that have no menu of their own (minimap, hover peek,
+  // logos, ...). React handlers run at the root before this document listener,
+  // so a handled image already has defaultPrevented set and is left alone.
+  // Without it WKWebView shows the system image menu, whose "Download Image"
+  // does nothing. Editable fields and selectable text keep the system menu.
+  useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      if (event.defaultPrevented) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) {
+        return;
+      }
+      if (!target.closest("img")) return;
+      event.preventDefault();
+    };
+    document.addEventListener("contextmenu", onContextMenu);
+    return () => document.removeEventListener("contextmenu", onContextMenu);
+  }, []);
+
   useEffect(() => {
     if (!menu) return;
     const onPointerDown = (event: PointerEvent) => {

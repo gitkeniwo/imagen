@@ -399,6 +399,9 @@ const zh: Dict = {
   undo: "撤销",
   confirm_delete_draft_q: "删除这个草稿？图片不会被删除。",
   draft_outputs_n: "{n} 个附件",
+  remove_from_outputs: "从输出附件中移除",
+  unselect_image: "取消选中",
+  select_image: "选中",
 
   // Backend reason codes (block reasons + HTTP statuses)
   reason_SAFETY: "被安全策略拦截（SAFETY）。",
@@ -1099,6 +1102,9 @@ const en: Dict = {
   undo: "Undo",
   confirm_delete_draft_q: "Delete this draft? Its images are kept.",
   draft_outputs_n: "{n} attachments",
+  remove_from_outputs: "Remove from attachments",
+  unselect_image: "Deselect",
+  select_image: "Select",
 
   reason_SAFETY: "Blocked by the safety policy (SAFETY).",
   reason_IMAGE_SAFETY: "Image blocked by the safety policy (IMAGE_SAFETY).",

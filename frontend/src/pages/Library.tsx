@@ -506,12 +506,20 @@ export default function Library({
         label: t("open_viewer"),
         onSelect: () => openInViewer(img),
       },
-      {
-        icon: inTray(img) ? "removeFromRefs" : "addToRefs",
-        label: inTray(img) ? t("shortcut_remove_ref") : t("shortcut_input"),
-        ariaLabel: inTray(img) ? t("remove_ref") : t("add_to_input"),
-        onSelect: () => toggleTray(img),
-      },
+      picker
+        ? {
+            // Picker (draft / history forms): the pick is a selection, not a
+            // reference, and its state lives in `picker`, not in `trayIds`.
+            icon: pickIndex(img.id) >= 0 ? "removeFromRefs" : "check",
+            label: pickIndex(img.id) >= 0 ? t("unselect_image") : t("select_image"),
+            onSelect: () => togglePick(img),
+          }
+        : {
+            icon: inTray(img) ? "removeFromRefs" : "addToRefs",
+            label: inTray(img) ? t("shortcut_remove_ref") : t("shortcut_input"),
+            ariaLabel: inTray(img) ? t("remove_ref") : t("add_to_input"),
+            onSelect: () => toggleTray(img),
+          },
       {
         icon: "favorite",
         label: img.starred ? t("favorited") : t("favorite"),
