@@ -22,7 +22,12 @@ test("Shift+F10 opens the menu, arrows cycle, → / ← enter and leave the tag 
   page,
 }) => {
   const tile = libTile(page, "landscape-alps.jpg");
+  // Scroll first: the menu closes on scroll, and focus() may scroll the grid.
+  await tile.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(200);
   await tile.focus();
+  await expect(tile).toBeFocused();
+  await page.waitForTimeout(200);
   await page.keyboard.press("Shift+F10");
   await expect(contextMenu(page)).toBeVisible();
   // Focus starts on the first item.
