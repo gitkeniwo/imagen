@@ -70,6 +70,8 @@
   --chart-ok: #059669;
   --chart-blocked: #d97706;
   --chart-error: #f87171;
+  --chart-aborted: #94a3b8;
+  --chart-other: #cbd5e1;
 
   /* Scale tokens — use these instead of raw px for type, spacing and corners. */
   --fs-xs: 11px;
@@ -174,6 +176,8 @@
     --chart-ok: #34d399;
     --chart-blocked: #fbbf24;
     --chart-error: #f87171;
+    --chart-aborted: #94a3b8;
+    --chart-other: #64748b;
   }
 }
 
@@ -1573,7 +1577,8 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
 .usage-swatch.success, .usage-stack .success { background: var(--chart-ok); }
 .usage-swatch.blocked, .usage-stack .blocked { background: var(--chart-blocked); }
 .usage-swatch.error, .usage-stack .error { background: var(--chart-error); }
-.usage-stack .other { background: var(--badge-pending-border); }
+.usage-swatch.aborted, .usage-stack .aborted { background: var(--chart-aborted); }
+.usage-swatch.other, .usage-stack .other { background: var(--chart-other); }
 .usage-chart-wrap { position: relative; }
 .usage-chart {
   height: 250px; display: flex; align-items: flex-end; gap: clamp(2px, 1.2%, 14px);

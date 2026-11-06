@@ -323,15 +323,17 @@ BACKEND_PID=$!
 disown "$BACKEND_PID" 2>/dev/null || true
 wait_health "$FAKE_PORT" || { cat "$TMP/fake.log" >&2; die "fake backend did not become healthy"; }
 
-"$PYTHON" - "$FAKE_PORT" <<'PY'
+"$PYTHON" - "$FAKE_PORT" "$FDATA/app.db" <<'PY'
 import json
 import sqlite3
 import sys
 import time
+from datetime import datetime, timezone
 
 import httpx
 
 base = f"http://127.0.0.1:{sys.argv[1]}"
+db_path = sys.argv[2]
 c = httpx.Client(base_url=base, timeout=30)
 
 
@@ -434,8 +436,25 @@ if c.post("/api/generations/manual", json={"model": "x", "provider": "nope"}).st
 c.put("/api/providers/vertex", json={"enabled": True}).raise_for_status()
 ok("manual history stores provider, even for a provider that is off")
 
+# A cancelled request is kept as an aborted row since the duration/attempts
+# change. Insert one directly so stats coverage does not depend on timing a
+# cooperative cancel against the fake provider.
+conn = sqlite3.connect(db_path)
+conn.execute(
+    """INSERT INTO generations
+       (prompt, model, status, created_at, source, provider, raw_finish)
+       VALUES ('stats cancelled', 'gemini-3-pro-image', 'aborted', ?,
+               'vertex', 'gemini', 'ABORTED')""",
+    (datetime.now(timezone.utc).isoformat(),),
+)
+conn.commit()
+conn.close()
+
 # stats
-s = c.get("/api/stats").json()["periods"]["all"]
+periods = c.get("/api/stats").json()["periods"]
+s = periods["all"]
+if s["by_status"].get("aborted") != 1:
+    fail(f"stats aborted count: {s['by_status']}")
 if s["by_provider"].get("gemini", 0) < 3 or s["by_provider"].get("vertex", 0) < 1:
     fail(f"by_provider: {s['by_provider']}")
 rows = s["cost_basis"]
@@ -445,7 +464,31 @@ if not any(r["provider"] == "gemini" and r["resolution"] == "2K" for r in rows):
     fail(f"no gemini 2K cost row: {rows}")
 if any("provider" not in r for b in s["chart"] for r in b["cost_basis"]):
     fail("chart cost_basis lacks provider")
-ok(f"stats: by_provider={s['by_provider']}, cost rows keyed by provider")
+for name, period in periods.items():
+    success = period["by_status"].get("success", 0)
+    blocked = period["by_status"].get("blocked", 0)
+    failed = period["by_status"].get("error", 0)
+    aborted = period["by_status"].get("aborted", 0)
+    if period["total"] != success + blocked + failed + aborted:
+        fail(f"stats {name}: total/status mismatch: {period['by_status']}")
+    if period["total"] - aborted != success + blocked + failed:
+        fail(f"stats {name}: success-rate denominator would include aborted")
+    if sum(row["count"] for row in period["cost_basis"]) != success:
+        fail(f"stats {name}: cost basis is not success-only")
+    if sum(bucket["aborted"] for bucket in period["chart"]) != aborted:
+        fail(f"stats {name}: chart does not account for aborted")
+    for bucket in period["chart"]:
+        if bucket["total"] != (
+            bucket["success"] + bucket["blocked"] + bucket["error"]
+            + bucket["aborted"] + bucket["other"]
+        ):
+            fail(f"stats {name}: chart bucket mismatch: {bucket}")
+    if any(f["code"] in ("ABORTED", "CLIENT_DISCONNECTED") for f in period["failures"]):
+        fail(f"stats {name}: cancelled request appears in failure reasons")
+ok(
+    f"stats: aborted={s['by_status']['aborted']}, "
+    "success-rate denominator excludes cancelled across all periods"
+)
 PY
 stop_backend
 
