@@ -203,7 +203,7 @@ export default function Library({
   const remove = async (img: ImageRow) => {
     const ok = await askConfirm({
       message: t("confirm_delete"),
-      confirmLabel: t("delete"),
+      confirmLabel: t("move_to_bin"),
       danger: true,
     });
     if (!ok) return;
@@ -341,15 +341,21 @@ export default function Library({
     else addToTray(img);
   };
 
-  const tagOptions = (imgs: ImageRow[]) =>
-    tags.map((tag) => ({
-      id: tag.id,
-      name: tag.name,
-      count: tag.count,
-      checked:
-        imgs.length > 0 &&
-        imgs.every((img) => (img.tags ?? []).some((item) => item.id === tag.id)),
-    }));
+  const tagOptions = (imgs: ImageRow[], onlyApplied = false) =>
+    tags
+      .filter(
+        (tag) =>
+          !onlyApplied ||
+          imgs.some((img) => (img.tags ?? []).some((item) => item.id === tag.id)),
+      )
+      .map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        count: tag.count,
+        checked:
+          imgs.length > 0 &&
+          imgs.every((img) => (img.tags ?? []).some((item) => item.id === tag.id)),
+      }));
 
   const toggleImageTag = async (img: ImageRow, tagId: number) => {
     const on = (img.tags ?? []).some((tag) => tag.id === tagId);
@@ -396,7 +402,7 @@ export default function Library({
     allowCreate = false,
   ): ContextMenuTagSubmenu => ({
     kind: "tags",
-    options: tagOptions(imgs),
+    options: tagOptions(imgs, op === "remove"),
     onToggle: (tagId) => applyBatchTag(imgs.map((img) => img.id), tagId, op),
     ...(allowCreate
       ? {
