@@ -1,0 +1,16 @@
+{
+  "name": "imagen-e2e",
+  "private": true,
+  "description": "Pre-release UI checks (Playwright). Not part of the frontend bundle.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.3"
+  }
+}
