@@ -154,9 +154,8 @@ test("a touch contextmenu does not open the menu", async ({ page }) => {
 
 test("menu near the bottom-right corner flips up-left and keeps 8px from the edges", async ({ page }) => {
   const size = page.viewportSize()!;
-  // Open from the keyboard handler's coordinates by right-clicking the corner of
-  // a tile placed there: use the composer's reference area is not an image, so
-  // dispatch a contextmenu at the bottom-right of a real tile instead.
+  // No thumbnail sits in the corner, so send a tile's contextmenu event with
+  // corner coordinates: the menu opens at the event's clientX/clientY.
   const tile = libTile(page, "landscape-alps.jpg");
   await tile.evaluate(
     (el, { w, h }) => {
