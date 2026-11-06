@@ -249,6 +249,8 @@ export interface SeriesPoint {
   success: number;
   blocked: number;
   error: number;
+  aborted: number;
+  other: number;
   // Per-bucket success counts, so the chart tooltip can price a single bar.
   cost_basis: CostBasisRow[];
 }
