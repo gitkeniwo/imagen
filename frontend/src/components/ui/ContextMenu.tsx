@@ -104,12 +104,13 @@ export function useContextMenu() {
 export function openContextMenuFromEvent(
   event: ReactMouseEvent<HTMLElement>,
   open: (trigger: HTMLElement, x: number, y: number) => void,
+  trigger: HTMLElement = event.currentTarget,
 ) {
   event.preventDefault();
   const pointerType = (event.nativeEvent as PointerEvent).pointerType ?? "";
   const coarse = window.matchMedia("(pointer: coarse)").matches;
   if (pointerType !== "mouse" && (pointerType || coarse)) return;
-  open(event.currentTarget, event.clientX, event.clientY);
+  open(trigger, event.clientX, event.clientY);
 }
 
 export function openContextMenuFromKeyboard(
