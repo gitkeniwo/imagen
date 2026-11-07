@@ -115,6 +115,22 @@ CREATE TABLE IF NOT EXISTS draft_tags (
     tag_id   INTEGER REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (draft_id, tag_id)
 );
+
+-- Two-level grouping of one line of work: a 'theme' groups 'series' rows,
+-- and generations/drafts point at a series (generations.series_id). Deleting
+-- a theme moves its series to "No theme"; deleting a series only clears the
+-- reference on its records. Kind rules are enforced by the triggers below.
+CREATE TABLE IF NOT EXISTS series (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind           TEXT NOT NULL CHECK (kind IN ('theme', 'series')),
+    parent_id      INTEGER REFERENCES series(id) ON DELETE SET NULL,
+    name           TEXT NOT NULL,
+    color          TEXT,
+    best_image_id  INTEGER REFERENCES images(id) ON DELETE SET NULL,
+    archived       INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
 """
 
 
@@ -147,6 +163,48 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_generations_client_task_id
 CREATE INDEX IF NOT EXISTS idx_drafts_order ON drafts(pinned DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_draft_images_image_id ON draft_images(image_id);
 CREATE INDEX IF NOT EXISTS idx_draft_tags_tag_id ON draft_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_generations_series_id ON generations(series_id);
+CREATE INDEX IF NOT EXISTS idx_drafts_series_id ON drafts(series_id);
+CREATE INDEX IF NOT EXISTS idx_series_parent_id ON series(parent_id);
+-- Names are unique per parent (case-insensitive). Themes and unthemed series
+-- both have a NULL parent but live in separate namespaces, hence `kind`.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_series_unique_name
+    ON series(kind, COALESCE(parent_id, 0), name COLLATE NOCASE);
+
+-- Two levels only: a theme has no parent; a series' parent is a theme.
+CREATE TRIGGER IF NOT EXISTS trg_series_parent_insert
+BEFORE INSERT ON series
+WHEN NEW.parent_id IS NOT NULL AND (
+    NEW.kind = 'theme'
+    OR (SELECT kind FROM series WHERE id = NEW.parent_id) IS NOT 'theme')
+BEGIN SELECT RAISE(ABORT, 'series parent must be a theme'); END;
+CREATE TRIGGER IF NOT EXISTS trg_series_parent_update
+BEFORE UPDATE OF parent_id, kind ON series
+WHEN NEW.parent_id IS NOT NULL AND (
+    NEW.kind = 'theme'
+    OR (SELECT kind FROM series WHERE id = NEW.parent_id) IS NOT 'theme')
+BEGIN SELECT RAISE(ABORT, 'series parent must be a theme'); END;
+-- Records belong to a series (leaf), never to a theme.
+CREATE TRIGGER IF NOT EXISTS trg_generations_series_insert
+BEFORE INSERT ON generations
+WHEN NEW.series_id IS NOT NULL
+    AND (SELECT kind FROM series WHERE id = NEW.series_id) IS NOT 'series'
+BEGIN SELECT RAISE(ABORT, 'series_id must point at a series'); END;
+CREATE TRIGGER IF NOT EXISTS trg_generations_series_update
+BEFORE UPDATE OF series_id ON generations
+WHEN NEW.series_id IS NOT NULL
+    AND (SELECT kind FROM series WHERE id = NEW.series_id) IS NOT 'series'
+BEGIN SELECT RAISE(ABORT, 'series_id must point at a series'); END;
+CREATE TRIGGER IF NOT EXISTS trg_drafts_series_insert
+BEFORE INSERT ON drafts
+WHEN NEW.series_id IS NOT NULL
+    AND (SELECT kind FROM series WHERE id = NEW.series_id) IS NOT 'series'
+BEGIN SELECT RAISE(ABORT, 'series_id must point at a series'); END;
+CREATE TRIGGER IF NOT EXISTS trg_drafts_series_update
+BEFORE UPDATE OF series_id ON drafts
+WHEN NEW.series_id IS NOT NULL
+    AND (SELECT kind FROM series WHERE id = NEW.series_id) IS NOT 'series'
+BEGIN SELECT RAISE(ABORT, 'series_id must point at a series'); END;
 """
 
 
@@ -202,10 +260,22 @@ def _migrate(conn) -> None:
         conn.execute("ALTER TABLE generations ADD COLUMN duration_ms INTEGER")
     if "attempts" not in gen_cols:
         conn.execute("ALTER TABLE generations ADD COLUMN attempts INTEGER")
+    # Series membership (one series per record). Nullable with ON DELETE SET
+    # NULL, so deleting a series never deletes history.
+    if "series_id" not in gen_cols:
+        conn.execute(
+            "ALTER TABLE generations ADD COLUMN series_id INTEGER "
+            "REFERENCES series(id) ON DELETE SET NULL"
+        )
     draft_cols = {r["name"] for r in conn.execute("PRAGMA table_info(drafts)")}
     if "provider" not in draft_cols:
         conn.execute(
             "ALTER TABLE drafts ADD COLUMN provider TEXT NOT NULL DEFAULT 'vertex'"
+        )
+    if "series_id" not in draft_cols:
+        conn.execute(
+            "ALTER TABLE drafts ADD COLUMN series_id INTEGER "
+            "REFERENCES series(id) ON DELETE SET NULL"
         )
 
     # History sorts by created_at as text. Older rows may lack microseconds

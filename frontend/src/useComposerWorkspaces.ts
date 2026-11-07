@@ -41,6 +41,7 @@ function workspaceFromDraft(
     format: draft.format,
     tagIds: [...draft.tagIds],
     skipIfPrecedingSucceeds: draft.skipIfPrecedingSucceeds,
+    seriesId: draft.seriesId,
     updatedAt: draft.updatedAt,
   };
 }
@@ -468,6 +469,7 @@ export function useComposerWorkspaces(libraryKey: string | null) {
       prompt: source.prompt,
       inputIds: [...source.inputIds],
       tagIds: [...source.tagIds],
+      seriesId: source.seriesId,
       updatedAt: Date.now(),
       name: null,
     };

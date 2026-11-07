@@ -19,6 +19,9 @@ export interface ComposerDraft {
   format: string;
   tagIds: number[];
   skipIfPrecedingSucceeds: boolean;
+  // Series this workspace's generations are filed under. Records saved
+  // before series existed have no field; sanitizeDraft turns that into null.
+  seriesId: number | null;
   updatedAt: number;
 }
 
@@ -105,6 +108,7 @@ export function emptyDraft(): ComposerDraft {
     format: DEFAULT_FORMAT,
     tagIds: [],
     skipIfPrecedingSucceeds: false,
+    seriesId: null,
     updatedAt: Date.now(),
   };
 }
@@ -196,8 +200,15 @@ export function sanitizeDraft(draft: ComposerDraft): ComposerDraft {
       ? draft.format
       : DEFAULT_FORMAT,
     tagIds: positiveIds(draft.tagIds),
+    seriesId: sanitizeSeriesId(draft.seriesId),
     updatedAt: Number.isFinite(draft.updatedAt) ? draft.updatedAt : Date.now(),
   };
+}
+
+export function sanitizeSeriesId(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : null;
 }
 
 export function sanitizeWorkspaceName(value: unknown): string | null {

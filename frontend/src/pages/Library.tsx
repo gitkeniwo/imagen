@@ -26,6 +26,9 @@ import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import type { ViewerPager } from "../components/ImageViewer";
 import { peekProps } from "../components/HoverPeek";
+import { type SeriesTarget, useSeriesActions } from "../components/SeriesMenu";
+import Popover from "../components/ui/Popover";
+import { seriesApi } from "../api";
 
 const COMPACT_PAGE_SIZE = 24;
 const FULL_PAGE_SIZE = 60;
@@ -436,7 +439,26 @@ export default function Library({
     }
   };
 
-  const openImageMenu = (img: ImageRow, trigger: HTMLElement, x: number, y: number) => {
+  // Library images are filed by the generation that produced them; uploads
+  // with no generation cannot join a series.
+  const series = useSeriesActions(() => onChanged?.());
+  const [batchSeriesOpen, setBatchSeriesOpen] = useState(false);
+  const [batchTarget, setBatchTarget] = useState<SeriesTarget | null>(null);
+  const seriesTargetFor = async (ids: number[]): Promise<SeriesTarget | null> => {
+    try {
+      const { items } = await seriesApi.membership(ids);
+      const filed = items.filter((item) => item.generationIds.length > 0);
+      if (filed.length === 0) return null;
+      return {
+        body: { imageIds: filed.map((item) => item.imageId) },
+        members: filed.map((item) => item.seriesIds[item.seriesIds.length - 1] ?? null),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const openImageMenu = async (img: ImageRow, trigger: HTMLElement, x: number, y: number) => {
     if (selectMode) {
       let ids = selected;
       if (!ids.has(img.id)) {
@@ -449,6 +471,7 @@ export default function Library({
         .filter((row): row is ImageRow => !!row);
       const images = selectedImages.length ? selectedImages : [img];
       const count = images.length;
+      const seriesTarget = await seriesTargetFor(images.map((row) => row.id));
       const folders: ContextMenuSection[] = [
         [
           {
@@ -467,6 +490,7 @@ export default function Library({
             label: t("batch_remove_tag"),
             submenu: batchTagSubmenu(images, "remove"),
           },
+          series.menuItem(seriesTarget),
         ],
         [
           {
@@ -534,6 +558,7 @@ export default function Library({
         onSelect: () => download(img),
       },
     ];
+    const seriesTarget = img.source === "generated" ? await seriesTargetFor([img.id]) : null;
     const sections: ContextMenuSection[] = [
       [
         {
@@ -542,6 +567,7 @@ export default function Library({
           hint: hasTags,
           submenu: tagMenu,
         },
+        ...(!picker ? [series.menuItem(seriesTarget)] : []),
       ],
       ...(!picker
         ? [
@@ -882,6 +908,41 @@ export default function Library({
                   <span className="batch-btn-label">{t("batch_remove_tag")}</span>
                 </Button>
               </div>
+              <Popover
+                fixed
+                align="start"
+                open={batchSeriesOpen && !!batchTarget}
+                onClose={() => setBatchSeriesOpen(false)}
+                panelClassName="series-popover"
+                panelProps={{ role: "dialog", "aria-label": t("series_add_to") }}
+                trigger={
+                  <Button
+                    size="sm"
+                    icon="series"
+                    title={t("series_add_to_ellipsis")}
+                    aria-label={t("series_add_to_ellipsis")}
+                    aria-expanded={batchSeriesOpen}
+                    disabled={selected.size === 0}
+                    onClick={async () => {
+                      if (batchSeriesOpen) {
+                        setBatchSeriesOpen(false);
+                        return;
+                      }
+                      const target = await seriesTargetFor([...selected]);
+                      if (!target) {
+                        toast(t("series_upload_hint"));
+                        return;
+                      }
+                      setBatchTarget(target);
+                      setBatchSeriesOpen(true);
+                    }}
+                  >
+                    <span className="batch-btn-label">{t("series_add_to_ellipsis")}</span>
+                  </Button>
+                }
+              >
+                {batchTarget && series.picker(batchTarget, () => setBatchSeriesOpen(false), true)}
+              </Popover>
               <Button
                 size="sm"
                 icon="download"
@@ -1228,6 +1289,7 @@ export default function Library({
           )}
         </Sheet>
       )}
+      {series.dialog}
     </div>
   );
 }
