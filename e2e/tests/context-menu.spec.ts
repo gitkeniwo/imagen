@@ -23,14 +23,22 @@ test("library thumbnail menu matches the image", async ({ page }) => {
   await rightClick(libTile(page, "poster-alps-4k.png"));
   await expect.poll(() => menuTitle(page)).toBe("Same composition, swap background for the alpine landscape");
   const labels = await menuLabels(page);
-  expect(labels).toEqual(["View", "Add to input", "Unfavorite", "Download", "Tags", "Move to Bin"]);
+  expect(labels).toEqual(["View", "Add to input", "Unfavorite", "Download", "Tags", "Add to series", "Move to Bin"]);
   await expect(contextMenu(page)).toContainText("2400×1350 · PNG · Generated");
   await page.keyboard.press("Escape");
   await expect(contextMenu(page)).toHaveCount(0);
 
   await rightClick(libTile(page, "landscape-alps.jpg"));
   expect(await menuTitle(page)).toBe("landscape-alps.jpg");
-  expect(await menuLabels(page)).toEqual(["View", "Add to input", "Favorite", "Download", "Tags", "Move to Bin"]);
+  expect(await menuLabels(page)).toEqual([
+    "View",
+    "Add to input",
+    "Favorite",
+    "Download",
+    "Tags",
+    "Add to series",
+    "Move to Bin",
+  ]);
   await expect(contextMenu(page)).toContainText("1920×1080 · JPEG · Uploaded");
 });
 
