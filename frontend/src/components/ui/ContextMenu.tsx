@@ -53,7 +53,17 @@ export interface ContextMenuListSubmenu {
   items: ContextMenuItem[];
 }
 
-export type ContextMenuSubmenu = ContextMenuTagSubmenu | ContextMenuListSubmenu;
+// Arbitrary content (the series picker). `close` dismisses the whole menu;
+// `focus` is true when the submenu was opened from the keyboard or a click.
+export interface ContextMenuCustomSubmenu {
+  kind: "custom";
+  render: (close: () => void, focus: boolean) => ReactNode;
+}
+
+export type ContextMenuSubmenu =
+  | ContextMenuTagSubmenu
+  | ContextMenuListSubmenu
+  | ContextMenuCustomSubmenu;
 
 export interface ContextMenuItem {
   id?: string;
@@ -627,6 +637,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
                       : undefined);
                   }}
                 />
+              ) : submenu.item.submenu?.kind === "custom" ? (
+                submenu.item.submenu.render(() => close(false), submenu.focus)
               ) : submenu.item.submenu?.kind === "items" ? (
                 submenu.item.submenu.items.map((item) => {
                   const id = itemId(item);

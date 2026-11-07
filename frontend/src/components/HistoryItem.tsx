@@ -125,6 +125,7 @@ export default function HistoryItem({
   onEdit,
   onDuplicate,
   header,
+  seriesChip,
 }: {
   g: Generation;
   layout: HistoryLayout;
@@ -149,6 +150,8 @@ export default function HistoryItem({
   onDuplicate: () => void;
   // Optional extra row above the meta (the favorites note).
   header?: ReactNode;
+  // Series pill, first on the chip row.
+  seriesChip?: ReactNode;
 }) {
   const { t, lang, reason } = useI18n();
   const toast = useToast();
@@ -280,6 +283,7 @@ export default function HistoryItem({
         </div>
         <PromptClamp text={g.prompt} lines={2} />
         <div className="hcard-chips">
+          {seriesChip}
           {inputs.slice(0, MAX_CHIP_INPUTS).map((im) =>
             im.deleted_at ? (
               <span key={im.id} className="deleted-tile" title={t("deleted_label")}>

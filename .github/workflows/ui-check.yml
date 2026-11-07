@@ -1,0 +1,97 @@
+name: UI check
+
+# Pre-release acceptance: desktop/scripts/release_check.sh (shell/backend
+# checks + Playwright UI checks in Chromium, WebKit and a phone viewport)
+# against fake backends on throwaway libraries. No provider is ever called.
+#
+# Not run on pushes or pull requests. Run it by hand on main before tagging
+# (`gh workflow run ui-check.yml --ref main`); the release workflow also calls
+# it and will not build or publish unless it passes.
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit, branch or tag to check (default the caller's ref)
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  UV_PYTHON: '3.12'
+  CI: '1'
+
+jobs:
+  ui-check:
+    # fake_backend.py is macOS-only; the release job uses the same runner.
+    runs-on: macos-15
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: |
+          (cd backend && uv sync --frozen)
+          (cd frontend && npm ci --no-audit --no-fund)
+          (cd e2e && npm ci --no-audit --no-fund)
+          echo "PLAYWRIGHT_VERSION=$(node -p "require('./e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_ENV"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ env.PLAYWRIGHT_VERSION }}
+
+      - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        working-directory: e2e
+        run: npx playwright install chromium webkit
+
+      - name: Release checks
+        run: desktop/scripts/release_check.sh
+
+      - name: Upload Playwright report and traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            e2e/.release-check/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload backend logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e/.run/logs/
+          if-no-files-found: ignore
+          retention-days: 14

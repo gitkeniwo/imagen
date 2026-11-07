@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl } from "../api";
+import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, seriesApi } from "../api";
 import { useI18n } from "../i18n";
 import SearchBox from "../components/SearchBox";
 import TagFilterRow from "../components/TagFilterRow";
@@ -37,6 +37,8 @@ import { CHUNK, useChunkedImages } from "../useChunkedImages";
 import { type GridAnchor, useVirtualGrid } from "../useVirtualGrid";
 import { monthYear, parseTime } from "../historyTime";
 import { buildTimeline, formatMonthYear, indexToDay, type Timeline } from "../timeline";
+import { type SeriesTarget, useSeriesActions } from "../components/SeriesMenu";
+import Popover from "../components/ui/Popover";
 
 const GRID_COLUMNS_KEY = "imagen-library-columns";
 const GRID_COLUMN_OPTIONS = [1, 2, 3, 4, 5];
@@ -706,7 +708,26 @@ export default function Library({
     }
   };
 
-  const openImageMenu = (img: ImageRow, index: number, trigger: HTMLElement, x: number, y: number) => {
+  // Library images are filed by the generation that produced them; uploads
+  // with no generation cannot join a series.
+  const series = useSeriesActions(() => onChanged?.());
+  const [batchSeriesOpen, setBatchSeriesOpen] = useState(false);
+  const [batchTarget, setBatchTarget] = useState<SeriesTarget | null>(null);
+  const seriesTargetFor = async (ids: number[]): Promise<SeriesTarget | null> => {
+    try {
+      const { items } = await seriesApi.membership(ids);
+      const filed = items.filter((item) => item.generationIds.length > 0);
+      if (filed.length === 0) return null;
+      return {
+        body: { imageIds: filed.map((item) => item.imageId) },
+        members: filed.map((item) => item.seriesIds[item.seriesIds.length - 1] ?? null),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const openImageMenu = async (img: ImageRow, index: number, trigger: HTMLElement, x: number, y: number) => {
     if (selectMode) {
       let ids = selected;
       if (!ids.has(img.id)) {
@@ -718,6 +739,7 @@ export default function Library({
       const known = knownRows(idList);
       const images = known.length ? known : [img];
       const count = idList.length;
+      const seriesTarget = await seriesTargetFor(images.map((row) => row.id));
       const folders: ContextMenuSection[] = [
         [
           {
@@ -736,6 +758,7 @@ export default function Library({
             label: t("batch_remove_tag"),
             submenu: batchTagSubmenu(idList, images, "remove"),
           },
+          series.menuItem(seriesTarget),
         ],
         [
           {
@@ -803,6 +826,7 @@ export default function Library({
         onSelect: () => download(img),
       },
     ];
+    const seriesTarget = img.source === "generated" ? await seriesTargetFor([img.id]) : null;
     const sections: ContextMenuSection[] = [
       [
         {
@@ -811,6 +835,7 @@ export default function Library({
           hint: hasTags,
           submenu: tagMenu,
         },
+        ...(!picker ? [series.menuItem(seriesTarget)] : []),
       ],
       ...(!picker
         ? [
@@ -1286,6 +1311,41 @@ export default function Library({
                   <span className="batch-btn-label">{t("batch_remove_tag")}</span>
                 </Button>
               </div>
+              <Popover
+                fixed
+                align="start"
+                open={batchSeriesOpen && !!batchTarget}
+                onClose={() => setBatchSeriesOpen(false)}
+                panelClassName="series-popover"
+                panelProps={{ role: "dialog", "aria-label": t("series_add_to") }}
+                trigger={
+                  <Button
+                    size="sm"
+                    icon="series"
+                    title={t("series_add_to_ellipsis")}
+                    aria-label={t("series_add_to_ellipsis")}
+                    aria-expanded={batchSeriesOpen}
+                    disabled={selected.size === 0}
+                    onClick={async () => {
+                      if (batchSeriesOpen) {
+                        setBatchSeriesOpen(false);
+                        return;
+                      }
+                      const target = await seriesTargetFor([...selected]);
+                      if (!target) {
+                        toast(t("series_upload_hint"));
+                        return;
+                      }
+                      setBatchTarget(target);
+                      setBatchSeriesOpen(true);
+                    }}
+                  >
+                    <span className="batch-btn-label">{t("series_add_to_ellipsis")}</span>
+                  </Button>
+                }
+              >
+                {batchTarget && series.picker(batchTarget, () => setBatchSeriesOpen(false), true)}
+              </Popover>
               <Button
                 size="sm"
                 icon="download"
@@ -1528,6 +1588,7 @@ export default function Library({
           )}
         </Sheet>
       )}
+      {series.dialog}
     </div>
   );
 }

@@ -119,6 +119,7 @@ export default function Drafts({
         inputImageIds: draft.inputImages.map((img) => img.id),
         outputImageIds: draft.outputImages.map((img) => img.id),
         tagIds: draft.tags.map((tag) => tag.id),
+        seriesId: draft.series_id ?? null,
       });
       // Pending tasks are removed; a task that has already been sent stays.
       onUnqueue?.(queueId);

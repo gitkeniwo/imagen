@@ -16,6 +16,7 @@ import Popover from "../components/ui/Popover";
 import ReferenceTray from "../components/ReferenceTray";
 import QueueList from "../components/QueueList";
 import LibraryPickerModal from "../components/LibraryPickerModal";
+import { useSeries } from "../seriesStore";
 import { AttemptsStepper, ComposerParams, Switch } from "../components/ComposerControls";
 import { Button, IconButton } from "../components/ui/Button";
 import Icon from "../components/ui/Icon";
@@ -121,7 +122,10 @@ export default function Generate({
     format,
     tagIds,
     skipIfPrecedingSucceeds,
+    seriesId,
   } = draft;
+  const setSeriesId = (id: number | null) => updateDraft({ seriesId: id });
+  const seriesNode = useSeries().node(seriesId);
   const setPrompt = (v: string) => updateDraft({ prompt: v });
   const setProvider = (v: TaskSpec["provider"]) => updateDraft({ provider: v });
   const setModel = (v: string) => updateDraft({ model: v });
@@ -201,6 +205,7 @@ export default function Generate({
     hasResolution ? resolution : null,
     formatLabel,
     aspectRatio,
+    seriesNode?.name ?? null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -216,6 +221,7 @@ export default function Generate({
     outputImages: [],
     tagIds: [...tagIds],
     skipIfPrecedingSucceeds,
+    seriesId,
   });
 
   // Submit: snapshot the composer into the queue. Keep the prompt in place so
@@ -391,6 +397,8 @@ export default function Generate({
               setFormat={setFormat}
               tagIds={tagIds}
               setTagIds={setTagIds}
+              seriesId={seriesId}
+              setSeriesId={setSeriesId}
             />
             <div className="composer-foot">
               <AttemptsStepper attempts={attempts} setAttempts={setAttempts} />
@@ -424,6 +432,11 @@ export default function Generate({
                 {generateLabel}
                 {conn !== "lost" && <kbd className="kbd">⌘↵</kbd>}
               </button>
+              {seriesNode && (
+                <span className="series-next-hint" title={t("series_next_hint_title")}>
+                  {t("series_next_hint", { n: seriesNode.next_seq, name: seriesNode.name })}
+                </span>
+              )}
             </div>
           </>
         )}
@@ -502,6 +515,8 @@ export default function Generate({
                 setFormat={setFormat}
                 tagIds={tagIds}
                 setTagIds={setTagIds}
+                seriesId={seriesId}
+                setSeriesId={setSeriesId}
               />
               <Switch
                 checked={skipIfPrecedingSucceeds}

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from . import remote
 from .db import init_storage
 from .remote_gate import RemoteGate, is_lan
-from .routes import drafts, generate, generations, images, providers, settings, stats, tags
+from .routes import drafts, generate, generations, images, providers, series, settings, stats, tags
 from .routes import desktop as desktop_routes
 from .routes import remote as remote_routes
 
@@ -75,6 +75,7 @@ app.include_router(generations.router)
 app.include_router(stats.router)
 app.include_router(tags.router)
 app.include_router(drafts.router)
+app.include_router(series.router)
 if remote.is_desktop():
     app.include_router(remote_routes.router)
     app.include_router(desktop_routes.router)

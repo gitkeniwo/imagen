@@ -160,6 +160,7 @@ export default function DraftEditorModal({
       inputImageIds: inputs.map((img) => img.id),
       outputImageIds: outputs.map((img) => img.id),
       tagIds,
+      seriesId: existing ? existing.series_id ?? null : seed?.seriesId ?? null,
     };
     try {
       const draft = existing

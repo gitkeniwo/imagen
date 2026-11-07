@@ -64,3 +64,10 @@ desktop/src-tauri/gen/
 desktop/node_modules/
 backend/build-desktop/
 backend/*.spec
+
+# Playwright UI checks
+e2e/node_modules/
+e2e/.run/
+e2e/test-results/
+e2e/playwright-report/
+e2e/.release-check/

@@ -51,6 +51,8 @@ export interface Generation {
   marker_color: MarkerColor | null;
   duration_ms: number | null;
   attempts: number | null;
+  // Series the record is filed under (missing on an older backend).
+  series_id?: number | null;
   inputs?: ImageRow[];
   outputImage?: ImageRow | null;
   generation_offset?: number;
@@ -121,6 +123,8 @@ export interface TaskSpec {
   tagIds: number[];
   skipIfPrecedingSucceeds?: boolean;
   markerColor?: MarkerColor | null;
+  // Series the generation is filed under (null/undefined = none).
+  seriesId?: number | null;
 }
 
 // A client-side queued generation task (snapshot of the composer at submit time).
@@ -160,6 +164,7 @@ export interface Draft {
   inputImages: ImageRow[];
   outputImages: ImageRow[];
   tags: TagRef[];
+  series_id?: number | null;
 }
 
 export interface DraftBody {
@@ -174,6 +179,7 @@ export interface DraftBody {
   inputImageIds: number[];
   outputImageIds: number[];
   tagIds: number[];
+  seriesId?: number | null;
 }
 
 export const draftToTaskSpec = (draft: Draft): TaskSpec => ({
@@ -187,6 +193,7 @@ export const draftToTaskSpec = (draft: Draft): TaskSpec => ({
   outputImages: draft.outputImages,
   tagIds: draft.tags.map((tag) => tag.id),
   skipIfPrecedingSucceeds: !!draft.skip_if_preceding_succeeds,
+  seriesId: draft.series_id ?? null,
 });
 
 export interface GenerateResult {
@@ -210,6 +217,7 @@ export interface GenerateBody {
   tagIds?: number[];
   clientTaskId?: string;
   markerColor?: MarkerColor | null;
+  seriesId?: number | null;
 }
 
 export interface ManualGenerationBody {
@@ -665,6 +673,8 @@ export const api = {
       provider?: ProviderId;
       withOutput?: boolean;
       uniqueOutputs?: boolean;
+      // A series id, or "none" for records outside every series.
+      series?: number | "none";
     } = {},
   ): Promise<{
     generations: Generation[];
@@ -684,6 +694,7 @@ export const api = {
     if (params.provider) q.set("provider", params.provider);
     if (params.withOutput) q.set("with_output", "true");
     if (params.uniqueOutputs) q.set("unique_outputs", "true");
+    if (params.series !== undefined) q.set("series", String(params.series));
     return handle(await fetch(`/api/generations?${q.toString()}`));
   },
   async derivedGenerations(imageId: number, offset = 0, limit = 24): Promise<DerivedPage> {
@@ -759,6 +770,160 @@ export const api = {
     );
     invalidateTags();
     return res;
+  },
+};
+
+// --- Series -------------------------------------------------------------------
+
+export type SeriesKind = "theme" | "series";
+export type SeriesStatus = "success" | "blocked" | "error" | "aborted";
+
+export interface SeriesStats {
+  tries: number;
+  success: number;
+  blocked: number;
+  error: number;
+  aborted: number;
+  running: number;
+  records: number;
+  drafts: number;
+  last_at: string | null;
+  // Most recent finished attempts, oldest first (status bar).
+  strip: SeriesStatus[];
+  // Collage: best image first, then newest successful outputs.
+  cover: ImageRow[];
+}
+
+export interface SeriesNode extends SeriesStats {
+  id: number;
+  kind: SeriesKind;
+  parent_id: number | null;
+  name: string;
+  color: string | null;
+  best_image_id: number | null;
+  archived: number;
+  created_at: string;
+  updated_at: string;
+  next_seq: number;
+}
+
+export interface ThemeNode extends SeriesNode {
+  series: SeriesNode[];
+}
+
+export interface SeriesTree {
+  themes: ThemeNode[];
+  unthemed: SeriesNode[];
+}
+
+export interface SeriesDetail extends SeriesNode {
+  theme: { id: number; name: string; color: string | null; archived: number } | null;
+  outputs: { generation_id: number; image: ImageRow }[];
+  best_image: ImageRow | null;
+}
+
+export interface SeriesPrevious {
+  id: number;
+  seq: number;
+  prompt: string;
+  provider: ProviderId;
+  model: string;
+  aspect_ratio: string | null;
+  resolution: string | null;
+  status: Generation["status"];
+  input_ids: number[];
+}
+
+export interface SeriesGeneration extends Generation {
+  seq: number;
+  previous: SeriesPrevious | null;
+}
+
+export interface SeriesTimeline {
+  generations: SeriesGeneration[];
+  total: number;
+  counts: { all: number; success: number; blocked: number; error: number };
+}
+
+export interface SeriesImportPreview {
+  tagId: number;
+  found: number;
+  inOtherSeries: number;
+  failedSamePrompt: number;
+  failedInOtherSeries: number;
+  total: number;
+}
+
+export interface SeriesAssignBody {
+  generationIds?: number[];
+  draftIds?: number[];
+  imageIds?: number[];
+}
+
+export interface SeriesPatch {
+  name?: string;
+  color?: string | null;
+  parentId?: number | null;
+  archived?: boolean;
+  bestImageId?: number | null;
+}
+
+export const seriesApi = {
+  async tree(archived: "0" | "1" | "all" = "all"): Promise<SeriesTree> {
+    return handle(await fetch(`/api/series?archived=${archived}`, { cache: "no-store" }));
+  },
+  async get(id: number): Promise<SeriesDetail> {
+    return handle(await fetch(`/api/series/${id}`, { cache: "no-store" }));
+  },
+  async create(body: {
+    kind: SeriesKind;
+    name: string;
+    parentId?: number | null;
+    color?: string | null;
+  }): Promise<SeriesDetail> {
+    return handle(await fetch("/api/series", jsonInit("POST", body)));
+  },
+  async update(id: number, patch: SeriesPatch): Promise<SeriesDetail> {
+    return handle(await fetch(`/api/series/${id}`, jsonInit("PATCH", patch)));
+  },
+  async remove(id: number): Promise<{ deleted: number; movedSeries: number; clearedGenerations: number }> {
+    return handle(await fetch(`/api/series/${id}`, { method: "DELETE" }));
+  },
+  async assign(
+    id: number,
+    body: SeriesAssignBody,
+  ): Promise<{ generations: number; drafts: number; moved: number }> {
+    return handle(await fetch(`/api/series/${id}/assign`, jsonInit("POST", body)));
+  },
+  async unassign(body: SeriesAssignBody): Promise<{ generations: number; drafts: number }> {
+    return handle(await fetch("/api/series/unassign", jsonInit("POST", body)));
+  },
+  async timeline(
+    id: number,
+    params: { status?: HistoryResult; limit?: number; offset?: number } = {},
+  ): Promise<SeriesTimeline> {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    return handle(await fetch(`/api/series/${id}/generations?${q.toString()}`, { cache: "no-store" }));
+  },
+  async membership(
+    imageIds: number[],
+  ): Promise<{ items: { imageId: number; generationIds: number[]; seriesIds: number[] }[] }> {
+    return handle(await fetch(`/api/series/membership?imageIds=${imageIds.join(",")}`));
+  },
+  async importPreview(tagId: number): Promise<SeriesImportPreview> {
+    return handle(await fetch(`/api/series/import/preview?tag=${tagId}`));
+  },
+  async importFromTag(body: {
+    tagId: number;
+    name: string;
+    parentId?: number | null;
+    color?: string | null;
+    includeFailed: boolean;
+  }): Promise<{ series: SeriesDetail; assigned: number; preview: SeriesImportPreview }> {
+    return handle(await fetch("/api/series/import", jsonInit("POST", body)));
   },
 };
 
