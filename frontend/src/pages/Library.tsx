@@ -1,10 +1,16 @@
-import { type CSSProperties, type PointerEvent, useEffect, useRef, useState } from "react";
-import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, imgThumbUrl } from "../api";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl } from "../api";
 import { useI18n } from "../i18n";
-import { displayName } from "../displayName";
-import { pressable } from "../a11y";
-import { imageDragProps } from "../imageDrag";
-import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import TagFilterRow from "../components/TagFilterRow";
 import { useToast } from "../components/Toast";
@@ -18,23 +24,35 @@ import {
   type ContextMenuSection,
   type ContextMenuShortcut,
   type ContextMenuTagSubmenu,
-  openContextMenuFromEvent,
   useContextMenu,
 } from "../components/ui/ContextMenu";
 import appIcon from "../assets/app-icon.png";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import type { ViewerPager } from "../components/ImageViewer";
-import { peekProps } from "../components/HoverPeek";
+import LibraryTile, { type LibraryTileActions } from "../components/LibraryTile";
+import JumpPopover from "../components/JumpPopover";
+import LibraryScrubber from "../components/LibraryScrubber";
+import { CHUNK, useChunkedImages } from "../useChunkedImages";
+import { type GridAnchor, useVirtualGrid } from "../useVirtualGrid";
+import { monthYear, parseTime } from "../historyTime";
+import { buildTimeline, formatMonthYear, indexToDay, type Timeline } from "../timeline";
 
-const COMPACT_PAGE_SIZE = 24;
-const FULL_PAGE_SIZE = 60;
 const GRID_COLUMNS_KEY = "imagen-library-columns";
 const GRID_COLUMN_OPTIONS = [1, 2, 3, 4, 5];
 const THUMB_SIZE_KEY = "imagen-library-thumb";
 const THUMB_SIZES = ["s", "m", "l"] as const;
 type ThumbSize = (typeof THUMB_SIZES)[number];
-const THUMB_MIN: Record<ThumbSize, string> = { s: "120px", m: "170px", l: "240px" };
+// Fullscreen tiles: the minimum tile width, as CSS auto-fill used to have it.
+const THUMB_MIN: Record<ThumbSize, number> = { s: 120, m: 170, l: 240 };
+// Same cap as `/api/images/ids` (select all / Shift ranges).
+const MAX_SELECT_IDS = 5000;
+// Same cap as `/api/images/lookup`.
+const LOOKUP_BATCH = 50;
+// sessionStorage: where each Library layout was, by first visible image id.
+const ANCHOR_KEY = "imagen-library-anchor:";
+// Requests wait until scrolling pauses this long.
+const ENSURE_DELAY_MS = 100;
 
 function initialGridColumns() {
   const saved = Number(localStorage.getItem(GRID_COLUMNS_KEY));
@@ -44,6 +62,15 @@ function initialGridColumns() {
 function initialThumbSize(): ThumbSize {
   const saved = localStorage.getItem(THUMB_SIZE_KEY) as ThumbSize | null;
   return saved && THUMB_SIZES.includes(saved) ? saved : "m";
+}
+
+function readSaved(key: string): { filtersKey: string; id: number; index: number } | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function Library({
@@ -87,12 +114,11 @@ export default function Library({
   // Lets the phone shell hide the tab bar while a selection is active.
   onSelectModeChange?: (on: boolean) => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const toast = useToast();
   const askConfirm = useConfirm();
   const { open: openContextMenu } = useContextMenu();
   const { remote } = useRemote();
-  const [images, setImages] = useState<ImageRow[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [source, setSource] = useState<string>("");
   // Phone: the search field stays folded until asked for (or while a query is active).
@@ -100,10 +126,6 @@ export default function Library({
   const [tagFilter, setTagFilter] = useState<number | null>(null);
   const [starredOnly, setStarredOnly] = useState(false);
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [added, setAdded] = useState<number | null>(null);
   const [columns, setColumns] = useState(initialGridColumns);
   const [thumbSize, setThumbSize] = useState<ThumbSize>(initialThumbSize);
@@ -113,51 +135,233 @@ export default function Library({
   const [draft, setDraft] = useState("");
   // Phone only: tag batch actions live in a bottom sheet.
   const [batchSheet, setBatchSheet] = useState(false);
+  // Jump dialog (desktop popover / phone sheet) and its timeline data.
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(true);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [timelineTick, setTimelineTick] = useState(0);
+  // "↑ N new": images that arrived above the viewport while scrolled down.
+  const [newCount, setNewCount] = useState(0);
   // Long-press → multi-select on the phone. Timers live for the whole grid.
   const pressTimer = useRef<number | null>(null);
   const pressStart = useRef<{ x: number; y: number } | null>(null);
   const longPressed = useRef(false);
-  // Every row seen in this session, so a selection that spans pages can still
-  // be turned into references (the grid only holds the current page).
+  // Last clicked position, for Shift + click ranges.
+  const lastClickIndex = useRef<number | null>(null);
+  // Every row seen in this session, so a selection that spans far-away chunks
+  // (already evicted) can still be turned into references.
   const rowsById = useRef(new Map<number, ImageRow>());
+  const stickyRef = useRef<HTMLDivElement | null>(null);
   // Phone thumbnails offer 2/3/4 columns; a saved desktop width of 1 or 5 is
   // clamped here (the stored key stays the same on both layouts).
   const phoneColumns = Math.min(4, Math.max(2, columns));
   const effectiveColumns = phone ? phoneColumns : columns;
-  // Compact grid columns are fixed, so the page must hold whole rows; the full
-  // grid uses auto-fill and stays on a fixed page size.
-  const pageSize = compact
-    ? pageSizedToColumns(COMPACT_PAGE_SIZE, effectiveColumns)
-    : FULL_PAGE_SIZE;
+  const layoutKey = phone ? "phone" : compact ? "compact" : "full";
 
-  const load = () => {
-    setLoading(true);
-    setLoadError(null);
-    Promise.all([
-      api.listImages({
-        limit: pageSize,
-        offset: page * pageSize,
-        source: source || undefined,
-        tag: tagFilter ?? undefined,
-        starred: starredOnly || undefined,
-        q: query || undefined,
-      }),
-      api.listTags(),
-    ])
-      .then(([r, tagsRes]) => {
-        for (const img of r.images) rowsById.current.set(img.id, img);
-        setImages(r.images);
-        setTotal(r.total);
-        setTags(tagsRes.tags);
-        if (r.total > 0 && page * pageSize >= r.total) {
-          setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
-        }
+  const filters = useMemo(
+    () => ({
+      source: source || undefined,
+      tag: tagFilter ?? undefined,
+      starred: starredOnly || undefined,
+      q: query.trim() || undefined,
+    }),
+    [source, tagFilter, starredOnly, query],
+  );
+  const filtersKey = JSON.stringify(filters);
+
+  const data = useChunkedImages(filters, filtersKey, (rows) => {
+    for (const img of rows) rowsById.current.set(img.id, img);
+  });
+  const total = data.total;
+
+  // Timeline is shared by the scrubber, the position label and the jump
+  // dialog. It is reloaded when the filters change and after a refresh.
+  useEffect(() => {
+    let alive = true;
+    setTimelineLoading(true);
+    api
+      .imageTimeline(filters)
+      .then((r) => {
+        if (!alive) return;
+        setTimeline(buildTimeline(r));
+        setTimelineError(null);
       })
-      .catch((e) => setLoadError((e as Error).message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!alive) return;
+        setTimelineError((e as Error).message);
+      })
+      .finally(() => {
+        if (alive) setTimelineLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [filters, filtersKey, refreshKey, timelineTick]);
+
+  const grid = useVirtualGrid({
+    count: total,
+    // Sidebar and phone keep their column buttons; fullscreen derives the
+    // count from the tile size the way CSS auto-fill did.
+    columns: compact ? effectiveColumns : undefined,
+    minTile: THUMB_MIN[thumbSize],
+    // Sticky headers (phone title row + toolbar) cover the top of the scroller.
+    topInset: (scroller) => {
+      const sticky = stickyRef.current;
+      if (!sticky) return 0;
+      return sticky.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
+    },
+  });
+
+  const loadTags = () => {
+    api
+      .listTags()
+      .then((r) => setTags(r.tags))
+      .catch(() => {});
+  };
+  useEffect(loadTags, [refreshKey]);
+
+  // Fetch the rendered range once scrolling pauses; a drag or fling across
+  // thousands of rows only shows skeletons on the way.
+  const rangeRef = useRef<[number, number]>([0, 0]);
+  rangeRef.current = [grid.startIndex, grid.endIndex];
+  useEffect(() => {
+    if (!data.ready || total === 0) return;
+    const timer = window.setTimeout(
+      () => data.ensure(grid.startIndex, grid.endIndex),
+      ENSURE_DELAY_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [data.ready, data.ensure, total, grid.startIndex, grid.endIndex]);
+
+  // New filters: start over at the top.
+  const firstFilters = useRef(true);
+  useEffect(() => {
+    if (firstFilters.current) {
+      firstFilters.current = false;
+      return;
+    }
+    setNewCount(0);
+    setJumpOpen(false);
+    grid.scrollToTop();
+  }, [filtersKey]);
+
+  // Soft refresh that keeps the first visible image where it is. New rows
+  // land above it (the list is newest first), so without this the grid
+  // would jump down by the number of new rows.
+  type Pending = {
+    anchor: GridAnchor | null;
+    anchorId: number | null;
+    // Newest id before the refresh. The list is id DESC, so only rows above
+    // it are new images; restored or re-filtered old rows never count.
+    topId: number | null;
+    atTop: boolean;
+    delta: number;
+  };
+  const pendingAnchor = useRef<Pending | null>(null);
+  const refreshing = useRef(false);
+  // A refresh asked for while one runs: run once more afterwards.
+  const queued = useRef(false);
+  const refresh = async (): Promise<void> => {
+    if (refreshing.current) {
+      queued.current = true;
+      return;
+    }
+    refreshing.current = true;
+    try {
+      const res = await data.refresh(rangeRef.current, () => {
+        const anchor = grid.readAnchor();
+        return {
+          anchor,
+          anchorId: anchor ? data.get(anchor.index)?.id ?? null : null,
+          topId: data.get(0)?.id ?? null,
+          // "Near the top" = less than one row scrolled.
+          atTop: !anchor || (anchor.index === 0 && anchor.offset > -grid.rowHeight),
+        };
+      });
+      if (res) {
+        pendingAnchor.current = { ...res.captured, delta: res.newTotal - res.oldTotal };
+        setTimelineTick((n) => n + 1);
+      }
+    } finally {
+      refreshing.current = false;
+    }
+    if (queued.current) {
+      queued.current = false;
+      // Let the layout effect apply this result before the next one starts.
+      window.setTimeout(() => handlersRef.current.refresh(), 0);
+    }
   };
 
-  useEffect(load, [source, tagFilter, starredOnly, query, page, pageSize, refreshKey]);
+  // Runs after the refreshed rows are on screen, before paint.
+  useLayoutEffect(() => {
+    const pending = pendingAnchor.current;
+    if (!pending) return;
+    pendingAnchor.current = null;
+    const { anchor, anchorId, topId, atTop, delta } = pending;
+    let fresh = 0;
+    if (topId !== null) {
+      for (let i = 0; i < Math.min(CHUNK, total); i++) {
+        const row = data.get(i);
+        if (!row || row.id <= topId) break;
+        fresh += 1;
+      }
+      // A whole chunk of new rows: the count can only come from the totals.
+      if (fresh === CHUNK) fresh = Math.max(fresh, delta);
+    }
+    if (!anchor || atTop) return; // at the top: new images simply appear
+    let index = anchorId !== null ? data.indexOf(anchorId, anchor.index + fresh) : -1;
+    if (index < 0) index = Math.max(0, anchor.index + fresh);
+    grid.restoreAnchor({ index, offset: anchor.offset });
+    // Deletes and restores only re-anchor; the badge is for new images.
+    if (fresh > 0) setNewCount((n) => n + fresh);
+  }, [data.version]);
+
+  const firstRefresh = useRef(true);
+  useEffect(() => {
+    if (firstRefresh.current) {
+      firstRefresh.current = false;
+      return;
+    }
+    refresh();
+  }, [refreshKey]);
+
+  // Back at the top by any means: the badge has done its job.
+  useEffect(() => {
+    if (grid.atTop && newCount > 0) setNewCount(0);
+  }, [grid.atTop, newCount]);
+
+  // Remember the first visible image per layout; a remount (panel switch)
+  // returns to it when the filters are the same.
+  const anchorStoreKey = picker ? null : ANCHOR_KEY + layoutKey;
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!anchorStoreKey || !restored.current || !data.ready) return;
+    const row = data.get(grid.visibleStart);
+    if (!row) return;
+    try {
+      sessionStorage.setItem(
+        anchorStoreKey,
+        JSON.stringify({ filtersKey, id: row.id, index: grid.visibleStart }),
+      );
+    } catch {
+      /* storage unavailable: nothing to restore later */
+    }
+  }, [grid.visibleStart, data.version]);
+  useEffect(() => {
+    if (restored.current || !data.ready || !grid.measured) return;
+    restored.current = true;
+    const saved = anchorStoreKey ? readSaved(anchorStoreKey) : null;
+    if (!saved || saved.filtersKey !== filtersKey || saved.index <= 0) return;
+    const from = Math.max(0, saved.index - 500);
+    api
+      .listImageIds({ ...filters, offset: from, limit: 1000 })
+      .then((r) => {
+        const at = r.ids.indexOf(saved.id);
+        if (at >= 0) grid.scrollToIndex(from + at, "start");
+      })
+      .catch(() => {});
+  }, [data.ready, grid.measured]);
 
   useEffect(() => {
     localStorage.setItem(GRID_COLUMNS_KEY, String(columns));
@@ -181,13 +385,12 @@ export default function Library({
     setStarredOnly(false);
     setSource("");
     setTagFilter(null);
-    setPage(0);
   };
 
   const toggleStar = async (img: ImageRow) => {
     try {
       await api.patchImage(img.id, { starred: !img.starred });
-      load();
+      refresh();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -209,7 +412,7 @@ export default function Library({
     if (!ok) return;
     try {
       await api.deleteImage(img.id);
-      load();
+      refresh();
       onChanged?.();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
@@ -223,46 +426,85 @@ export default function Library({
       return next;
     });
 
-  const allSelected =
-    images.length > 0 && images.every((img) => selected.has(img.id));
+  const allSelected = total > 0 && selected.size >= total;
 
-  const selectAllOnPage = () =>
-    setSelected((s) => new Set([...s, ...images.map((img) => img.id)]));
+  // "Select all" means the whole filtered result, not what is on screen.
+  const selectAllResults = async () => {
+    try {
+      const r = await api.listImageIds({ ...filters, limit: MAX_SELECT_IDS });
+      setSelected((s) => new Set([...s, ...r.ids]));
+      if (r.total > r.ids.length) {
+        toast(t("select_limit", { n: MAX_SELECT_IDS.toLocaleString() }), "info");
+      }
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
 
-  const onCardClick = (img: ImageRow) => {
+  // Shift + click: everything between the last clicked tile and this one,
+  // including rows that were never loaded (one ids request fills the gap).
+  const selectRange = async (to: number) => {
+    const from = lastClickIndex.current ?? to;
+    let start = Math.min(from, to);
+    let end = Math.max(from, to);
+    if (end - start + 1 > MAX_SELECT_IDS) {
+      if (to < from) start = end - MAX_SELECT_IDS + 1;
+      else end = start + MAX_SELECT_IDS - 1;
+      toast(t("select_limit", { n: MAX_SELECT_IDS.toLocaleString() }), "info");
+    }
+    try {
+      const ids = await data.idsInRange(start, end);
+      setSelected((s) => new Set([...s, ...ids]));
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
+  const onCardClick = (img: ImageRow, index: number, event: MouseEvent | null) => {
     // A long press already switched to selection; swallow the click it emits.
     if (longPressed.current) {
       longPressed.current = false;
       return;
     }
-    if (selectMode) toggleSelect(img.id);
-    else if (picker && phone) togglePick(img);
-    else openInViewer(img);
+    if (!phone && !picker && event?.shiftKey) {
+      if (!selectMode) {
+        setSelectMode(true);
+        setSelected(new Set([img.id]));
+        setBatchMode(null);
+      } else if (lastClickIndex.current !== null) {
+        selectRange(index);
+      } else toggleSelect(img.id);
+      lastClickIndex.current = index;
+      return;
+    }
+    if (selectMode) {
+      toggleSelect(img.id);
+      lastClickIndex.current = index;
+    } else if (picker && phone) togglePick(img);
+    else openInViewer(img, index);
   };
 
-  // Opens the viewer over the current page with paging through the whole
-  // filtered result, and keeps the grid on the page the viewer ended on.
-  const openInViewer = (img: ImageRow) => {
-    const offset = page * pageSize;
+  // Opens the viewer on the clicked image's chunk, paging through the whole
+  // filtered result; the grid follows the viewer to wherever it ends up.
+  const openInViewer = (img: ImageRow, index: number) => {
+    const chunk = data.chunkAt(index);
+    const list = chunk?.rows ?? [img];
     onOpenViewer(
       img,
-      images,
+      list,
       {
-        offset,
+        offset: chunk ? chunk.offset : index,
         total,
+        batchSize: CHUNK,
         fetch: async (nextOffset, limit) => {
-          const r = await api.listImages({
-            limit,
-            offset: nextOffset,
-            source: source || undefined,
-            tag: tagFilter ?? undefined,
-            starred: starredOnly || undefined,
-            q: query || undefined,
-          });
+          const r = await api.listImages({ ...filters, limit, offset: nextOffset });
           return r.images;
         },
       },
-      (globalIndex) => setPage(Math.floor(globalIndex / pageSize)),
+      (globalIndex) => {
+        grid.scrollToIndex(globalIndex, "nearest");
+        data.ensure(globalIndex, globalIndex);
+      },
     );
   };
 
@@ -298,6 +540,7 @@ export default function Library({
     setSelected(new Set());
     setBatchMode(null);
     setBatchSheet(false);
+    lastClickIndex.current = null;
   };
 
   const pickIndex = (id: number) => picker?.pickedIds.indexOf(id) ?? -1;
@@ -306,11 +549,31 @@ export default function Library({
     else addToTray(img);
   };
 
-  // Selection order, not page order: the first image tapped is reference 1.
-  const useSelectedAsRefs = () => {
-    const rows = [...selected]
+  // Rows for ids, looking up the ones never loaded (select all / ranges).
+  const rowsFor = async (ids: number[]): Promise<ImageRow[]> => {
+    const missing = ids.filter((id) => !rowsById.current.has(id));
+    for (let i = 0; i < missing.length; i += LOOKUP_BATCH) {
+      const r = await api.lookupImages(missing.slice(i, i + LOOKUP_BATCH));
+      for (const img of r.images) rowsById.current.set(img.id, img);
+    }
+    return ids
       .map((id) => rowsById.current.get(id))
       .filter((img): img is ImageRow => !!img);
+  };
+  const knownRows = (ids: Iterable<number>) =>
+    [...ids]
+      .map((id) => rowsById.current.get(id))
+      .filter((img): img is ImageRow => !!img);
+
+  // Selection order, not grid order: the first image tapped is reference 1.
+  const useSelectedAsRefs = async () => {
+    let rows: ImageRow[];
+    try {
+      rows = await rowsFor([...selected]);
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+      return;
+    }
     if (rows.length === 0) return;
     if (addManyToTray) addManyToTray(rows);
     else for (const img of rows) addToTray(img);
@@ -322,7 +585,8 @@ export default function Library({
     if (!batchMode || selected.size === 0) return;
     try {
       await api.batchTag([...selected], [tagId], batchMode);
-      load();
+      refresh();
+      loadTags();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -357,11 +621,16 @@ export default function Library({
           imgs.every((img) => (img.tags ?? []).some((item) => item.id === tag.id)),
       }));
 
+  const afterTagChange = () => {
+    refresh();
+    loadTags();
+  };
+
   const toggleImageTag = async (img: ImageRow, tagId: number) => {
     const on = (img.tags ?? []).some((tag) => tag.id === tagId);
     try {
       await api.batchTag([img.id], [tagId], on ? "remove" : "add");
-      load();
+      afterTagChange();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -371,7 +640,7 @@ export default function Library({
     try {
       const tag = await api.createTag(name);
       await api.batchTag([img.id], [tag.id], "add");
-      load();
+      afterTagChange();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -380,7 +649,7 @@ export default function Library({
   const applyBatchTag = async (ids: number[], tagId: number, op: "add" | "remove") => {
     try {
       await api.batchTag(ids, [tagId], op);
-      load();
+      afterTagChange();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -390,26 +659,27 @@ export default function Library({
     try {
       const tag = await api.createTag(name);
       await api.batchTag(ids, [tag.id], "add");
-      load();
+      afterTagChange();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
   };
 
+  // `imgs` drives the checkmarks (rows we have); `ids` is what gets tagged.
   const batchTagSubmenu = (
+    ids: number[],
     imgs: ImageRow[],
     op: "add" | "remove",
     allowCreate = false,
   ): ContextMenuTagSubmenu => ({
     kind: "tags",
     options: tagOptions(imgs, op === "remove"),
-    onToggle: (tagId) => applyBatchTag(imgs.map((img) => img.id), tagId, op),
+    onToggle: (tagId) => applyBatchTag(ids, tagId, op),
     ...(allowCreate
       ? {
           createLabel: t("new_tag_placeholder"),
           createPlaceholder: t("new_tag_placeholder"),
-          onCreate: (name: string) =>
-            createBatchTag(imgs.map((img) => img.id), name),
+          onCreate: (name: string) => createBatchTag(ids, name),
         }
       : {}),
   });
@@ -427,16 +697,16 @@ export default function Library({
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
       setSelected(new Set());
-      load();
+      refresh();
       onChanged?.();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
-      load();
+      refresh();
       onChanged?.();
     }
   };
 
-  const openImageMenu = (img: ImageRow, trigger: HTMLElement, x: number, y: number) => {
+  const openImageMenu = (img: ImageRow, index: number, trigger: HTMLElement, x: number, y: number) => {
     if (selectMode) {
       let ids = selected;
       if (!ids.has(img.id)) {
@@ -444,28 +714,27 @@ export default function Library({
         ids.add(img.id);
         setSelected(ids);
       }
-      const selectedImages = [...ids]
-        .map((id) => rowsById.current.get(id))
-        .filter((row): row is ImageRow => !!row);
-      const images = selectedImages.length ? selectedImages : [img];
-      const count = images.length;
+      const idList = [...ids];
+      const known = knownRows(idList);
+      const images = known.length ? known : [img];
+      const count = idList.length;
       const folders: ContextMenuSection[] = [
         [
           {
             icon: "download",
             label: t("batch_download"),
             hint: ".zip",
-            onSelect: () => downloadSelected(images.map((row) => row.id)),
+            onSelect: () => downloadSelected(idList),
           },
           {
             icon: "tag",
             label: t("batch_add_tag"),
-            submenu: batchTagSubmenu(images, "add", true),
+            submenu: batchTagSubmenu(idList, images, "add", true),
           },
           {
             icon: "untag",
             label: t("batch_remove_tag"),
-            submenu: batchTagSubmenu(images, "remove"),
+            submenu: batchTagSubmenu(idList, images, "remove"),
           },
         ],
         [
@@ -474,7 +743,7 @@ export default function Library({
             label: t("move_to_bin"),
             danger: true,
             hint: count,
-            onSelect: () => removeMany(images.map((row) => row.id)),
+            onSelect: () => removeMany(idList),
           },
         ],
       ];
@@ -504,7 +773,7 @@ export default function Library({
       {
         icon: "view",
         label: t("open_viewer"),
-        onSelect: () => openInViewer(img),
+        onSelect: () => openInViewer(img, index),
       },
       picker
         ? {
@@ -578,68 +847,154 @@ export default function Library({
       const tag = await api.createTag(name);
       setDraft("");
       if (selected.size > 0) await api.batchTag([...selected], [tag.id], "add");
-      load();
+      afterTagChange();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
   };
 
+  // Tiles are memoized; they get one stable handler object that forwards to
+  // this render's closures, so scrolling re-renders only the tiles that move
+  // in or out of the window.
+  const handlers = {
+    onCardClick,
+    openImageMenu,
+    openInViewer,
+    toggleStar,
+    download,
+    remove,
+    startLongPress,
+    moveLongPress,
+    endLongPress,
+    picker,
+    addToTray,
+    refresh,
+  };
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+  const tileActions = useMemo<LibraryTileActions>(
+    () => ({
+      click: (img, index, event) => handlersRef.current.onCardClick(img, index, event),
+      menu: (img, index, trigger, x, y) =>
+        handlersRef.current.openImageMenu(img, index, trigger, x, y),
+      openViewer: (img, index) => handlersRef.current.openInViewer(img, index),
+      addRef: (img) => {
+        handlersRef.current.addToTray(img);
+        if (handlersRef.current.picker) return;
+        setAdded(img.id);
+        setTimeout(() => setAdded(null), 700);
+      },
+      unpick: (img) => handlersRef.current.picker?.onUnpick(img),
+      star: (img) => handlersRef.current.toggleStar(img),
+      download: (img) => handlersRef.current.download(img),
+      remove: (img) => handlersRef.current.remove(img),
+      pressStart: (event, img) => handlersRef.current.startLongPress(event, img),
+      pressMove: (event) => handlersRef.current.moveLongPress(event),
+      pressEnd: () => handlersRef.current.endLongPress(),
+    }),
+    [],
+  );
+
   // Hover-to-enlarge for tiles small enough to need it. Mouse only (see
   // HoverPeek); the phone layout never attaches it.
   const peeks = !phone && (compact || thumbSize !== "l");
 
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const hasPages = total > pageSize;
+  // "Oct 2026 · 1,021–1,060 / 2,997": month of the first visible image.
+  const fmt = (n: number) => n.toLocaleString(lang === "zh" ? "zh-CN" : "en-US");
+  const firstVisible = data.get(grid.visibleStart);
+  const firstDate = parseTime(firstVisible?.created_at);
+  const timelineDay = timeline ? indexToDay(timeline, grid.visibleStart) : null;
+  const positionMonth = timelineDay
+    ? formatMonthYear(timelineDay.day, lang)
+    : firstDate
+      ? monthYear(firstDate, lang)
+      : "";
+  const positionRange =
+    total > 0
+      ? t("lib_position", {
+          from: fmt(grid.visibleStart + 1),
+          to: fmt(Math.max(grid.visibleStart + 1, grid.visibleEnd + 1)),
+          total: fmt(total),
+        })
+      : "";
 
-  const pager = hasPages ? (
-    <div className="pager">
-      <button disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
-        {t("prev_page")}
-      </button>
-      <span className="muted small">
-        {t("page_status", { page: page + 1, pages: pageCount, total })}
-      </span>
-      <button
-        disabled={page >= pageCount - 1 || loading}
-        onClick={() => setPage((p) => p + 1)}
-      >
-        {t("next_page")}
-      </button>
-    </div>
-  ) : null;
+  const jumpToIndex = (next: number) => {
+    if (total === 0) return;
+    const index = Math.max(0, Math.min(total - 1, next));
+    grid.scrollToIndex(index, "start");
+    data.ensure(index, Math.min(total - 1, index + Math.max(1, grid.cols) * 2));
+    setNewCount(0);
+  };
 
-  const phonePager = (
-    <div className="phone-pager-row">
-      <div className="phone-pg">
-        {hasPages && (
+  const jumpDialog = (trigger: JSX.Element) => (
+    <JumpPopover
+      phone={phone}
+      open={jumpOpen}
+      onClose={() => setJumpOpen(false)}
+      trigger={trigger}
+      timeline={timeline}
+      loading={timelineLoading}
+      error={timelineError}
+      total={total}
+      currentIndex={grid.visibleStart}
+      onJump={jumpToIndex}
+    />
+  );
+
+  const positionBar =
+    total > 0 ? (
+      <div className="lib-position-row">
+        {jumpDialog(
           <button
             type="button"
-            className="phone-pg-btn"
-            aria-label={t("prev_page")}
-            disabled={page === 0 || loading}
-            onClick={() => setPage((p) => p - 1)}
+            className="lib-position"
+            aria-live="off"
+            aria-haspopup="dialog"
+            aria-expanded={jumpOpen}
+            title={t("jump_to")}
+            onClick={() => setJumpOpen((v) => !v)}
           >
-            <Icon name="prev" size="sm" />
-          </button>
+            {positionMonth && <span className="lib-position-month">{positionMonth}</span>}
+            <span className="lib-position-range">{positionRange}</span>
+            <Icon name="chevronDown" size="sm" />
+          </button>,
         )}
-        <span>
-          {hasPages
-            ? t("phone_page_status", { page: page + 1, pages: pageCount })
-            : t("phone_total_images", { n: total })}
-        </span>
-        {hasPages && (
+        {!grid.atTop && (
           <button
             type="button"
-            className="phone-pg-btn"
-            aria-label={t("next_page")}
-            disabled={page >= pageCount - 1 || loading}
-            onClick={() => setPage((p) => p + 1)}
+            className="lib-newest-btn"
+            onClick={() => {
+              setNewCount(0);
+              grid.scrollToTop(true);
+            }}
           >
-            <Icon name="next" size="sm" />
+            <Icon name="chevronUp" size="sm" />
+            {t("lib_newest")}
           </button>
         )}
       </div>
-      {hasPages && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
+    ) : null;
+
+  const phonePager = (
+    <div className="phone-pager-row">
+      {total > 0 ? (
+        jumpDialog(
+          <button
+            type="button"
+            className="phone-position jump-trigger"
+            aria-haspopup="dialog"
+            aria-expanded={jumpOpen}
+            title={t("jump_to")}
+            onClick={() => setJumpOpen((v) => !v)}
+          >
+            {positionMonth && <b>{positionMonth}</b>}
+            <span>{positionRange}</span>
+            <Icon name="chevronDown" size="sm" />
+          </button>,
+        )
+      ) : (
+        <span className="phone-position">{t("phone_total_images", { n: total })}</span>
+      )}
       <div className="phone-size" role="group" aria-label={t("columns_per_row")}>
         {[2, 3, 4].map((n) => (
           <button
@@ -648,10 +1003,7 @@ export default function Library({
             className={phoneColumns === n ? "on" : ""}
             aria-pressed={phoneColumns === n}
             aria-label={t("phone_columns_n", { n })}
-            onClick={() => {
-              setColumns(n);
-              setPage(0);
-            }}
+            onClick={() => setColumns(n)}
           >
             <i
               style={{
@@ -669,8 +1021,70 @@ export default function Library({
     </div>
   );
 
+  const newBadge =
+    newCount > 0 ? (
+      <button
+        type="button"
+        className="lib-new-badge"
+        onClick={() => {
+          setNewCount(0);
+          grid.scrollToTop(true);
+        }}
+      >
+        <Icon name="chevronUp" size="sm" />
+        {t("lib_new_n", { n: fmt(newCount) })}
+      </button>
+    ) : null;
+
+  const tiles: JSX.Element[] = [];
+  if (total > 0) {
+    for (let i = grid.startIndex; i <= grid.endIndex; i++) {
+      const img = data.get(i);
+      tiles.push(
+        img ? (
+          <LibraryTile
+            key={i}
+            img={img}
+            index={i}
+            actions={tileActions}
+            selected={selected.has(img.id)}
+            selectMode={selectMode}
+            pickAt={pickIndex(img.id)}
+            justAdded={added === img.id}
+            phone={phone}
+            peeks={peeks}
+            picker={!!picker}
+          />
+        ) : (
+          <div key={i} className="lib-skeleton" aria-hidden="true" />
+        ),
+      );
+    }
+  }
+
+  // Scoped to the Library panel: Home / End never leak to the rest of the app,
+  // and text fields keep their own caret behaviour.
+  const onPanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) {
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      grid.scrollToTop();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      const scroller = grid.scrollerRef.current;
+      scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+    }
+  };
+
   return (
-    <div className={`panel library-panel${compact ? " compact" : ""}${phone ? " phone-panel-inner" : ""}`}>
+    <div
+      className={`panel library-panel${compact ? " compact" : ""}${phone ? " phone-panel-inner" : ""}`}
+      onKeyDown={onPanelKeyDown}
+    >
       {phone && (
         selectMode ? (
           <div className="phone-head phone-selhead">
@@ -681,10 +1095,10 @@ export default function Library({
             <button
               type="button"
               className="phone-textbtn"
-              disabled={images.length === 0 || allSelected}
-              onClick={selectAllOnPage}
+              disabled={total === 0 || allSelected}
+              onClick={selectAllResults}
             >
-              {t("select_all")}
+              {t("select_all_results")}
             </button>
           </div>
         ) : (
@@ -707,14 +1121,13 @@ export default function Library({
         )
       )}
 
-      <div className="library-sticky">
+      <div className="library-sticky" ref={stickyRef}>
         <div className="library-toolbar" hidden={phone && !searchOpen && !query}>
           <SearchBox
             autoFocus={phone && searchOpen && !query}
             value={query}
             onChange={(q) => {
               setQuery(q);
-              setPage(0);
             }}
             placeholder={t("search_placeholder_library")}
           />
@@ -727,7 +1140,6 @@ export default function Library({
                     value={columns}
                     onChange={(n) => {
                       setColumns(n);
-                      setPage(0);
                     }}
                     options={GRID_COLUMN_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
                   />
@@ -768,7 +1180,6 @@ export default function Library({
             value={source}
             onChange={(val) => {
               setSource(val);
-              setPage(0);
             }}
             options={[
               { value: "", label: t("filter_all") },
@@ -786,7 +1197,6 @@ export default function Library({
             aria-pressed={starredOnly}
             onClick={() => {
               setStarredOnly((v) => !v);
-              setPage(0);
             }}
           >
             <span className="filter-label">{t("filter_starred_only")}</span>
@@ -802,7 +1212,6 @@ export default function Library({
                 if (searchOpen || query) {
                   setSearchOpen(false);
                   setQuery("");
-                  setPage(0);
                 } else setSearchOpen(true);
               }}
             />
@@ -817,7 +1226,6 @@ export default function Library({
           total={total}
           onChange={(id) => {
             setTagFilter(id);
-            setPage(0);
           }}
         />
 
@@ -828,10 +1236,10 @@ export default function Library({
               <span className="batch-count">{t("selected_n", { n: selected.size })}</span>
               <Button
                 variant="link"
-                disabled={images.length === 0 || allSelected}
-                onClick={selectAllOnPage}
+                disabled={total === 0 || allSelected}
+                onClick={selectAllResults}
               >
-                {t("select_all")}
+                {t("select_all_results")}
               </Button>
               {selected.size > 0 && (
                 <Button variant="link" onClick={() => setSelected(new Set())}>
@@ -846,11 +1254,7 @@ export default function Library({
                 className="batch-done"
                 title={t("done")}
                 aria-label={t("done")}
-                onClick={() => {
-                  setSelectMode(false);
-                  setSelected(new Set());
-                  setBatchMode(null);
-                }}
+                onClick={stopSelect}
               >
                 <span className="batch-btn-label">{t("done")}</span>
               </Button>
@@ -948,19 +1352,20 @@ export default function Library({
           </div>
         )}
 
-        {phone ? phonePager : pager}
+        {phone ? phonePager : positionBar}
+        {newBadge}
       </div>
 
-      {loading ? (
+      {!data.ready ? (
         <p className="muted">
           <span className="spinner" /> {t("loading")}
         </p>
-      ) : loadError ? (
+      ) : data.error && total === 0 ? (
         <div className="load-error">
-          <span className="small">{t("load_error", { msg: loadError })}</span>
-          <button onClick={load}>{t("retry")}</button>
+          <span className="small">{t("load_error", { msg: data.error })}</span>
+          <button onClick={data.reset}>{t("retry")}</button>
         </div>
-      ) : images.length === 0 ? (
+      ) : total === 0 ? (
         hasActiveFilters ? (
           <div className="empty-state">
             <p className="muted">{t("no_results")}</p>
@@ -969,150 +1374,45 @@ export default function Library({
         ) : (
           <p className="muted">{t("lib_empty")}</p>
         )
-      ) : (
+      ) : data.error ? (
+        <div className="load-error">
+          <span className="small">{t("load_error", { msg: data.error })}</span>
+          <button onClick={() => data.ensure(grid.startIndex, grid.endIndex)}>{t("retry")}</button>
+        </div>
+      ) : null}
+
+      {/* One continuous grid, virtualized by rows: the outer element has the
+          height of every row, the inner window holds only the rows near the
+          viewport. Always mounted so it can be measured before data arrives. */}
+      <div className="library-vgrid" ref={grid.gridRef} style={{ height: grid.totalHeight }}>
         <div
+          ref={grid.windowRef}
           className={`grid library-grid${compact ? " compact" : " full"}${phone ? ` phone-grid phone-cols-${phoneColumns}` : ""}${
             phone && phoneColumns === 4 ? " cols-4" : ""
           }`}
           style={
-            (compact
-              ? { "--library-columns": effectiveColumns }
-              : { "--thumb-min": THUMB_MIN[thumbSize] }) as Record<
-              string,
-              string | number
-            > as CSSProperties
+            {
+              gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`,
+              gridAutoRows: grid.tileWidth > 0 ? `${grid.tileWidth}px` : undefined,
+              transform: `translateY(${grid.offsetY}px)`,
+            } as CSSProperties
           }
         >
-          {images.map((img) => {
-            const tagNames = (img.tags ?? []).map((tg) => tg.name);
-            const pickAt = pickIndex(img.id);
-            const picked = pickAt >= 0;
-            return (
-              <div
-                className={`card lib-tile${selected.has(img.id) ? " selected" : ""}${selectMode ? " selecting" : ""}${
-                  added === img.id ? " just-added" : ""
-                }${picked ? " picked" : ""}`}
-                key={img.id}
-                {...(!phone && !selectMode ? imageDragProps(img) : {})}
-                onPointerDown={phone ? (e) => startLongPress(e, img) : undefined}
-                onPointerMove={phone ? moveLongPress : undefined}
-                onPointerUp={phone ? endLongPress : undefined}
-                onPointerCancel={phone ? endLongPress : undefined}
-                onPointerLeave={phone ? endLongPress : undefined}
-              >
-                <img
-                  src={imgThumbUrl(img)}
-                  alt={displayName(img, t)}
-                  draggable={false}
-                  title={peeks ? undefined : [displayName(img, t), ...tagNames].join(" · ")}
-                  onClick={() => onCardClick(img)}
-                  {...pressable(
-                    () => onCardClick(img),
-                    (trigger, x, y) => openImageMenu(img, trigger, x, y),
-                  )}
-                  {...(peeks ? peekProps(img) : {})}
-                />
-                <span
-                  className={`lib-source ${img.source}`}
-                  title={img.source === "upload" ? t("tag_upload") : t("tag_generated")}
-                >
-                  <Icon name={img.source === "upload" ? "uploaded" : "generated"} size="sm" />
-                </span>
-                {picked && !selectMode && (
-                  <button
-                    type="button"
-                    className="pick-badge"
-                    aria-label={t("picker_ref_badge", { n: pickAt + 1 })}
-                    title={t("remove_ref")}
-                    onClick={() => picker?.onUnpick(img)}
-                  >
-                    <Icon name="check" size="sm" />
-                    <span>{pickAt + 1}</span>
-                  </button>
-                )}
-                {picker && phone && !selectMode && (
-                  <button
-                    type="button"
-                    className="pick-view"
-                    aria-label={t("picker_view")}
-                    onClick={() => openInViewer(img)}
-                  >
-                    <Icon name="zoomIn" size="sm" />
-                  </button>
-                )}
-                {!!img.starred && !selectMode && !picked && (
-                  <span className="lib-starred" title={t("favorite")}>
-                    <Icon name="favorite" size="sm" filled />
-                  </span>
-                )}
-                {selectMode && (
-                  <span className="select-check">
-                    {selected.has(img.id) && <Icon name="check" size="sm" />}
-                  </span>
-                )}
-                {tagNames.length > 0 && (
-                  <div className="lib-tags">
-                    {tagNames.slice(0, 2).map((name) => (
-                      <span key={name} className="card-tag">{name}</span>
-                    ))}
-                    {tagNames.length > 2 && <span className="card-tag">+{tagNames.length - 2}</span>}
-                  </div>
-                )}
-                {!selectMode && (
-                  <div
-                    className="lib-actions"
-                    onContextMenu={(event) =>
-                      openContextMenuFromEvent(
-                        event,
-                        (trigger, x, y) => openImageMenu(img, trigger, x, y),
-                        event.currentTarget.parentElement?.querySelector<HTMLImageElement>("img") ??
-                          event.currentTarget,
-                      )
-                    }
-                  >
-                    {picked ? (
-                      <IconButton
-                        variant="overlay"
-                        icon="remove"
-                        label={t("remove_ref")}
-                        onClick={() => picker?.onUnpick(img)}
-                      />
-                    ) : (
-                      <IconButton
-                        variant="overlay"
-                        icon="addToRefs"
-                        label={t("add_ref")}
-                        onClick={() => {
-                          addToTray(img);
-                          if (picker) return;
-                          setAdded(img.id);
-                          setTimeout(() => setAdded(null), 700);
-                        }}
-                      />
-                    )}
-                    <div className="spacer" />
-                    <IconButton
-                      variant="overlay"
-                      className={img.starred ? "is-starred" : ""}
-                      icon="favorite"
-                      filled={!!img.starred}
-                      label={img.starred ? t("unfavorite") : t("favorite")}
-                      aria-pressed={!!img.starred}
-                      onClick={() => toggleStar(img)}
-                    />
-                    <IconButton variant="overlay" icon="download" label={t("download")} onClick={() => download(img)} />
-                    {!picker && (
-                      <IconButton variant="overlay" icon="delete" label={t("delete")} onClick={() => remove(img)} />
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {tiles}
         </div>
-      )}
+      </div>
 
-      {!phone && pager}
+      <LibraryScrubber
+        mode={phone ? "phone" : compact ? "compact" : "full"}
+        total={total}
+        index={grid.visibleStart}
+        step={Math.max(1, grid.visibleEnd - grid.visibleStart + 1)}
+        timeline={timeline}
+        scrollerRef={grid.scrollerRef}
+        headerRef={stickyRef}
+        onSeek={(index) => grid.scrollToIndex(index, "start")}
+        onLongPress={phone ? () => setJumpOpen(true) : undefined}
+      />
 
       {phone && selectMode && (
         <nav className="phone-selbar" aria-label={t("apply_to_selected")}>

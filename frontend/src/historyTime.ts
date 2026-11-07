@@ -72,3 +72,11 @@ export function fullTime(d: Date, lang: Lang): string {
     timeStyle: "short",
   }).format(d);
 }
+
+// Library position label: "Oct 2026" / "2026年10月".
+export function monthYear(d: Date, lang: Lang): string {
+  return new Intl.DateTimeFormat(locale(lang), {
+    year: "numeric",
+    month: lang === "zh" ? "long" : "short",
+  }).format(d);
+}

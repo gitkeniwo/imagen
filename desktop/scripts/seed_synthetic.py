@@ -11,6 +11,16 @@ Usage (from the repo root):
     uv run --project backend python desktop/scripts/seed_synthetic.py \
         --data-dir "$TMPDIR/imagen-seed" --images 50 --port 47902
 
+Large timeline library (Library virtual-scroll tests): 5000 small images whose
+`created_at` is spread over ~2.2 years, a few out of id order, a few NULL:
+
+    uv run --project backend python desktop/scripts/seed_synthetic.py \
+        --data-dir "$TMPDIR/imagen-5k" --images 5000 --span-days 800 --small
+
+`--span-days` is the one place the script writes SQLite directly: the upload
+API always stamps "now", so `created_at` is rewritten after uploading (with the
+backend still running; a plain UPDATE on images, no schema knowledge).
+
 Safety:
   * `--data-dir` is mandatory and must not be the real data directory.
   * An existing, non-empty directory is refused unless it already carries the
@@ -102,9 +112,14 @@ def check_data_dir(raw: str) -> Path:
     return data_dir
 
 
-def make_image(index: int, total: int) -> tuple[str, str, bytes, tuple[int, int], str]:
+SMALL_SIZES = [(320, 240), (240, 240), (240, 320), (320, 180)]
+
+
+def make_image(index: int, total: int, small: bool = False) -> tuple[str, str, bytes, tuple[int, int], str]:
     rnd = random.Random(9000 + index)
-    if index % 12 == 0:  # a few 4K-class images
+    if small:  # thousands of images: keep generation + upload fast
+        width, height = rnd.choice(SMALL_SIZES)
+    elif index % 12 == 0:  # a few 4K-class images
         width, height = 3840, 2160
     else:
         width, height = rnd.choice(SIZES)
@@ -119,7 +134,7 @@ def make_image(index: int, total: int) -> tuple[str, str, bytes, tuple[int, int]
     img = Image.blend(img, noise, 0.10 + (index % 5) * 0.02)
 
     draw = ImageDraw.Draw(img)
-    size = max(18, min(width, height) // 14)
+    size = max(14 if small else 18, min(width, height) // 14)
     try:
         font = ImageFont.load_default(size=size)
     except TypeError:  # Pillow < 10.1
@@ -173,7 +188,48 @@ def _slice(seq: list, start: int, stop: int) -> list:
     return list(seq[start:stop])
 
 
-def seed(client: httpx.Client, count: int) -> dict:
+def spread_created_at(data_dir: Path, ids: list[int], span_days: int) -> dict:
+    """Rewrite images.created_at: oldest id -> `span_days` ago, newest -> now.
+
+    Roughly one image in 50 swaps its date with a random other one (so dates are
+    NOT monotonic in id, as with imported rows) and three rows get NULL, which
+    the timeline groups under "unknown". Deterministic for a given count.
+    """
+    import sqlite3
+
+    rnd = random.Random(424242)
+    now = datetime.now(timezone.utc)
+    n = len(ids)
+    stamps = []
+    for i in range(n):
+        frac = i / max(1, n - 1)
+        # Uneven density (busy and quiet weeks) instead of a flat ramp.
+        frac = min(1.0, max(0.0, frac + rnd.uniform(-0.004, 0.004)))
+        stamps.append(now - timedelta(days=span_days * (1 - frac), minutes=rnd.randrange(0, 600)))
+    stamps.sort()
+    swapped = 0
+    for _ in range(n // 50):
+        a, b = rnd.randrange(n), rnd.randrange(n)
+        if a != b:
+            stamps[a], stamps[b] = stamps[b], stamps[a]
+            swapped += 1
+    values: list[str | None] = [t.isoformat() for t in stamps]
+    nulls = rnd.sample(range(n), min(3, n))
+    for i in nulls:
+        values[i] = None
+    conn = sqlite3.connect(data_dir / "app.db", timeout=30)
+    try:
+        conn.executemany("UPDATE images SET created_at = ? WHERE id = ?", list(zip(values, ids)))
+        conn.commit()
+    finally:
+        conn.close()
+    dated = [t for t in values if t]
+    return {"span_days": span_days, "oldest": min(dated), "newest": max(dated),
+            "swapped": swapped, "null_created_at": len(nulls)}
+
+
+def seed(client: httpx.Client, count: int, *, small: bool = False,
+         span_days: int = 0, data_dir: Path | None = None) -> dict:
     created: list[dict] = []
     hashes: set[str] = set()
     formats: dict[str, int] = {}
@@ -181,7 +237,7 @@ def seed(client: httpx.Client, count: int) -> dict:
 
     batch: list[tuple[str, str, bytes, tuple[int, int], str]] = []
     for index in range(count):
-        item = make_image(index, count)
+        item = make_image(index, count, small)
         batch.append(item)
         hashes.add(item[4])
         formats[item[1]] = formats.get(item[1], 0) + 1
@@ -194,6 +250,9 @@ def seed(client: httpx.Client, count: int) -> dict:
             print(f"  uploaded {len(created)}/{count}", file=sys.stderr, flush=True)
 
     ids = [row["id"] for row in created]
+    timeline = None
+    if span_days > 0 and data_dir is not None:
+        timeline = spread_created_at(data_dir, ids, span_days)
 
     tags = [http_ok(client.post("/api/tags", json={"name": n, "color": c}), "create tag") for n, c in TAG_SPECS]
     tag_ids = [t["id"] for t in tags]
@@ -286,6 +345,7 @@ def seed(client: httpx.Client, count: int) -> dict:
             "binned": len(binned),
             "starred": len(starred),
         },
+        **({"timeline": timeline} if timeline else {}),
         "tags": {"created": len(tag_ids), "links": tag_links,
                  "listed": len(http_ok(client.get("/api/tags"), "list tags")["tags"])},
         "drafts": {"created": len(drafts), "listed": drafts_body["total"]},
@@ -300,11 +360,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", required=True, help="isolated data directory (created if missing)")
     parser.add_argument("--images", type=int, default=50, help="number of synthetic images (default 50)")
+    parser.add_argument("--span-days", type=int, default=0,
+                        help="spread created_at over this many days ending now (0 = all 'now'); "
+                             "needs a few days per 100 images to look natural, e.g. 800 for 5000")
+    parser.add_argument("--small", action="store_true",
+                        help="tiny (<=320px) images, for seeding thousands quickly")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"backend port (default {DEFAULT_PORT})")
     args = parser.parse_args()
 
     if args.images < 1:
         parser.error("--images must be >= 1")
+    if args.span_days < 0:
+        parser.error("--span-days must be >= 0")
+    if args.images > 500 and not args.small:
+        print("note: large seed without --small will be slow (multi-MB images)", file=sys.stderr)
     if args.port in RESERVED_PORTS:
         parser.error(f"port {args.port} is reserved for the user's running app/container")
     if not 1 <= args.port <= 65535:
@@ -348,7 +417,7 @@ def main() -> int:
                 _, err = proc.communicate()
             raise SystemExit(f"{exc}\nbackend stderr:\n{(err or '')[-3000:]}")
         print("  backend healthy", file=sys.stderr, flush=True)
-        summary_payload = seed(client, args.images)
+        summary_payload = seed(client, args.images, small=args.small, span_days=args.span_days, data_dir=data_dir)
     finally:
         client.close()
         if proc.poll() is None:

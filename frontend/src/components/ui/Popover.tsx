@@ -32,6 +32,7 @@ export default function Popover({
   panelProps,
   fixed = false,
   align = "end",
+  fitViewport = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -43,6 +44,8 @@ export default function Popover({
   fixed?: boolean;
   // Fixed panels only: which trigger edge the panel lines up with.
   align?: "start" | "end";
+  // Fixed panels only: cap the panel to the space left above/below the trigger.
+  fitViewport?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -84,8 +87,18 @@ export default function Popover({
       // Open upward when the panel would run off the bottom and fits above.
       const below = anchor.bottom + GAP;
       const above = anchor.top - GAP - height;
-      const top = below + height > window.innerHeight - EDGE && above >= EDGE ? above : below;
-      setPos({ position: "fixed", top, left, right: "auto", bottom: "auto", zIndex: FIXED_Z });
+      const openAbove = below + height > window.innerHeight - EDGE && above >= EDGE;
+      const top = openAbove ? above : below;
+      const available = openAbove ? anchor.top - GAP - EDGE : window.innerHeight - below - EDGE;
+      setPos({
+        position: "fixed",
+        top,
+        left,
+        right: "auto",
+        bottom: "auto",
+        zIndex: FIXED_Z,
+        ...(fitViewport ? { maxHeight: Math.max(180, available) } : {}),
+      });
     };
     place();
     window.addEventListener("resize", place);
@@ -94,7 +107,7 @@ export default function Popover({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, fixed, align]);
+  }, [open, fixed, align, fitViewport]);
 
   return (
     <div className={["popover", className].filter(Boolean).join(" ")} ref={ref}>
