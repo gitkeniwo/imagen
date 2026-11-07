@@ -62,7 +62,6 @@ const zh: Dict = {
   series_filter_any: "全部",
   series_filter_none: "未归入系列",
   series_filter_is: "系列：{name}",
-  series_group_meta: "{n} 个系列 · {tries} 次尝试",
   series_n_series: "{n} 个系列",
   series_grouped_note: "按主题分组 · 最近活动在前",
   series_import_from_tag: "从标签导入",
@@ -119,6 +118,7 @@ const zh: Dict = {
   series_show_changes: "显示改动",
   series_theme_empty: "这个主题下还没有系列。",
   series_tries_so_far: "已尝试 {n} 次",
+  series_output_deleted: "输出已删除",
   series_upload_hint: "上传的图片没有生成记录，不能归入系列",
   series_upload_short: "无生成记录",
   favorite: "收藏",
@@ -838,6 +838,7 @@ const en: Dict = {
   series_add_to: "Add to series",
   series_add_to_ellipsis: "Add to series…",
   series_all_outputs: "All {n} successful outputs, oldest first",
+  series_all_outputs_one: "1 successful output",
   series_attempts: "Attempts",
   series_back: "Back to series",
   series_best: "Best",
@@ -846,12 +847,14 @@ const en: Dict = {
   series_clear_best: "Clear best image",
   series_set_best: "Set as best",
   series_tries_n: "{n} tries",
+  series_tries_n_one: "1 try",
   series_success_n: "{n} success",
   series_blocked_n: "{n} blocked",
   series_error_n: "{n} error",
   series_cancelled_n: "{n} cancelled",
   series_rate: "{n}% ok",
-  series_bound_to: "bound to workspace {n}",
+  series_bound_to: "bound to workspaces {n}",
+  series_bound_to_one: "bound to workspace {n}",
   series_ws_short: "WS {n}",
   series_breadcrumb: "Breadcrumb",
   series_col_name: "Name",
@@ -866,6 +869,7 @@ const en: Dict = {
   series_delete: "Delete series",
   series_delete_title: "Delete series?",
   series_delete_message: "The {n} records in “{name}” become unfiled. No generation or image is deleted.",
+  series_delete_message_one: "The 1 record in “{name}” becomes unfiled. No generation or image is deleted.",
   series_delete_theme: "Delete theme",
   series_delete_theme_title: "Delete theme?",
   series_delete_theme_message: "The series in “{name}” move to No theme. No record or image is deleted.",
@@ -875,7 +879,6 @@ const en: Dict = {
   series_filter_any: "Any",
   series_filter_none: "No series",
   series_filter_is: "Series: {name}",
-  series_group_meta: "{n} series · {tries} tries",
   series_n_series: "{n} series",
   series_grouped_note: "Grouped by theme · last activity",
   series_import_from_tag: "Import from tag",
@@ -884,17 +887,20 @@ const en: Dict = {
   series_import_tag: "Tag",
   series_import_pick_tag: "Pick a tag…",
   series_import_images: "{n} images",
+  series_import_images_one: "1 image",
   series_import_found: "Generations found",
   series_import_moving: "Already in another series — will move",
   series_import_failed: "Also pull in blocked / failed tries with the same prompt",
   series_import_create: "Create series · {n}",
   series_import_done: "Filed {n} records under “{name}”",
+  series_import_done_one: "Filed 1 record under “{name}”",
   series_load_more: "Load {n} more",
   series_menu: "Series menu",
   series_theme_menu: "Theme actions",
   series_move: "Move",
   series_move_to_theme: "Move to theme",
   series_n_generations: "{n} generations",
+  series_n_generations_one: "1 generation",
   series_n_of_m: "{n} of {m}",
   series_name: "Series name",
   series_theme_name: "Theme name",
@@ -907,8 +913,11 @@ const en: Dict = {
   series_new_from_selection: "New series from selection…",
   series_remove_from: "Remove from series",
   series_removed_toast: "Removed {n} from their series",
+  series_removed_toast_one: "Removed 1 from its series",
   series_assigned_toast: "Added {n} records to “{name}”",
+  series_assigned_toast_one: "Added 1 record to “{name}”",
   series_assigned_moved_toast: "Added {n} records to “{name}” ({m} moved from another series)",
+  series_assigned_moved_toast_one: "Added 1 record to “{name}” (moved from another series)",
   series_newest_first: "Newest first",
   series_next_hint: "→ #{n} in {name}",
   series_next_hint_title: "The next generation is filed under this series",
@@ -932,6 +941,8 @@ const en: Dict = {
   series_show_changes: "Show changes",
   series_theme_empty: "No series in this theme yet.",
   series_tries_so_far: "{n} tries so far",
+  series_tries_so_far_one: "1 try so far",
+  series_output_deleted: "Output deleted",
   series_upload_hint: "Uploads have no generation, so they can't join a series",
   series_upload_short: "No generation",
   favorite: "Favorite",
@@ -1138,6 +1149,7 @@ const en: Dict = {
   copy: "Copy",
   full_text: "Full text",
   inputs_n: "{n} input images",
+  inputs_n_one: "1 input image",
   peek_input: "Input {n}",
   peek_ref: "Reference {n}",
   viewer_inputs: "Inputs · {n}",
@@ -1581,6 +1593,7 @@ const en: Dict = {
   phone_columns_n: "{n} columns",
   phone_total_images: "{n} images",
   phone_total_records: "{n} records",
+  phone_total_records_one: "1 record",
   phone_total_drafts: "{n} drafts",
   phone_page_status: "{page} / {pages}",
   phone_batch_tags: "Batch tags",
@@ -1666,8 +1679,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLangState(l);
   };
 
+  // English picks `<key>_one` when the count (`count`, else `n`) is 1;
+  // Chinese has no plural forms and never looks for one.
   const t = (key: string, vars?: Record<string, string | number>) => {
-    let s = DICTS[lang][key] ?? DICTS.en[key] ?? key;
+    const count = vars ? (vars.count ?? vars.n) : undefined;
+    const one = lang === "en" && count === 1 ? DICTS.en[`${key}_one`] : undefined;
+    let s = one ?? DICTS[lang][key] ?? DICTS.en[key] ?? key;
     if (vars) {
       for (const [k, v] of Object.entries(vars)) {
         s = s.replace(`{${k}}`, String(v));

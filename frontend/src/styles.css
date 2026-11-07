@@ -4253,33 +4253,53 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
 .series-row-fail.blocked { background: var(--badge-blocked-bg); color: var(--badge-blocked-text); }
 .series-row-fail.error { background: var(--badge-error-bg); color: var(--badge-error-text); }
 .series-row-fail.running { display: flex; align-items: center; justify-content: center; background: var(--panel-2); }
-.series-more { display: flex; justify-content: center; }
-@container (max-width: 640px) {
-  .series-row { grid-template-columns: 32px 16px minmax(0, 1fr) 72px; column-gap: var(--space-3); padding: var(--space-3) var(--space-2); }
-  .series-detail-actions { margin-left: 0; }
-  .series-outputs, .series-detail-stats, .series-timeline-bar { padding-left: 0; }
+/* success whose output image was deleted later: neutral, not an error */
+.series-row-fail.deleted {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
+  background: var(--panel-2); color: var(--muted); text-align: center; border: 1px dashed var(--border);
 }
-
-/* phone detail: compact timeline */
-.series-detail.phone { gap: var(--space-3); }
+.series-more { display: flex; justify-content: center; }
+/* Compact detail: chosen by the detail's own width (< 640px, see
+   SeriesDetail useNarrow) — the phone layout and a narrow sidebar share it. */
+.series-detail.compact { gap: var(--space-3); }
 .series-detail-phonebar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .series-detail-phonetitle { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.series-detail-phonetitle span { font-size: var(--fs-xs); color: var(--muted); }
+.series-detail-phonetitle span { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .series-detail-phonetitle h2 { margin: 0; font-size: var(--fs-lg); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.series-detail.phone .series-detail-stats { padding-left: 0; }
-.series-detail.phone .series-outputs { padding-left: 0; }
-.series-detail.phone .series-timeline-bar { padding: 0; gap: var(--space-2); }
-.series-detail.phone .series-timeline { margin: 0; gap: var(--space-2); }
-.series-row.phone {
-  grid-template-columns: minmax(0, 1fr) 72px; column-gap: var(--space-3); padding: var(--space-2_5);
-  border: 1px solid var(--border); background: var(--panel);
+.series-detail-phonebar .series-archived-flag { flex: none; }
+.series-detail.compact .series-detail-stats { padding-left: 0; font-size: var(--fs-sm); }
+.series-detail.compact .series-timeline-bar { padding: 0; gap: var(--space-2); }
+.series-detail.compact .series-timeline { margin: 0; gap: var(--space-2); }
+/* best image above the strip of successful outputs */
+.series-outputs.compact { flex-direction: column; align-items: stretch; gap: var(--space-3); padding-left: 0; }
+.series-outputs.compact .series-best { min-width: 0; }
+.series-outputs.compact :is(.series-best figcaption, .series-film-caption) {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.series-row.phone .series-row-n { display: none; }
-.series-row.phone .series-row-meta::before { content: none; }
-.series-row.phone .series-prompt, .series-row.phone .series-same {
+/* thumbnail on the left, text on the right */
+.series-row.compact {
+  grid-template-columns: 56px minmax(0, 1fr); column-gap: var(--space-3); padding: var(--space-2_5);
+  border: 1px solid var(--border); background: var(--panel); align-items: start;
+}
+.series-row.compact .series-row-media { justify-self: start; }
+.series-row.compact .series-row-meta { gap: var(--space-1_5); overflow: hidden; }
+.series-row.compact .series-row-meta > * { flex: none; }
+.series-row.compact .series-status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.series-row.compact .series-row-body { gap: var(--space-1_5); }
+.series-row-when { margin: 0; font-size: var(--fs-sm); line-height: 16px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.series-row-reason {
+  margin: 0; font-size: var(--fs-sm); line-height: 16px; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.series-row-reason.blocked { color: var(--badge-blocked-text); }
+.series-row-reason.deleted { color: var(--muted); }
+.series-row-reason.error, .series-row-reason.aborted { color: var(--badge-error-text); }
+.series-row.compact .series-prompt, .series-row.compact .series-same {
   font-size: var(--fs-md); line-height: 20px;
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
 }
+.series-row.compact .series-row-inputs { flex-wrap: wrap; }
+.series-row.compact .series-row-fail:is(.blocked, .error) { display: flex; align-items: center; justify-content: center; }
 
 /* --- History multi-select --- */
 .hsel-wrap { position: relative; min-width: 0; display: contents; }

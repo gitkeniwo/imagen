@@ -257,7 +257,7 @@ export default function Series({
           <div className="series-card-name">
             <SeriesDot color={s.color} />
             <span>{s.name}</span>
-            {ws && <span className="series-bound" title={t("series_bound_to", { n: (bound.get(s.id) ?? []).join(", ") })}>{ws}</span>}
+            {ws && <span className="series-bound" title={t("series_bound_to", { n: (bound.get(s.id) ?? []).join(", "), count: (bound.get(s.id) ?? []).length })}>{ws}</span>}
           </div>
           <StatusStrip strip={s.strip} max={phone ? 16 : 24} />
           <div className="series-card-meta">
@@ -285,7 +285,7 @@ export default function Series({
           <Icon name={open ? "chevronDown" : "next"} size="sm" />
           <strong>{g.name}</strong>
           <span className="series-group-meta">
-            {t("series_group_meta", { n: g.items.length, tries: sums.tries })}
+            {`${t("series_n_series", { n: g.items.length })} · ${t("series_tries_n", { n: sums.tries })}`}
           </span>
         </button>
         {g.themeId !== null && !phone && (

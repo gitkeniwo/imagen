@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   type HistoryResult,
   type ImageRow,
@@ -28,6 +28,26 @@ const PAGE = 30;
 const FILM_HEIGHT = 96;
 const BEST_HEIGHT = 180;
 const OUTPUT_WIDTH = 88;
+const COMPACT_BEST_HEIGHT = 140;
+const COMPACT_FILM_HEIGHT = 64;
+const COMPACT_OUTPUT_WIDTH = 56;
+/** Below this width the detail switches to the compact (phone) timeline. */
+const COMPACT_BELOW = 640;
+
+/** Width of the element itself, so the layout follows the sidebar panel's
+ *  size rather than the device. */
+function useNarrow(el: HTMLElement | null, below: number) {
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    if (!el) return;
+    const check = () => setNarrow(el.getBoundingClientRect().width < below);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el, below]);
+  return narrow;
+}
 
 const ratioOf = (img: Pick<ImageRow, "width" | "height">) =>
   img.width > 0 && img.height > 0 ? img.width / img.height : 1;
@@ -68,6 +88,8 @@ export default function SeriesDetail({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<"rename" | "move" | null>(null);
+  const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
+  const compact = useNarrow(rootEl, COMPACT_BELOW) || phone;
 
   const load = useCallback(
     async (append = false) => {
@@ -149,7 +171,7 @@ export default function SeriesDetail({
 
   if (!detail) {
     return (
-      <div className="series-detail">
+      <div className="series-detail" ref={setRootEl}>
         <div className="panel muted">
           {error ? (
             <div className="load-error">
@@ -177,19 +199,19 @@ export default function SeriesDetail({
     t("series_blocked_n", { n: detail.blocked }),
     t("series_error_n", { n: detail.error }),
     detail.aborted > 0 ? t("series_cancelled_n", { n: detail.aborted }) : null,
-    rate !== null && phone ? t("series_rate", { n: rate }) : null,
+    rate !== null && compact ? t("series_rate", { n: rate }) : null,
     last
       ? spanFrom && dayKey(spanFrom) !== dayKey(last)
         ? `${cardTime(spanFrom, now, lang)} – ${cardTime(last, now, lang)}`
         : cardTime(last, now, lang)
       : null,
-    boundTo.length ? t("series_bound_to", { n: boundTo.join(", ") }) : null,
+    boundTo.length ? t("series_bound_to", { n: boundTo.join(", "), count: boundTo.length }) : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   const moreItems: MenuItem[] = [
-    ...(phone
+    ...(compact
       ? [
           { label: t("series_open_in_workspace"), icon: "reuse" as const, onSelect: () => onOpenInWorkspace(id) },
           { label: t("series_rename"), icon: "edit" as const, onSelect: () => setDialog("rename") },
@@ -211,9 +233,9 @@ export default function SeriesDetail({
   ];
 
   return (
-    <div className={`series-detail${phone ? " phone" : ""}`}>
+    <div className={`series-detail${compact ? " compact" : ""}`} ref={setRootEl}>
       <header className="series-detail-head">
-        {phone ? (
+        {compact ? (
           <div className="series-detail-phonebar">
             <IconButton icon="prev" label={t("series_back")} onClick={onBack} />
             <SeriesDot color={detail.color} />
@@ -221,6 +243,7 @@ export default function SeriesDetail({
               <span>{detail.theme?.name ?? t("series_no_theme")}</span>
               <h2>{detail.name}</h2>
             </div>
+            {!!detail.archived && <span className="series-archived-flag">{t("series_archived")}</span>}
             <Menu
               items={moreItems}
               renderTrigger={({ open, toggle }) => (
@@ -257,47 +280,49 @@ export default function SeriesDetail({
       </header>
 
       {outputs.length > 0 && best && (
-        <section className="series-outputs" aria-label={t("series_outputs")}>
+        <section className={`series-outputs${compact ? " compact" : ""}`} aria-label={t("series_outputs")}>
           <figure className="series-best">
             <button
               type="button"
               className="series-best-img"
-              style={{ height: phone ? 64 : BEST_HEIGHT, width: (phone ? 64 : BEST_HEIGHT) * ratioOf(best) }}
+              style={{
+                height: compact ? COMPACT_BEST_HEIGHT : BEST_HEIGHT,
+                width: Math.round((compact ? COMPACT_BEST_HEIGHT : BEST_HEIGHT) * ratioOf(best)),
+              }}
               onClick={() => onOpenViewer(best, outputs)}
               title={t("open_viewer")}
             >
               <img src={imgThumbUrl(best)} alt="" draggable={false} />
             </button>
-            {!phone && (
-              <figcaption>
-                {bestId ? (bestSeq ? t("series_best_n", { n: bestSeq }) : t("series_best")) : t("series_latest")}
-              </figcaption>
-            )}
+            <figcaption>
+              {bestId ? (bestSeq ? t("series_best_n", { n: bestSeq }) : t("series_best")) : t("series_latest")}
+            </figcaption>
           </figure>
-          {!phone && (
-            <div className="series-film-wrap">
-              <div className="series-film">
-                {outputs.map((img) => (
+          <div className="series-film-wrap">
+            <div className="series-film">
+              {outputs.map((img) => {
+                const h = compact ? COMPACT_FILM_HEIGHT : FILM_HEIGHT;
+                return (
                   <button
                     key={img.id}
                     type="button"
                     className={`series-film-item${img.id === bestId ? " best" : ""}`}
-                    style={{ height: FILM_HEIGHT, width: Math.round(FILM_HEIGHT * ratioOf(img)) }}
+                    style={{ height: h, width: Math.round(h * ratioOf(img)) }}
                     title={t("open_viewer")}
                     onClick={() => onOpenViewer(img, outputs)}
                   >
                     <img src={imgThumbUrl(img)} alt="" loading="lazy" draggable={false} />
                   </button>
-                ))}
-              </div>
-              <span className="series-film-caption">{t("series_all_outputs", { n: outputs.length })}</span>
+                );
+              })}
             </div>
-          )}
+            <span className="series-film-caption">{t("series_all_outputs", { n: outputs.length })}</span>
+          </div>
         </section>
       )}
 
       <div className="series-timeline-bar">
-        {phone ? (
+        {compact ? (
           <div className="series-filter-chips" role="group" aria-label={t("hist_filter_result")}>
             {filterOptions.map((o) => (
               <button
@@ -316,7 +341,7 @@ export default function SeriesDetail({
         )}
         <div className="spacer" />
         <Switch checked={showChanges} onChange={setShowChanges} label={t("series_show_changes")} />
-        {!phone && <span className="series-order">{t("series_newest_first")}</span>}
+        {!compact && <span className="series-order">{t("series_newest_first")}</span>}
       </div>
 
       {loading && rows.length === 0 ? (
@@ -329,7 +354,7 @@ export default function SeriesDetail({
             <TimelineRow
               key={g.id}
               g={g}
-              phone={phone}
+              compact={compact}
               showChanges={showChanges}
               isBest={!!g.output_image_id && g.output_image_id === bestId}
               onOpen={(img) => onOpenViewer(img, outputs.length ? outputs : [img])}
@@ -378,7 +403,7 @@ const PARAM_ORDER: ParamKey[] = ["provider", "model", "resolution", "aspect_rati
 
 function TimelineRow({
   g,
-  phone,
+  compact,
   showChanges,
   isBest,
   onOpen,
@@ -390,7 +415,7 @@ function TimelineRow({
   fullTimeText,
 }: {
   g: SeriesGeneration;
-  phone: boolean;
+  compact: boolean;
   showChanges: boolean;
   isBest: boolean;
   onOpen: (img: ImageRow) => void;
@@ -441,7 +466,7 @@ function TimelineRow({
       <p className="series-same">{t("series_same_prompt", { n: prev!.seq })}</p>
     ) : showChanges && prev ? (
       <p className="series-prompt">
-        {(phone ? compactEqual(diffWords(prev.prompt, g.prompt)) : diffWords(prev.prompt, g.prompt)).map((seg, i) => {
+        {(compact ? compactEqual(diffWords(prev.prompt, g.prompt)) : diffWords(prev.prompt, g.prompt)).map((seg, i) => {
           if (seg.kind === "equal") return <span key={i}>{seg.text}</span>;
           const [body, tail] = splitTrailingSpace(seg.text);
           return (
@@ -468,28 +493,39 @@ function TimelineRow({
     </button>
   ) : g.status === "running" ? (
     <div className="series-row-fail running"><span className="spinner" /></div>
+  ) : g.status === "success" ? (
+    // A success whose output was deleted afterwards is not a failure.
+    <div className="series-row-fail deleted" title={t("series_output_deleted")}>
+      <Icon name="imageMissing" size="sm" />
+      {!compact && <span>{t("series_output_deleted")}</span>}
+    </div>
   ) : (
     <div className={`series-row-fail ${status === "blocked" ? "blocked" : "error"}`} title={reasonText}>
-      {g.outputImage?.deleted_at || (g.status === "success" && !g.outputImage) ? t("deleted_label") : reasonText}
+      {compact ? <Icon name={status === "blocked" ? "shield" : "warning"} size="sm" /> : <span>{reasonText}</span>}
     </div>
+  );
+  const failed = !output && g.status !== "success" && g.status !== "running";
+  const mediaBox = (
+    <div className="series-row-media" style={{ width: compact ? COMPACT_OUTPUT_WIDTH : OUTPUT_WIDTH }}>{media}</div>
   );
 
   return (
-    <li className={`series-row${phone ? " phone" : ""}`}>
-      <span className="series-row-n">#{g.seq}</span>
-      {!phone && (
+    <li className={`series-row${compact ? " compact" : ""}`}>
+      {compact && mediaBox}
+      {!compact && <span className="series-row-n">#{g.seq}</span>}
+      {!compact && (
         <span className="series-row-rail" aria-hidden="true">
           <i className={status} />
         </span>
       )}
       <div className="series-row-body">
         <div className="series-row-meta">
-          {phone && <i className={`series-row-dot ${status}`} aria-hidden="true" />}
-          {phone && <span className="series-row-n-inline">#{g.seq}</span>}
+          {compact && <i className={`series-row-dot ${status}`} aria-hidden="true" />}
+          {compact && <span className="series-row-n-inline">#{g.seq}</span>}
           <strong className={`series-status ${status}`}>{t(`status_${status}`)}</strong>
-          <time dateTime={g.created_at} title={fullTimeText}>{timeText}</time>
-          {!phone && runtime && <span>· {runtime}</span>}
-          {!phone && (
+          {!compact && <time dateTime={g.created_at} title={fullTimeText}>{timeText}</time>}
+          {!compact && runtime && <span>· {runtime}</span>}
+          {!compact && (
             <span className="series-params">
               ·{" "}
               {params.map((k, i) => (
@@ -501,7 +537,7 @@ function TimelineRow({
             </span>
           )}
           {isBest && <span className="series-best-flag">{t("series_best")}</span>}
-          {phone ? (
+          {compact ? (
             <Menu
               className="series-row-more"
               items={actions}
@@ -519,6 +555,10 @@ function TimelineRow({
             </span>
           )}
         </div>
+        {compact && failed && <p className={`series-row-reason ${status}`}>{reasonText}</p>}
+        {compact && !output && g.status === "success" && (
+          <p className="series-row-reason deleted">{t("series_output_deleted")}</p>
+        )}
         {prompt}
         {inputs.length > 0 && (
           <div className={`series-row-inputs${changed.has("inputs") ? " changed" : ""}`}>
@@ -532,8 +572,14 @@ function TimelineRow({
             <span>{t("inputs_n", { n: inputs.length })}</span>
           </div>
         )}
+        {compact && (
+          <p className="series-row-when">
+            <time dateTime={g.created_at} title={fullTimeText}>{timeText}</time>
+            {runtime && <span> · {runtime}</span>}
+          </p>
+        )}
       </div>
-      <div className="series-row-media" style={{ width: phone ? 72 : OUTPUT_WIDTH }}>{media}</div>
+      {!compact && mediaBox}
     </li>
   );
 }
