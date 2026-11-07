@@ -199,7 +199,10 @@ export default function Library({
     return () => {
       alive = false;
     };
-  }, [filters, filtersKey, refreshKey, timelineTick]);
+    // `refreshKey` is not a dependency: every refresh (including the one a
+    // `refreshKey` change starts) bumps `timelineTick`, so listing both
+    // fetched the timeline twice.
+  }, [filters, filtersKey, timelineTick]);
 
   const grid = useVirtualGrid({
     count: total,
@@ -271,22 +274,25 @@ export default function Library({
     }
     refreshing.current = true;
     try {
-      const res = await data.refresh(rangeRef.current, () => {
+      // The anchor is staged inside `beforeSwap`, i.e. before the fresh rows
+      // and their version bump exist, so the layout effect below always
+      // finds it on the commit that shows them.
+      await data.refresh(rangeRef.current, ({ oldTotal, newTotal }) => {
         const anchor = grid.readAnchor();
-        return {
+        pendingAnchor.current = {
           anchor,
           anchorId: anchor ? data.get(anchor.index)?.id ?? null : null,
           topId: data.get(0)?.id ?? null,
           // "Near the top" = less than one row scrolled.
           atTop: !anchor || (anchor.index === 0 && anchor.offset > -grid.rowHeight),
+          delta: newTotal - oldTotal,
         };
       });
-      if (res) {
-        pendingAnchor.current = { ...res.captured, delta: res.newTotal - res.oldTotal };
-        setTimelineTick((n) => n + 1);
-      }
     } finally {
       refreshing.current = false;
+      // Even a failed or superseded refresh reloads the timeline: this is the
+      // only path a `refreshKey` change takes to it.
+      setTimelineTick((n) => n + 1);
     }
     if (queued.current) {
       queued.current = false;
@@ -428,12 +434,26 @@ export default function Library({
       return next;
     });
 
-  const allSelected = total > 0 && selected.size >= total;
+  // The selection survives filter changes (as it did with pages), so its size
+  // says nothing about the current result. "All selected" means: the ids the
+  // last "Select all" fetched for these filters and this total are all still
+  // selected. A new or deleted image changes the total and re-enables it.
+  const [resultIds, setResultIds] = useState<{ key: string; total: number; ids: number[] } | null>(
+    null,
+  );
+  const allSelected =
+    total > 0 &&
+    !!resultIds &&
+    resultIds.key === filtersKey &&
+    resultIds.total === total &&
+    resultIds.ids.every((id) => selected.has(id));
 
   // "Select all" means the whole filtered result, not what is on screen.
   const selectAllResults = async () => {
+    const key = filtersKey;
     try {
       const r = await api.listImageIds({ ...filters, limit: MAX_SELECT_IDS });
+      setResultIds({ key, total: r.total, ids: r.ids });
       setSelected((s) => new Set([...s, ...r.ids]));
       if (r.total > r.ids.length) {
         toast(t("select_limit", { n: MAX_SELECT_IDS.toLocaleString() }), "info");

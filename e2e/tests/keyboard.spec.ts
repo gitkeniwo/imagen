@@ -1,5 +1,5 @@
 import { contextMenu, expect, openApp, rightClick, submenu, test } from "../fixtures";
-import { libTile, openViewerOn, viewer, viewerTitle } from "../ui";
+import { libTile, shownLibTile, openViewerOn, viewer, viewerTitle } from "../ui";
 
 // Read-only: menus are opened and dismissed without choosing an action.
 
@@ -21,7 +21,7 @@ const focusedItem = (page: import("@playwright/test").Page) =>
 test("Shift+F10 opens the menu, arrows cycle, → / ← enter and leave the tag submenu, Esc returns focus", async ({
   page,
 }) => {
-  const tile = libTile(page, "landscape-alps.jpg");
+  const tile = (await shownLibTile(page, "landscape-alps.jpg"));
   // Scroll first: the menu closes on scroll, and focus() may scroll the grid.
   await tile.scrollIntoViewIfNeeded();
   await page.waitForTimeout(200);

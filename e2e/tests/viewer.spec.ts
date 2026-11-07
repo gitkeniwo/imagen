@@ -1,5 +1,5 @@
 import { expect, openApp, test } from "../fixtures";
-import { libTile, libTiles, openViewerOn, viewer, viewerTitle } from "../ui";
+import { libTile, shownLibTile, libTiles, openViewerOn, viewer, viewerTitle } from "../ui";
 
 // Read-only.
 
@@ -76,8 +76,8 @@ test("display names: default generated names show local time; renamed and upload
     const base = await expectedName(page, g.filename);
     expect(names.some((n) => n === base || n.startsWith(`${base}.`)), `${base} among ${names.join(" | ")}`).toBe(true);
   }
-  await expect(libTile(page, "poster-alps-4k.png")).toBeVisible();
-  await expect(libTile(page, "landscape-alps.jpg")).toBeVisible();
+  await expect((await shownLibTile(page, "poster-alps-4k.png"))).toBeVisible();
+  await expect((await shownLibTile(page, "landscape-alps.jpg"))).toBeVisible();
   // The viewer uses the same name.
   await openViewerOn(page, "poster-alps-4k.png");
 });

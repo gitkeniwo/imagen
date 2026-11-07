@@ -1,5 +1,5 @@
 import { contextMenu, expect, menuLabels, menuTitle, openApp, rightClick, submenu, test } from "../fixtures";
-import { libTile } from "../ui";
+import { shownLibTile } from "../ui";
 
 // Changes tags: every test starts from a fresh library copy.
 test.use({ freshLibrary: true });
@@ -19,12 +19,12 @@ test("right-clicking an unselected image in select mode adds it, then opens the 
   page,
 }) => {
   await page.getByRole("button", { name: "Select", exact: true }).click();
-  await libTile(page, "landscape-alps.jpg").click();
-  await libTile(page, "landscape-dunes.jpg").click();
+  await (await shownLibTile(page, "landscape-alps.jpg")).click();
+  await (await shownLibTile(page, "landscape-dunes.jpg")).click();
   const selected = page.locator(".library-grid .lib-tile.selected");
   await expect(selected).toHaveCount(2);
 
-  await rightClick(libTile(page, "texture-terrazzo.png"));
+  await rightClick((await shownLibTile(page, "texture-terrazzo.png")));
   await expect(contextMenu(page)).toBeVisible();
   expect(await menuTitle(page)).toBe("3 selected");
   expect(await menuLabels(page)).toEqual(
@@ -38,7 +38,7 @@ test("right-clicking an unselected image in select mode adds it, then opens the 
 });
 
 test("new tag from the tag submenu lands on the image", async ({ page }) => {
-  await rightClick(libTile(page, "landscape-alps.jpg"));
+  await rightClick((await shownLibTile(page, "landscape-alps.jpg")));
   await contextMenu(page).getByRole("menuitem", { name: "Tags" }).click();
   const sub = submenu(page);
   await expect(sub).toBeVisible();
@@ -57,9 +57,9 @@ test("new tag from the tag submenu lands on the image", async ({ page }) => {
 test("batch remove-tag lists only tags the selected images carry", async ({ page }) => {
   // The long-named upload has no tags; product-mug.webp carries only 产品.
   await page.getByRole("button", { name: "Select", exact: true }).click();
-  await libTile(page, /^a-very-long-filename/).click();
-  await libTile(page, "product-mug.webp").click();
-  await rightClick(libTile(page, "product-mug.webp"));
+  await (await shownLibTile(page, /^a-very-long-filename/)).click();
+  await (await shownLibTile(page, "product-mug.webp")).click();
+  await rightClick((await shownLibTile(page, "product-mug.webp")));
   expect(await menuTitle(page)).toBe("2 selected");
   await contextMenu(page).getByRole("menuitem", { name: "Remove tag" }).click();
   const options = submenu(page).getByRole("menuitemcheckbox");

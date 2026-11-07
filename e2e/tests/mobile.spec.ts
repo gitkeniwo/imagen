@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { contextMenu, expect, test } from "../fixtures";
-import { expectNoHorizontalScroll, libTile } from "../ui";
+import { expectNoHorizontalScroll, libTile, shownLibTile } from "../ui";
 
 // Phone layout (375×812, touch). Runs only in the "mobile" project.
 
@@ -28,11 +28,11 @@ async function tap(page: Page, target: Locator) {
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
-  await expect(libTile(page, "landscape-alps.jpg")).toBeVisible();
+  await expect((await shownLibTile(page, "landscape-alps.jpg"))).toBeVisible();
 });
 
 test("long-press a thumbnail enters multi-select", async ({ page }) => {
-  await longPress(page, libTile(page, "landscape-alps.jpg"));
+  await longPress(page, (await shownLibTile(page, "landscape-alps.jpg")));
   const selected = page.locator(".library-grid .lib-tile.selected");
   await expect(selected).toHaveCount(1);
   await expect(page.locator(".library-grid .lib-tile.selecting").first()).toBeVisible();
@@ -40,12 +40,12 @@ test("long-press a thumbnail enters multi-select", async ({ page }) => {
   await expect(page.locator(".viewer-overlay")).toHaveCount(0);
   await expect(contextMenu(page)).toHaveCount(0);
   // A second tap extends the selection.
-  await tap(page, libTile(page, "landscape-dunes.jpg"));
+  await tap(page, (await shownLibTile(page, "landscape-dunes.jpg")));
   await expect(selected).toHaveCount(2);
 });
 
 test("tap opens the viewer; no hover preview is left behind", async ({ page }) => {
-  await tap(page, libTile(page, "landscape-alps.jpg"));
+  await tap(page, (await shownLibTile(page, "landscape-alps.jpg")));
   const v = page.locator(".viewer-overlay");
   await expect(v).toBeVisible();
   await expect(v.getByRole("img", { name: "landscape-alps.jpg" })).toBeVisible();

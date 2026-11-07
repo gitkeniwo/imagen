@@ -39,6 +39,10 @@ export function useChunkedImages(
   const inflight = useRef(new Map<number, AbortController>());
   // Bumped on every reset: answers from an older epoch are ignored.
   const epoch = useRef(0);
+  // Bumped whenever `refresh()` swaps in fresh rows. A chunk request started
+  // before the swap carries offsets from before it (new images shift every
+  // position), so its answer is dropped instead of cached as fresh.
+  const refreshGen = useRef(0);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   const onRowsRef = useRef(onRows);
@@ -95,6 +99,7 @@ export function useChunkedImages(
       }
       evict(first, last);
       const myEpoch = epoch.current;
+      const myGen = refreshGen.current;
       // Middle chunk first: the range includes overscan on both sides, and
       // the on-screen part should arrive before the margins.
       const mid = Math.floor((Math.floor(start / CHUNK) + Math.floor(end / CHUNK)) / 2);
@@ -108,14 +113,19 @@ export function useChunkedImages(
         inflight.current.set(i, ctrl);
         fetchChunk(i, ctrl.signal)
           .then((r) => {
-            if (epoch.current !== myEpoch) return;
+            if (epoch.current !== myEpoch || refreshGen.current !== myGen) return;
             chunks.current.set(i, { rows: r.images, stale: false });
             if (r.total !== totalRef.current) applyTotal(r.total);
             setError(null);
             bump();
           })
           .catch((e) => {
-            if ((e as Error).name === "AbortError" || epoch.current !== myEpoch) return;
+            if (
+              (e as Error).name === "AbortError" ||
+              epoch.current !== myEpoch ||
+              refreshGen.current !== myGen
+            )
+              return;
             setError((e as Error).message);
           })
           .finally(() => {
@@ -169,7 +179,13 @@ export function useChunkedImages(
    * re-anchors against fresh data in a single commit.
    */
   const refresh = useCallback(
-    async <T,>(range: [number, number], beforeSwap: () => T): Promise<RefreshResult<T> | null> => {
+    async <T,>(
+      range: [number, number],
+      // Called synchronously right before the swap (and the re-render it
+      // triggers): the caller reads its anchor against the old rows and
+      // stages whatever its layout effect needs for the new ones.
+      beforeSwap: (totals: { oldTotal: number; newTotal: number }) => T,
+    ): Promise<RefreshResult<T> | null> => {
       const myEpoch = epoch.current;
       const oldTotal = totalRef.current;
       const wanted = new Set<number>([0]);
@@ -185,7 +201,11 @@ export function useChunkedImages(
         );
         if (epoch.current !== myEpoch) return null;
         const newTotal = results.find(([i]) => i === 0)![1].total;
-        const captured = beforeSwap();
+        const captured = beforeSwap({ oldTotal, newTotal });
+        // Anything still in flight was asked for against the old positions:
+        // cancel it and forget it, so `ensure` below may ask again.
+        refreshGen.current += 1;
+        abortAll();
         for (const chunk of chunks.current.values()) chunk.stale = true;
         for (const [i, r] of results) {
           if (r.images.length > 0) chunks.current.set(i, { rows: r.images, stale: false });
@@ -197,13 +217,17 @@ export function useChunkedImages(
         applyTotal(newTotal);
         setError(null);
         bump();
+        // Refill whatever the cancelled requests were for (and any stale
+        // chunk in the last requested range) right away; nothing else would
+        // ask again until the next scroll.
+        ensure(lastRange.current[0], lastRange.current[1]);
         return { oldTotal, newTotal, captured };
       } catch (e) {
         if (epoch.current === myEpoch) setError((e as Error).message);
         return null;
       }
     },
-    [applyTotal, bump, fetchChunk],
+    [applyTotal, bump, ensure, fetchChunk],
   );
 
   const get = useCallback(
