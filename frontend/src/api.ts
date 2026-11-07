@@ -483,6 +483,8 @@ export interface LibraryFilters {
 
 export interface ImageTimeline {
   days: { day: string; count: number; first_index: number }[];
+  // [start_index, day] wherever the day changes, in list order (first at 0).
+  runs: [number, string][];
   total: number;
 }
 

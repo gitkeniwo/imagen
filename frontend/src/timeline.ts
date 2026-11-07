@@ -35,6 +35,15 @@ export interface TimelineYear {
 export interface Timeline {
   // Valid (YYYY-MM-DD) days in list-position order.
   days: TimelineDay[];
+  // Day changes in list order: runStarts[k] is where runDays[k] begins.
+  // runDays[k] is null for rows without a usable date.
+  runStarts: number[];
+  runDays: (TimelineDay | null)[];
+  // Where each month / year sits on the scrubber: the start of its longest
+  // contiguous stretch in list order, so a few stray rows cannot drag the
+  // tick away from where that month's images actually are.
+  monthAnchor: Map<string, number>;
+  yearAnchor: Map<number, number>;
   // Valid days in calendar order, oldest first (binary search by date).
   byDate: TimelineDay[];
   byDay: Map<string, TimelineDay>;
@@ -44,6 +53,8 @@ export interface Timeline {
 }
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Longest interruption (in rows) that does not split a month / year stretch.
+const STRAY_ROWS = 2;
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export function monthKey(year: number, month: number): string {
@@ -98,8 +109,69 @@ export function buildTimeline(input: ImageTimeline): Timeline {
     for (const m of y.months) m.days.sort((a, b) => a.first_index - b.first_index);
   }
 
+  const runStarts: number[] = [];
+  const runDays: (TimelineDay | null)[] = [];
+  for (const [start, day] of input.runs ?? []) {
+    runStarts.push(start);
+    runDays.push(byDay.get(day) ?? null);
+  }
+  // Longest stretch per key (month / year) in list order. Interruptions of
+  // at most STRAY_ROWS rows between two stretches of the same key (a stray
+  // imported row, an undated one) are absorbed first, so they neither split a
+  // stretch nor count as a stretch of their own.
+  const anchors = <K,>(keyOf: (day: string) => K) => {
+    type Seg = { key: K | null; start: number; end: number };
+    let segs: Seg[] = [];
+    runStarts.forEach((start, k) => {
+      const end = k + 1 < runStarts.length ? runStarts[k + 1] : input.total;
+      const day = runDays[k]?.day;
+      const key = day ? keyOf(day) : null;
+      const last = segs[segs.length - 1];
+      if (last && last.key === key) last.end = end;
+      else segs.push({ key, start, end });
+    });
+    for (let changed = true; changed; ) {
+      changed = false;
+      const out: Seg[] = [];
+      for (let k = 0; k < segs.length; k++) {
+        const seg = segs[k];
+        const prev = out[out.length - 1];
+        const next = segs[k + 1];
+        if (
+          prev &&
+          next &&
+          prev.key !== null &&
+          prev.key === next.key &&
+          seg.end - seg.start <= STRAY_ROWS
+        ) {
+          prev.end = next.end;
+          k += 1;
+          changed = true;
+        } else if (prev && prev.key === seg.key) {
+          prev.end = seg.end;
+        } else {
+          out.push({ ...seg });
+        }
+      }
+      segs = out;
+    }
+    const best = new Map<K, Seg>();
+    for (const seg of segs) {
+      if (seg.key === null) continue;
+      const prev = best.get(seg.key);
+      if (!prev || seg.end - seg.start > prev.end - prev.start) best.set(seg.key, seg);
+    }
+    return new Map([...best].map(([k, v]) => [k, v.start]));
+  };
+  const monthAnchor = anchors((day) => day.slice(0, 7));
+  const yearAnchor = anchors((day) => Number(day.slice(0, 4)));
+
   return {
     days: valid,
+    runStarts,
+    runDays,
+    monthAnchor,
+    yearAnchor,
     byDate,
     byDay,
     years: [...years.values()].sort((a, b) => b.year - a.year),
@@ -107,8 +179,29 @@ export function buildTimeline(input: ImageTimeline): Timeline {
   };
 }
 
-/** Topmost day at or before `index` in the list order. */
+/**
+ * The day of the image at `index` in the list order (null when that image has
+ * no usable date). Looked up in the runs: `first_index` cannot answer this,
+ * because a single stray row moves its whole day's `first_index`.
+ */
 export function indexToDay(timeline: Timeline | null, index: number): TimelineDay | null {
+  const starts = timeline?.runStarts;
+  if (starts?.length) {
+    let lo = 0;
+    let hi = starts.length - 1;
+    let best = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (starts[mid] <= index) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return timeline!.runDays[best];
+  }
+  // No runs (empty result): nearest day by first_index.
   const days = timeline?.days;
   if (!days?.length) return null;
   let lo = 0;

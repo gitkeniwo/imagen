@@ -128,25 +128,47 @@ def images_timeline(
     order (imported / migrated rows), so a day may be scattered through the
     list. ``tz`` is minutes east of UTC. Rows whose ``created_at`` is missing
     or unparseable are grouped under ``"unknown"``.
+
+    ``runs`` answers "which day is at position i": ``[start_index, day]`` for
+    every position where the day differs from the previous position, in list
+    order (the first entry always starts at 0). ``first_index`` alone cannot
+    answer it: one stray imported row puts its day's ``first_index`` in the
+    middle of another day's images.
     """
     where, params = _library_where(source, starred, tag, q)
-    sql = f"""
+    ordered = f"""
         WITH ordered AS (
             SELECT date(created_at, ?) AS day,
                    ROW_NUMBER() OVER (ORDER BY {_LIBRARY_ORDER}) - 1 AS idx
             FROM images {where}
         )
+    """
+    days_sql = ordered + """
         SELECT day, COUNT(*) AS count, MIN(idx) AS first_index
         FROM ordered GROUP BY day
         ORDER BY (day IS NULL), day DESC
     """
+    runs_sql = ordered + """
+        , marked AS (
+            SELECT idx, day, LAG(day) OVER (ORDER BY idx) AS prev FROM ordered
+        )
+        SELECT idx, day FROM marked
+        WHERE idx = 0 OR day IS NOT prev
+        ORDER BY idx
+    """
+    args = (f"{tz:+d} minutes", *params)
     with get_conn() as conn:
-        rows = conn.execute(sql, (f"{tz:+d} minutes", *params)).fetchall()
+        rows = conn.execute(days_sql, args).fetchall()
+        runs = conn.execute(runs_sql, args).fetchall()
     days = [
         {"day": r["day"] or "unknown", "count": r["count"], "first_index": r["first_index"]}
         for r in rows
     ]
-    return {"days": days, "total": sum(d["count"] for d in days)}
+    return {
+        "days": days,
+        "runs": [[r["idx"], r["day"] or "unknown"] for r in runs],
+        "total": sum(d["count"] for d in days),
+    }
 
 
 MAX_IDS_LIMIT = 5000

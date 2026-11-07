@@ -131,6 +131,21 @@ for d in t["days"]:
     earlier = [i for i in ids_in_order[: d["first_index"]] if day_of(dates[i]) == d["day"]]
     check(not earlier, f"no {d['day']} image before its first_index")
 
+# runs: the day at every list position, read back from the runs, must equal
+# the day of the image actually at that position (strays included).
+runs = t["runs"]
+check(runs and runs[0][0] == 0, "runs start at index 0")
+check([r[0] for r in runs] == sorted({r[0] for r in runs}), "run starts strictly increasing")
+check(all(a[1] != b[1] for a, b in zip(runs, runs[1:])), "adjacent runs differ in day")
+starts = [r[0] for r in runs]
+for pos, image_id in enumerate(ids_in_order):
+    k = max(i for i, s in enumerate(starts) if s <= pos)
+    check(runs[k][1] == day_of(dates[image_id]), f"runs: position {pos} is {day_of(dates[image_id])}")
+# id 6 (2026-01-01) sits between 2026-03-14 rows: three runs, not one.
+check([r[1] for r in runs[:6]] ==
+      ["2026-11-01", "unknown", "2026-03-16", "2026-03-15", "2026-01-01", "2026-03-14"],
+      f"stray row splits the run sequence ({[r[1] for r in runs[:6]]})")
+
 dd = by_day(t)
 # 2026-03-14 has ids 3, 4, 5 (the bin row 11 is excluded); id 6 is 2026-01-01.
 check(dd["2026-03-14"]["count"] == 3, "03-14 count excludes binned row")

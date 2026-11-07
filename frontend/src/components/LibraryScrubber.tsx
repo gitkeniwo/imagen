@@ -166,10 +166,7 @@ export default function LibraryScrubber({
     if (!timeline || mode === "phone" || total <= 0) return [];
     const years: Mark[] = [];
     for (const y of timeline.years) {
-      let first = -1;
-      for (const m of y.months) {
-        if (m.count > 0 && (first < 0 || m.firstIndex < first)) first = m.firstIndex;
-      }
+      const first = timeline.yearAnchor.get(y.year) ?? -1;
       if (first >= 0) {
         years.push({
           key: `y-${y.year}`,
@@ -186,7 +183,7 @@ export default function LibraryScrubber({
         .filter((m) => m.count > 0)
         .map((m) => ({
           key: `m-${m.key}`,
-          ratio: clamp01(m.firstIndex / total),
+          ratio: clamp01((timeline.monthAnchor.get(m.key) ?? m.firstIndex) / total),
           year: false,
         }));
       return [...years, ...months];
@@ -198,7 +195,7 @@ export default function LibraryScrubber({
       .filter((m) => m.count > 0)
       .map((m) => ({
         key: `m-${m.key}`,
-        ratio: clamp01(m.firstIndex / total),
+        ratio: clamp01((timeline.monthAnchor.get(m.key) ?? m.firstIndex) / total),
         label: formatMonthShort(m.month, lang),
         year: false,
       }));
