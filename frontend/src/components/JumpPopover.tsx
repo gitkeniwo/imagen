@@ -424,11 +424,14 @@ function JumpPanel({
   }, [cellW, maxMonths, monthIndex, months.length, view, visible]);
 
   // Wheel handling:
-  //  * Sideways trackpad / shift-wheel events are left to the browser. It
-  //    scrolls natively (momentum included) and CSS snaps when it comes to
-  //    rest.
-  //  * A mostly vertical wheel is turned into horizontal movement with snap
-  //    temporarily disabled (`.free`), then snapped once after 150 ms.
+  //  * Sideways trackpad / shift-wheel events are left to the browser, which
+  //    scrolls natively (momentum included). Mandatory snapping is disabled
+  //    for the duration of the burst, otherwise Chromium/WebKit can pull each
+  //    tiny 8px delta straight back to the current month and a fast swipe
+  //    never leaves it.
+  //  * A mostly vertical wheel is also turned into horizontal movement.
+  //  * In both cases snapping is restored and the strip is aligned once,
+  //    150 ms after the last event.
   useEffect(() => {
     if (mobile) return; // phones use native touch scrolling
     const el = stripRef.current;
@@ -441,18 +444,18 @@ function JumpPanel({
     };
     const onWheel = (event: WheelEvent) => {
       if (event.ctrlKey) return; // pinch zoom, not a scroll
-      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return; // native
-      event.preventDefault();
+      const sideways = Math.abs(event.deltaX) >= Math.abs(event.deltaY);
+      if (!sideways) event.preventDefault();
       const unit =
         event.deltaMode === 1
           ? 16
           : event.deltaMode === 2
             ? el.clientWidth
             : 1;
-      const dx = (event.deltaX + event.deltaY) * unit;
       el.classList.add("free");
       void el.offsetWidth; // apply scroll-snap-type: none before moving
-      el.scrollLeft += dx;
+      // Sideways is the browser's own scroll; vertical is converted here.
+      if (!sideways) el.scrollLeft += (event.deltaX + event.deltaY) * unit;
       if (stripFreeTimer.current !== null) window.clearTimeout(stripFreeTimer.current);
       stripFreeTimer.current = window.setTimeout(finish, 150);
     };
