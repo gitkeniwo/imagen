@@ -73,7 +73,23 @@
   --chart-aborted: #94a3b8;
   --chart-other: #cbd5e1;
   --scrubber-dot: color-mix(in srgb, var(--muted-2) 75%, var(--panel));
-  --scrubber-pill-ring: rgba(255, 255, 255, 0.7);
+  --scrubber-phone-pill-bg: rgba(17, 24, 39, 0.45);
+  --scrubber-phone-pill-ring: #ffffff;
+  --scrubber-phone-tick: rgba(17, 24, 39, 0.3);
+  --scrubber-phone-tick-year: rgba(17, 24, 39, 0.85);
+  --scrubber-phone-chip-bg: #ffffff;
+  --scrubber-phone-chip-text: #4338ca;
+  --scrubber-phone-chip-border: #e0e7ff;
+  --scrubber-phone-chip-shadow: 0 2px 6px rgba(17, 24, 39, 0.1);
+  --scrubber-phone-capsule-bg: rgba(255, 255, 255, 0.86);
+  --scrubber-phone-capsule-border: rgba(17, 24, 39, 0.08);
+  --scrubber-phone-capsule-shadow:
+    0 10px 28px rgba(17, 24, 39, 0.18), 0 1px 2px rgba(17, 24, 39, 0.08);
+  --scrubber-phone-capsule-text: #111827;
+  --scrubber-phone-capsule-count: #6b7280;
+  --scrubber-phone-capsule-blur: blur(20px) saturate(1.6);
+  --scrubber-phone-grip-bg: var(--ui-accent);
+  --scrubber-phone-grip-line: #ffffff;
 
   /* Scale tokens — use these instead of raw px for type, spacing and corners. */
   --fs-xs: 11px;
@@ -180,7 +196,22 @@
     --chart-error: #f87171;
     --chart-aborted: #94a3b8;
     --chart-other: #64748b;
-    --scrubber-pill-ring: rgba(255, 255, 255, 0.35);
+    --scrubber-phone-pill-bg: rgba(17, 24, 39, 0.55);
+    --scrubber-phone-pill-ring: rgba(255, 255, 255, 0.35);
+    --scrubber-phone-tick: rgba(255, 255, 255, 0.34);
+    --scrubber-phone-tick-year: rgba(255, 255, 255, 0.9);
+    --scrubber-phone-chip-bg: #1e293b;
+    --scrubber-phone-chip-text: #c7d2fe;
+    --scrubber-phone-chip-border: rgba(255, 255, 255, 0.12);
+    --scrubber-phone-chip-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    --scrubber-phone-capsule-bg: rgba(30, 41, 59, 0.78);
+    --scrubber-phone-capsule-border: rgba(255, 255, 255, 0.14);
+    --scrubber-phone-capsule-shadow: 0 10px 30px rgba(17, 24, 39, 0.35);
+    --scrubber-phone-capsule-text: #ffffff;
+    --scrubber-phone-capsule-count: rgba(255, 255, 255, 0.7);
+    --scrubber-phone-capsule-blur: blur(18px) saturate(1.4);
+    --scrubber-phone-grip-bg: #818cf8;
+    --scrubber-phone-grip-line: #0b1020;
   }
 }
 
@@ -996,7 +1027,8 @@ body.resizing-sidebar .side-panel {
 /* Leave room for the scrubber so it never covers a tile. */
 .library-panel .library-vgrid { margin-right: 16px; }
 .manager-body .library-panel:not(.phone-panel-inner) .library-vgrid { margin-right: 70px; }
-.phone-panel-inner .library-vgrid { margin-right: 0; }
+/* The phone ruler's 12px year ticks need to clear the last tile column. */
+.phone-panel-inner .library-vgrid { margin-right: 5px; }
 /* Position label (replaces Prev / Page / Next). */
 .lib-position-row {
   display: flex; align-items: center; gap: var(--space-2);
@@ -1081,8 +1113,8 @@ body.resizing-sidebar .side-panel {
 .lib-scrubber.phone .lib-scrubber-track { display: none; }
 .lib-scrubber.phone .lib-scrubber-thumb {
   z-index: 1; right: 2px; width: 6px; height: 44px; padding: 0;
-  overflow: hidden; border: 2px solid var(--scrubber-pill-ring); border-radius: 999px;
-  background: rgba(17, 24, 39, 0.55);
+  overflow: hidden; border: 2px solid var(--scrubber-phone-pill-ring); border-radius: 999px;
+  background: var(--scrubber-phone-pill-bg);
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   transform: translateY(0);
   transition:
@@ -1094,33 +1126,41 @@ body.resizing-sidebar .side-panel {
     border-radius 180ms cubic-bezier(0.22, 1, 0.36, 1),
     background 180ms ease-out,
     box-shadow 180ms ease-out,
-    transform 180ms ease-out;
+    transform 180ms ease-out,
+    color 180ms ease-out,
+    backdrop-filter 180ms ease-out,
+    -webkit-backdrop-filter 180ms ease-out;
 }
 .lib-scrubber.phone .lib-scrubber-thumb.expanded {
-  width: 196px; height: 48px; padding: 0 7px 0 14px;
-  border-width: 1px; border-color: rgba(255, 255, 255, 0.14); border-radius: 24px;
-  background: rgba(17, 24, 39, 0.72);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  width: 180px; height: 48px; padding: 0 7px 0 14px;
+  border-width: 1px; border-color: var(--scrubber-phone-capsule-border); border-radius: 24px;
+  background: var(--scrubber-phone-capsule-bg);
+  box-shadow: var(--scrubber-phone-capsule-shadow);
+  backdrop-filter: var(--scrubber-phone-capsule-blur);
+  -webkit-backdrop-filter: var(--scrubber-phone-capsule-blur);
   transform: translateY(-2px);
 }
 .lib-phone-copy {
   min-width: 0; display: flex; flex-direction: column; gap: 1px;
-  color: #fff; opacity: 0; transition: opacity 120ms ease-out;
+  color: var(--scrubber-phone-capsule-text); opacity: 0;
+  transition: opacity 120ms ease-out, color 180ms ease-out;
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .lib-phone-month { font-size: 15px; line-height: 18px; font-weight: 700; }
 .lib-phone-count {
-  color: rgba(255, 255, 255, 0.72); font-size: 11px; line-height: 13px; font-weight: 500;
+  color: var(--scrubber-phone-capsule-count); font-size: 11px; line-height: 13px; font-weight: 500;
+  transition: color 180ms ease-out;
 }
 .lib-phone-grip {
   flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  background: #fff; box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.05);
-  opacity: 0; transition: opacity 120ms ease-out;
+  background: var(--scrubber-phone-grip-bg);
+  opacity: 0; transition: opacity 120ms ease-out, background 180ms ease-out;
 }
-.lib-phone-grip i { width: 11px; height: 2px; border-radius: 1px; background: #94a3b8; }
+.lib-phone-grip i {
+  width: 12px; height: 2px; border-radius: 1px;
+  background: var(--scrubber-phone-grip-line); transition: background 180ms ease-out;
+}
 .lib-scrubber.phone .lib-scrubber-thumb.expanded .lib-phone-copy {
   opacity: 1; transition-delay: 60ms;
 }
@@ -1128,26 +1168,39 @@ body.resizing-sidebar .side-panel {
   opacity: 1; transition-delay: 40ms;
 }
 .lib-phone-ruler {
-  position: absolute; z-index: 0; top: 0; right: 2px; width: 72px; height: 240px;
+  position: absolute; z-index: 0; top: 0; right: 0; width: 72px; height: 240px;
   overflow: hidden; opacity: 0; pointer-events: none;
   transition: opacity 160ms ease-out; will-change: transform;
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
-  mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 26%, #000 74%, transparent);
 }
 .lib-phone-ruler.on { opacity: 1; }
 .lib-phone-ruler-track {
   position: absolute; inset: 0; will-change: transform;
 }
 .lib-phone-ruler-tick {
-  position: absolute; right: 0; width: 8px; height: 2px; margin-top: -1px;
-  border-radius: 1px; background: #fff; box-shadow: 0 0 3px rgba(0, 0, 0, 0.45);
+  position: absolute; right: 5px; width: 6px; height: 2px; margin-top: -1px;
+  border-radius: 1px; background: var(--scrubber-phone-tick);
+  transition: background 180ms ease-out;
 }
-.lib-phone-ruler-tick.year { width: 16px; }
+.lib-phone-ruler-tick.year {
+  width: 12px; background: var(--scrubber-phone-tick-year);
+}
+.lib-phone-ruler-tick.current {
+  background: var(--ui-accent);
+}
 .lib-phone-ruler-label {
-  position: absolute; right: 21px; transform: translateY(-50%);
-  color: #fff; font-size: 10px; line-height: 12px; font-weight: 700;
+  position: absolute; right: 22px; transform: translateY(-50%);
+  height: 20px; padding: 0 7px; border: 1px solid var(--scrubber-phone-chip-border);
+  border-radius: 10px; background: var(--scrubber-phone-chip-bg);
+  box-shadow: var(--scrubber-phone-chip-shadow); color: var(--scrubber-phone-chip-text);
+  font-size: 10px; line-height: 18px; font-weight: 700;
   white-space: nowrap; font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  transition:
+    background 180ms ease-out,
+    border-color 180ms ease-out,
+    box-shadow 180ms ease-out,
+    color 180ms ease-out;
 }
 .lib-scrubber.phone .lib-scrubber-hit {
   z-index: 2; right: 0; width: 44px;

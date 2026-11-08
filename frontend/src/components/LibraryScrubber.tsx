@@ -57,20 +57,37 @@ function clamp01(n: number) {
 const PhoneRulerMarks = memo(function PhoneRulerMarks({
   ticks,
   height,
+  currentMonthKey,
+  currentMonthRatio,
 }: {
   ticks: PhoneRulerTick[];
   height: number;
+  currentMonthKey: string | null;
+  currentMonthRatio: number | null;
 }) {
+  const currentKey = currentMonthKey ? `m-${currentMonthKey}` : null;
+  const hasCurrent = currentKey !== null && ticks.some((tick) => tick.key === currentKey);
   return (
     <>
       {ticks.map((tick) => (
         <span
           key={tick.key}
-          className={`lib-phone-ruler-tick ${tick.kind}`}
+          className={`lib-phone-ruler-tick ${tick.kind}${
+            tick.key === currentKey ? " current" : ""
+          }`}
           style={{ top: tick.ratio * height }}
+          data-tick-key={tick.key}
           aria-hidden="true"
         />
       ))}
+      {currentKey && !hasCurrent && currentMonthRatio !== null && (
+        <span
+          className="lib-phone-ruler-tick month current"
+          style={{ top: currentMonthRatio * height }}
+          data-tick-key={currentKey}
+          aria-hidden="true"
+        />
+      )}
       {ticks.map((tick) =>
         tick.label ? (
           <span
@@ -200,7 +217,7 @@ export default function LibraryScrubber({
       const bottom = Math.max(0, hostBottom - rect.bottom + 6);
       const right =
         mode === "phone"
-          ? hostRight - document.documentElement.clientWidth
+          ? 0
           : Math.max(0, hostRight - rect.right + (mode === "full" ? 8 : 4));
       setHeight(Math.max(0, hostBottom - hostTop - top - bottom));
       setFrame((prev) =>
@@ -236,6 +253,15 @@ export default function LibraryScrubber({
   const ratio = total > 1 ? clamp01(index / (total - 1)) : 0;
   const shownIndex = active ?? index;
   const shownRatio = total > 1 ? clamp01(shownIndex / (total - 1)) : 0;
+  const activeMonthKey = useMemo(() => {
+    const day = timeline ? indexToDay(timeline, shownIndex) : null;
+    return day?.day.slice(0, 7) ?? null;
+  }, [shownIndex, timeline]);
+  const activeMonthRatio = useMemo(() => {
+    if (!timeline || !activeMonthKey || total <= 0) return null;
+    const anchor = timeline.monthAnchor.get(activeMonthKey);
+    return anchor === undefined ? null : clamp01(anchor / total);
+  }, [activeMonthKey, timeline, total]);
 
   const { bubbleText, phoneMonthText, phoneCountText } = useMemo(() => {
     const day: TimelineDay | null = timeline ? indexToDay(timeline, shownIndex) : null;
@@ -597,7 +623,12 @@ export default function LibraryScrubber({
             className="lib-phone-ruler-track"
             style={{ transform: `translate3d(0, ${-rulerY}px, 0)` }}
           >
-            <PhoneRulerMarks ticks={phoneTicks} height={height} />
+            <PhoneRulerMarks
+              ticks={phoneTicks}
+              height={height}
+              currentMonthKey={activeMonthKey}
+              currentMonthRatio={activeMonthRatio}
+            />
           </div>
         </div>
       )}

@@ -126,12 +126,36 @@ test("phone scrubber expands into a capsule and local ruler only while dragging"
     await expect(ruler).toHaveClass(/\bon\b/);
     await expect(page.locator(".lib-scrubber.phone .lib-phone-count")).toHaveText(/#\d+ of \d+/);
     await expect(scrollbar).toHaveAttribute("aria-valuetext", /#\d+ of \d+/);
+    const currentTick = page.locator(".lib-phone-ruler-tick.current");
+    await expect(currentTick).toHaveCount(1);
+    await expect(currentTick).toHaveCSS("background-color", "rgb(79, 70, 229)");
+    await expect(thumb).toHaveCSS("background-color", "rgba(255, 255, 255, 0.86)");
+    await expect(page.locator(".lib-phone-grip")).toHaveCSS("background-color", "rgb(79, 70, 229)");
 
-    await expect(thumb).toHaveCSS("width", "196px");
+    const gutter = await page.evaluate(() => {
+      const grid = document.querySelector(".library-vgrid")!.getBoundingClientRect();
+      const card = document.querySelector(".phone-island")!.getBoundingClientRect();
+      return [...document.querySelectorAll(".lib-phone-ruler-tick")].every((tick) => {
+        const box = tick.getBoundingClientRect();
+        return box.left >= grid.right - 0.5 && box.right <= card.right;
+      });
+    });
+    expect(gutter).toBe(true);
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(thumb).toHaveCSS("background-color", "rgba(30, 41, 59, 0.78)");
+    await expect(page.locator(".lib-phone-grip")).toHaveCSS("background-color", "rgb(129, 140, 248)");
+    await expect(currentTick).toHaveCSS("background-color", "rgb(165, 180, 252)");
+    await expect(page.locator(".lib-phone-ruler-label").first()).toHaveCSS(
+      "background-color",
+      "rgb(30, 41, 59)",
+    );
+
+    await expect(thumb).toHaveCSS("width", "180px");
     const capsule = (await thumb.boundingBox())!;
     await touchMove(cdp, x, y + 30);
     const next = (await thumb.boundingBox())!;
-    expect(capsule.width).toBeGreaterThan(190);
+    expect(capsule.width).toBeGreaterThan(174);
     expect(Math.abs(next.width - capsule.width)).toBeLessThan(0.5);
   } finally {
     await touchUp(cdp);
