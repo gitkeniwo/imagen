@@ -208,3 +208,115 @@ test("long-pressing the phone scrubber opens Jump without a capsule flash", asyn
   await expect(page.getByRole("dialog", { name: "Jump to" })).toBeVisible();
   await expect(page.locator(".lib-scrubber.phone .lib-scrubber-thumb")).not.toHaveClass(/expanded/);
 });
+
+/** Month cells wholly inside the strip viewport. */
+async function visibleMonths(page: Page) {
+  const strip = page.locator(".jump-strip");
+  const box = (await strip.boundingBox())!;
+  return strip.locator(".jump-strip-month").evaluateAll(
+    (els, viewport) =>
+      els.filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.left >= viewport.x - 0.5 && r.right <= viewport.x + viewport.width + 0.5;
+      }).length,
+    box,
+  );
+}
+
+test("tapping the position line opens a headless jump drawer with 7 whole months", async ({ page }) => {
+  await page.locator(".lib-position").tap();
+  const dialog = page.getByRole("dialog", { name: "Jump to" });
+  await expect(dialog).toBeVisible();
+  // No title row and no ✕; the sheet's aria-label still names the dialog.
+  await expect(page.locator(".jump-sheet .sheet-head")).toHaveCount(0);
+  await expect(page.locator(".jump-sheet").getByRole("button", { name: "Close" })).toHaveCount(0);
+  await expect(page.locator(".jump-search-box input")).toHaveCSS("font-size", "16px");
+  await expect(page.locator(".jump-strip")).toHaveCSS("scrollbar-width", "none");
+  await expect.poll(() => visibleMonths(page)).toBe(7);
+  // The leftmost month pins its year at the left edge of the strip.
+  await expect(page.locator(".jump-strip-year-pin")).toHaveText("2026");
+
+  await page.getByRole("button", { name: "Cancel" }).tap();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("dragging the drawer handle down closes the jump drawer", async ({ page }) => {
+  await page.locator(".lib-position").tap();
+  const dialog = page.getByRole("dialog", { name: "Jump to" });
+  await expect(dialog).toBeVisible();
+  const grab = page.locator(".jump-sheet .sheet-grab");
+  const { x, y } = await touchPoint(grab);
+  const cdp = await touchDown(page, x, y);
+  try {
+    for (const dy of [30, 70, 120]) {
+      await touchMove(cdp, x, y + dy);
+      await page.waitForTimeout(40);
+    }
+  } finally {
+    await touchUp(cdp);
+  }
+  await expect(dialog).toHaveCount(0);
+});
+
+test("tapping a day in the drawer jumps and closes it", async ({ page }) => {
+  const before = await page.locator(".lib-position-range").innerText();
+  await page.locator(".lib-position").tap();
+  const dialog = page.getByRole("dialog", { name: "Jump to" });
+  await expect(dialog).toBeVisible();
+  const current = page.locator(".jump-day.on");
+  await expect(current).toHaveCount(1);
+  await tap(page, current);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".lib-position-range")).toHaveText(before);
+});
+
+test("typing turns the drawer into a results list and its go key jumps", async ({ page }) => {
+  const res = await page.request.get("/api/images?limit=1");
+  const { total } = await res.json();
+  expect(total).toBeGreaterThan(10);
+
+  await page.locator(".lib-position").tap();
+  const dialog = page.getByRole("dialog", { name: "Jump to" });
+  await expect(dialog).toBeVisible();
+  const input = page.locator(".jump-search-box input");
+  await input.tap();
+  await input.fill("#10");
+
+  await expect(page.locator(".jump-strip")).toHaveCount(0);
+  await expect(page.locator(".jump-calendar")).toHaveCount(0);
+  await expect(page.locator(".jump-result")).toHaveCount(1);
+  await expect(page.locator(".jump-result")).toContainText("#10");
+  await expect(page.locator(".jump-sheet")).toHaveClass(/jump-sheet-typing/);
+  await expect(page.locator(".jump-result")).toHaveCSS("height", "52px");
+  const sheet = (await page.locator(".jump-sheet").boundingBox())!;
+  expect(sheet.y).toBeLessThanOrEqual(60);
+
+  await input.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".lib-position-range")).toContainText("9–");
+});
+
+test("swiping the phone month strip snaps to whole months", async ({ page }) => {
+  await page.locator(".lib-position").tap();
+  const strip = page.locator(".jump-strip");
+  await expect(strip).toBeVisible();
+  await page.waitForTimeout(500);
+  const box = (await strip.boundingBox())!;
+  const cellW = box.width / 7;
+  const before = await strip.evaluate((el) => el.scrollLeft);
+  expect(before).toBeGreaterThan(0);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.synthesizeScrollGesture", {
+    x: box.x + box.width / 2,
+    y: box.y + box.height / 2,
+    xDistance: 200,
+    yDistance: 0,
+    gestureSourceType: "touch",
+    speed: 800,
+  });
+  await page.waitForTimeout(900);
+  const after = await strip.evaluate((el) => el.scrollLeft);
+  expect(after).toBeLessThan(before);
+  expect(Math.abs(after - Math.round(after / cellW) * cellW)).toBeLessThan(1.5);
+  await expect.poll(() => visibleMonths(page)).toBe(7);
+});
