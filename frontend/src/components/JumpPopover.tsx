@@ -143,6 +143,7 @@ function JumpPanel({
   const stripAligned = useRef(false);
   const drag = useRef<{ x: number; left: number; moved: boolean; captured: boolean } | null>(null);
   const dragEndedAt = useRef(0);
+  const stripFreeTimer = useRef<number | null>(null);
   const [cellW, setCellW] = useState(0);
   const [leftmost, setLeftmost] = useState(0);
   const [stripAtStart, setStripAtStart] = useState(true);
@@ -422,29 +423,72 @@ function JumpPanel({
     setStripAtEnd(off >= maxMonths);
   }, [cellW, maxMonths, monthIndex, months.length, view, visible]);
 
-  // Wheel / trackpad scroll the strip sideways and snap after the gesture.
+  // Wheel handling:
+  //  * Sideways trackpad / shift-wheel events are left to the browser. It
+  //    scrolls natively (momentum included) and CSS snaps when it comes to
+  //    rest.
+  //  * A mostly vertical wheel is turned into horizontal movement with snap
+  //    temporarily disabled (`.free`), then snapped once after 150 ms.
   useEffect(() => {
+    if (mobile) return; // phones use native touch scrolling
     const el = stripRef.current;
     if (!el || !cellW) return;
-    let timer: number | null = null;
-    const snap = () => {
-      timer = null;
+    const finish = () => {
+      stripFreeTimer.current = null;
+      el.classList.remove("free");
       const target = Math.max(0, Math.min(maxMonths, Math.round(el.scrollLeft / cellW)));
       el.scrollTo({ left: target * cellW, behavior: "smooth" });
     };
-    const schedule = () => {
-      if (timer !== null) window.clearTimeout(timer);
-      timer = window.setTimeout(snap, 140);
-    };
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey) return;
+      if (event.ctrlKey) return; // pinch zoom, not a scroll
+      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return; // native
       event.preventDefault();
-      el.scrollLeft += event.deltaY || event.deltaX;
-      schedule();
+      const unit =
+        event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? el.clientWidth
+            : 1;
+      const dx = (event.deltaX + event.deltaY) * unit;
+      el.classList.add("free");
+      void el.offsetWidth; // apply scroll-snap-type: none before moving
+      el.scrollLeft += dx;
+      if (stripFreeTimer.current !== null) window.clearTimeout(stripFreeTimer.current);
+      stripFreeTimer.current = window.setTimeout(finish, 150);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       el.removeEventListener("wheel", onWheel);
+      if (stripFreeTimer.current !== null) {
+        window.clearTimeout(stripFreeTimer.current);
+        stripFreeTimer.current = null;
+      }
+    };
+  }, [cellW, maxMonths, mobile]);
+
+  // The last scroll can land after momentum/snap; refresh the pinned year and
+  // the ‹ › disabled state again when scrolling really ends.
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el || !cellW) return;
+    let timer: number | null = null;
+    const sync = () => {
+      const off = Math.max(0, Math.min(maxMonths, Math.round(el.scrollLeft / cellW)));
+      setLeftmost(off);
+      setStripAtStart(el.scrollLeft <= 1);
+      setStripAtEnd(el.scrollLeft >= el.scrollWidth - el.clientWidth - 1);
+    };
+    const onScroll = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(sync, 140);
+    };
+    const supportsScrollEnd =
+      typeof (el as unknown as Record<string, unknown>).onscrollend !== "undefined";
+    if (supportsScrollEnd) el.addEventListener("scrollend", sync);
+    else el.addEventListener("scroll", onScroll);
+    return () => {
+      if (supportsScrollEnd) el.removeEventListener("scrollend", sync);
+      else el.removeEventListener("scroll", onScroll);
       if (timer !== null) window.clearTimeout(timer);
     };
   }, [cellW, maxMonths]);
@@ -732,6 +776,14 @@ function JumpPanel({
             el.setPointerCapture(event.pointerId);
             current.captured = true;
           }
+          if (stripFreeTimer.current !== null) {
+            window.clearTimeout(stripFreeTimer.current);
+            stripFreeTimer.current = null;
+          }
+          if (!el.classList.contains("free")) {
+            el.classList.add("free");
+            void el.offsetWidth;
+          }
           el.scrollLeft = current.left - dx;
         }}
         onPointerUp={(event) => {
@@ -742,11 +794,18 @@ function JumpPanel({
           if (current.captured) el.releasePointerCapture(event.pointerId);
           if (!current.moved) return;
           dragEndedAt.current = Date.now();
+          el.classList.remove("free");
           const off = Math.max(0, Math.min(maxMonths, Math.round(el.scrollLeft / cellW)));
           el.scrollTo({ left: off * cellW, behavior: "smooth" });
         }}
         onPointerCancel={() => {
+          const el = stripRef.current;
           drag.current = null;
+          if (el) {
+            el.classList.remove("free");
+            const off = Math.max(0, Math.min(maxMonths, Math.round(el.scrollLeft / cellW)));
+            el.scrollTo({ left: off * cellW, behavior: "smooth" });
+          }
         }}
       >
         <div className="jump-strip-track">

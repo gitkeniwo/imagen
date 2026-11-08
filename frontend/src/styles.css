@@ -1280,13 +1280,14 @@ body.resizing-sidebar .side-panel {
   scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain;
   outline: none; touch-action: pan-x;
 }
+.jump-strip.free { scroll-snap-type: none; }
 .jump-strip::-webkit-scrollbar { display: none; }
 .jump-strip:focus-visible { box-shadow: 0 0 0 3px var(--ring); border-radius: 8px; }
 .jump-strip-track { display: flex; width: max-content; height: 100%; }
 .jump-strip-month {
   position: relative; flex: 0 0 auto; height: 58px; min-height: 0;
   padding: 0 0 4px; border: 0; border-radius: 8px; background: transparent;
-  box-shadow: none; scroll-snap-align: start; scroll-snap-stop: always;
+  box-shadow: none; scroll-snap-align: start;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   gap: 4px; color: var(--muted);
 }
