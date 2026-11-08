@@ -1036,7 +1036,7 @@ body.resizing-sidebar .side-panel {
 
 /* ===== Library timeline scrubber ===== */
 .lib-scrubber {
-  position: fixed; z-index: 6; width: 20px; pointer-events: none;
+  position: absolute; z-index: 6; width: 20px; pointer-events: none;
   --thumb-h: 46px; --thumb-half: 23px;
   transition: opacity 0.35s ease;
 }
@@ -1048,16 +1048,16 @@ body.resizing-sidebar .side-panel {
   border-radius: var(--radius-full); background: var(--border);
 }
 .lib-scrubber-tick {
-  position: absolute; right: 6px; width: 5px; height: 1px; margin-top: -0.5px;
+  position: absolute; right: 8px; width: 5px; height: 1px; margin-top: -0.5px;
   border-radius: var(--radius-full); background: var(--muted-2); pointer-events: none;
 }
-.lib-scrubber-tick.year { right: 6px; width: 14px; height: 2px; margin-top: -1px; background: var(--muted); z-index: 1; }
+.lib-scrubber-tick.year { right: 8px; width: 14px; height: 2px; margin-top: -1px; background: var(--muted); z-index: 1; }
 .lib-scrubber.compact .lib-scrubber-tick.year {
-  right: 4px; width: 6px; height: 6px; margin-top: -3px;
+  right: 8px; width: 6px; height: 6px; margin-top: -3px;
   border-radius: var(--radius-full); background: var(--muted); z-index: auto;
 }
 .lib-scrubber-label {
-  position: absolute; right: 25px; transform: translateY(3px);
+  position: absolute; right: 27px; transform: translateY(3px);
   color: var(--text); font-size: 12px; line-height: 14px; font-weight: 700;
   white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums;
 }
@@ -1092,7 +1092,8 @@ body.resizing-sidebar .side-panel {
   display: inline-flex; align-items: center; gap: var(--space-2);
   padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg);
   background: var(--accent); color: var(--accent-fg);
-  box-shadow: var(--shadow-lg); font-size: var(--fs-md); white-space: nowrap;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.28);
+  font-size: var(--fs-md); white-space: nowrap;
   font-variant-numeric: tabular-nums; pointer-events: none;
 }
 
@@ -1742,7 +1743,7 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
    island that fills the window below the title bar. */
 .library-manager { padding: var(--space-2); }
 .manager-island {
-  flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
   background: var(--sidebar-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-island);

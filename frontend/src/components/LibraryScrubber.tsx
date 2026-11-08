@@ -53,11 +53,12 @@ function clamp01(n: number) {
 /**
  * Timeline scrubber pinned to the right edge of the Library's scroll area.
  *
- * It is portaled and positioned against the scroller's rect, because the
- * Library scrolls inside the sidebar / fullscreen manager / phone island and
- * an absolutely positioned track would scroll away with the content. The
- * thumb is a real `role="scrollbar"`: pointer capture for dragging, arrows for
- * one row, PageUp / PageDown for a screen, Home / End for the ends.
+ * It is portaled into the scroller's positioned parent and offset against the
+ * scroller's rect, because the Library scrolls inside the sidebar / fullscreen
+ * manager / phone island. Absolute positioning keeps the rail aligned with the
+ * scroller through browser zoom and pinch-zoom. The thumb is a real
+ * `role="scrollbar"`: pointer capture for dragging, arrows for one row,
+ * PageUp / PageDown for a screen, Home / End for the ends.
  */
 export default function LibraryScrubber({
   mode,
@@ -80,6 +81,7 @@ export default function LibraryScrubber({
   const [dragging, setDragging] = useState(false);
   const [active, setActive] = useState<number | null>(null);
   const [bubble, setBubble] = useState(false);
+  const [bubbleTop, setBubbleTop] = useState<number | null>(null);
   const [faded, setFaded] = useState(false);
   const [height, setHeight] = useState(0);
   const holdTimer = useRef<number | null>(null);
@@ -103,8 +105,10 @@ export default function LibraryScrubber({
 
   useEffect(() => clearTimers, [clearTimers]);
 
-  // The overlay is fixed: measure the scroller and the sticky header so the
-  // track starts below the header and ends at the scroller's bottom edge.
+  // Measure the scroller and sticky header so the track starts below the
+  // header and ends at the scroller's bottom edge. All offsets are relative to
+  // the portal host's padding box, not the viewport: pinch zoom changes the
+  // visual viewport while these two elements stay in the same layout space.
   useLayoutEffect(() => {
     const measure = () => {
       const scroller = scrollerRef.current;
@@ -117,12 +121,17 @@ export default function LibraryScrubber({
       // make the fixed overlay scroll with the grid.
       const nextHost = scroller.parentElement ?? scroller;
       setHost((prev) => (prev === nextHost ? prev : nextHost));
+      const hostRect = nextHost.getBoundingClientRect();
+      const hostLeft = hostRect.left + nextHost.clientLeft;
+      const hostTop = hostRect.top + nextHost.clientTop;
+      const hostRight = hostLeft + nextHost.clientWidth;
+      const hostBottom = hostTop + nextHost.clientHeight;
       const rect = scroller.getBoundingClientRect();
       const head = headerRef.current?.getBoundingClientRect();
-      const top = Math.max(rect.top + 6, (head?.bottom ?? rect.top) + 6);
-      const bottom = Math.max(0, window.innerHeight - rect.bottom + 6);
-      const right = Math.max(0, window.innerWidth - rect.right + (mode === "full" ? 8 : 4));
-      setHeight(Math.max(0, window.innerHeight - top - bottom));
+      const top = Math.max(rect.top + 6, (head?.bottom ?? rect.top) + 6) - hostTop;
+      const bottom = Math.max(0, hostBottom - rect.bottom + 6);
+      const right = Math.max(0, hostRight - rect.right + (mode === "full" ? 8 : 4));
+      setHeight(Math.max(0, hostBottom - hostTop - top - bottom));
       setFrame((prev) =>
         prev && Math.abs(prev.top - top) < 0.5 && Math.abs(prev.bottom - bottom) < 0.5 && Math.abs(prev.right - right) < 0.5
           ? prev
@@ -221,6 +230,7 @@ export default function LibraryScrubber({
     hideTimer.current = window.setTimeout(() => {
       hideTimer.current = null;
       setBubble(false);
+      setBubbleTop(null);
       // Back to the real scroll position once the preview has faded.
       setActive(null);
     }, BUBBLE_HOLD_MS);
@@ -258,6 +268,8 @@ export default function LibraryScrubber({
     setDragging(true);
     setFaded(false);
     setActive(indexAt(event.clientY));
+    const rect = hitRef.current?.getBoundingClientRect();
+    if (mode !== "phone" && rect) setBubbleTop(event.clientY - rect.top);
     // On the phone the press may become a long press; only show the bubble
     // once the gesture actually becomes a drag.
     if (mode !== "phone") peek();
@@ -276,6 +288,11 @@ export default function LibraryScrubber({
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = hitRef.current?.getBoundingClientRect();
+    if (mode !== "phone" && rect) {
+      const nextTop = event.clientY - rect.top;
+      setBubbleTop((prev) => (prev !== null && Math.abs(prev - nextTop) < 0.5 ? prev : nextTop));
+    }
     if (!dragging) {
       // The bubble is the only month readout on the rail now, so preview the
       // position under the pointer without moving the thumb.
@@ -332,6 +349,7 @@ export default function LibraryScrubber({
       hideTimer.current = null;
     }
     setBubble(false);
+    setBubbleTop(null);
     setActive(null);
     hoverY.current = null;
   };
@@ -352,7 +370,7 @@ export default function LibraryScrubber({
     seek(next);
   };
 
-  if (total === 0 || !frame || !host || frame.top >= window.innerHeight - 40) return null;
+  if (total === 0 || !frame || !host || height < 40) return null;
 
   const thumbH = mode === "phone" ? 56 : 46;
   const style = {
@@ -420,7 +438,12 @@ export default function LibraryScrubber({
       {bubble && total > 0 && (
         <div
           className="lib-scrubber-bubble"
-          style={{ top: `calc((100% - ${thumbH}px) * ${shownRatio} + ${thumbH / 2}px)` }}
+          style={{
+            top:
+              mode !== "phone" && bubbleTop !== null
+                ? `${bubbleTop}px`
+                : `calc((100% - ${thumbH}px) * ${shownRatio} + ${thumbH / 2}px)`,
+          }}
           aria-hidden="true"
         >
           {bubbleText}
