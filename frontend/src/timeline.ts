@@ -52,9 +52,18 @@ export interface Timeline {
   total: number;
 }
 
+export interface PhoneRulerTick {
+  key: string;
+  ratio: number;
+  kind: "month" | "year";
+  label?: string;
+}
+
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Longest interruption (in rows) that does not split a month / year stretch.
 const STRAY_ROWS = 2;
+const PHONE_TICK_MIN_GAP = 4;
+const PHONE_YEAR_LABEL_MIN_GAP = 16;
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export function monthKey(year: number, month: number): string {
@@ -217,6 +226,76 @@ export function indexToDay(timeline: Timeline | null, index: number): TimelineDa
     }
   }
   return days[best];
+}
+
+function ticksTooClose(ticks: PhoneRulerTick[], trackHeight: number, minGap: number): boolean {
+  if (trackHeight <= 0 || ticks.length < 2) return false;
+  const gaps: number[] = [];
+  for (let i = 1; i < ticks.length; i++) {
+    gaps.push((ticks[i].ratio - ticks[i - 1].ratio) * trackHeight);
+  }
+  // A partial current month at the top should not thin every other month.
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)] < minGap;
+}
+
+/**
+ * Ticks for the phone's local ruler. Positions stay in track coordinates so
+ * the ruler can reveal a moving window without recomputing or moving ticks.
+ * Dense libraries step down from months to quarters to years only.
+ */
+export function phoneRulerTicks(
+  timeline: Timeline | null,
+  total: number,
+  trackHeight: number,
+): PhoneRulerTick[] {
+  if (!timeline || total <= 0) return [];
+
+  const years: PhoneRulerTick[] = [];
+  for (const year of timeline.years) {
+    const anchor = timeline.yearAnchor.get(year.year) ?? -1;
+    if (anchor >= 0) {
+      years.push({
+        key: `y-${year.year}`,
+        ratio: clampRatio(anchor, total),
+        kind: "year",
+        label: String(year.year),
+      });
+    }
+  }
+  years.sort((a, b) => a.ratio - b.ratio);
+
+  type MonthTick = PhoneRulerTick & { monthIndex: number };
+  let months: MonthTick[] = timeline.years
+    .flatMap((year) => year.months)
+    .filter((month) => month.count > 0)
+    .map((month) => ({
+      key: `m-${month.key}`,
+      ratio: clampRatio(timeline.monthAnchor.get(month.key) ?? month.firstIndex, total),
+      kind: "month" as const,
+      monthIndex: month.month,
+    }))
+    .sort((a, b) => a.ratio - b.ratio);
+
+  if (ticksTooClose(months, trackHeight, PHONE_TICK_MIN_GAP)) {
+    months = months.filter((tick) => tick.monthIndex % 3 === 0);
+    if (ticksTooClose(months, trackHeight, PHONE_TICK_MIN_GAP)) months = [];
+  }
+
+  // The newest year wins when two labels would overlap. Keep both ticks.
+  let lastLabel = -Infinity;
+  const labelledYears = years.map((tick) => {
+    const y = tick.ratio * trackHeight;
+    if (y - lastLabel < PHONE_YEAR_LABEL_MIN_GAP) return { ...tick, label: undefined };
+    lastLabel = y;
+    return tick;
+  });
+
+  return [...labelledYears, ...months].sort((a, b) => a.ratio - b.ratio);
+}
+
+function clampRatio(index: number, total: number): number {
+  return Math.min(1, Math.max(0, index / total));
 }
 
 function dayDistance(a: string, b: string): number {

@@ -25,6 +25,32 @@ async function tap(page: Page, target: Locator) {
   await page.touchscreen.tap(x, y);
 }
 
+interface TouchCdp {
+  send(method: string, params?: unknown): Promise<unknown>;
+  detach(): Promise<void>;
+}
+
+async function touchDown(page: Page, x: number, y: number): Promise<TouchCdp> {
+  const cdp = (await page.context().newCDPSession(page)) as TouchCdp;
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [{ x, y }],
+  });
+  return cdp;
+}
+
+async function touchMove(cdp: TouchCdp, x: number, y: number) {
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [{ x, y }],
+  });
+}
+
+async function touchUp(cdp: TouchCdp) {
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
@@ -77,4 +103,84 @@ test("no horizontal scrolling on the main sections", async ({ page }) => {
     await page.waitForTimeout(300);
     await expectNoHorizontalScroll(page);
   }
+});
+
+test("phone scrubber expands into a capsule and local ruler only while dragging", async ({ page }) => {
+  const scrollbar = page.getByRole("scrollbar", { name: "Browse position" });
+  const thumb = page.locator(".lib-scrubber.phone .lib-scrubber-thumb");
+  const ruler = page.locator(".lib-scrubber.phone .lib-phone-ruler");
+  await expect(scrollbar).toBeVisible();
+  await expect(page.locator(".lib-scrubber.phone .lib-scrubber-track")).toBeHidden();
+  await expect(thumb).not.toHaveClass(/expanded/);
+
+  const idle = (await thumb.boundingBox())!;
+  expect(idle.width).toBeLessThan(8);
+  const x = idle.x + idle.width / 2;
+  const y = idle.y + idle.height / 2;
+  const cdp = await touchDown(page, x, y);
+  try {
+    await page.waitForTimeout(80);
+    await expect(thumb).not.toHaveClass(/expanded/);
+    await touchMove(cdp, x, y + 24);
+    await expect(thumb).toHaveClass(/expanded/);
+    await expect(ruler).toHaveClass(/\bon\b/);
+    await expect(page.locator(".lib-scrubber.phone .lib-phone-count")).toHaveText(/#\d+ of \d+/);
+    await expect(scrollbar).toHaveAttribute("aria-valuetext", /#\d+ of \d+/);
+
+    await expect(thumb).toHaveCSS("width", "196px");
+    const capsule = (await thumb.boundingBox())!;
+    await touchMove(cdp, x, y + 30);
+    const next = (await thumb.boundingBox())!;
+    expect(capsule.width).toBeGreaterThan(190);
+    expect(Math.abs(next.width - capsule.width)).toBeLessThan(0.5);
+  } finally {
+    await touchUp(cdp);
+  }
+
+  await expect(ruler).not.toHaveClass(/\bon\b/);
+  await expect(thumb).toHaveClass(/expanded/);
+  await page.waitForTimeout(850);
+  await expect(thumb).not.toHaveClass(/expanded/);
+
+  const scrubber = page.locator(".lib-scrubber.phone");
+  await expect(scrubber).toHaveClass(/faded/, { timeout: 2600 });
+  const scrolled = await page.evaluate(() => {
+    const scroller = [...document.querySelectorAll<HTMLElement>(".phone-island-scroll")].find(
+      (el) => el.scrollHeight > el.clientHeight + 20,
+    );
+    if (!scroller) return false;
+    scroller.scrollTop += 80;
+    return true;
+  });
+  expect(scrolled).toBe(true);
+  await expect(scrubber).not.toHaveClass(/faded/);
+});
+
+test("long-pressing the phone scrubber opens Jump without a capsule flash", async ({ page }) => {
+  await page.locator(".lib-scrubber.phone .lib-scrubber-thumb").evaluate((thumb) => {
+    (window as unknown as { __capsuleFlashes: number }).__capsuleFlashes = 0;
+    new MutationObserver(() => {
+      if (thumb.classList.contains("expanded")) {
+        (window as unknown as { __capsuleFlashes: number }).__capsuleFlashes += 1;
+      }
+    }).observe(thumb, { attributes: true, attributeFilter: ["class"] });
+  });
+
+  const scrollbar = page.getByRole("scrollbar", { name: "Browse position" });
+  const box = (await scrollbar.boundingBox())!;
+  const cdp = await touchDown(page, box.x + box.width / 2, box.y + box.height / 2);
+  try {
+    await page.waitForTimeout(520);
+    await expect(page.locator(".lib-scrubber.phone .lib-scrubber-thumb")).not.toHaveClass(/expanded/);
+    await expect(page.locator(".lib-phone-ruler.on")).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __capsuleFlashes?: number }).__capsuleFlashes ?? 0,
+      ),
+    ).toBe(0);
+  } finally {
+    await touchUp(cdp);
+  }
+  await expect(page.getByRole("dialog", { name: "Jump to" })).toBeVisible();
+  await expect(page.locator(".lib-scrubber.phone .lib-scrubber-thumb")).not.toHaveClass(/expanded/);
 });

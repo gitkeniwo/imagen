@@ -1,7 +1,7 @@
 // Run: npm test   (node --test, no extra dependencies; Node strips the types)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildTimeline, indexToDay } from "../src/timeline.ts";
+import { buildTimeline, indexToDay, phoneRulerTicks } from "../src/timeline.ts";
 
 /** A /api/images/timeline answer for `dayAt[i]` = day of the image at list position i. */
 function fromPositions(dayAt) {
@@ -62,4 +62,76 @@ test("month / year anchors sit at the longest stretch, not at a stray's first_in
 test("empty result", () => {
   const timeline = buildTimeline({ days: [], runs: [], total: 0 });
   assert.equal(indexToDay(timeline, 0), null);
+  assert.deepEqual(phoneRulerTicks(timeline, 0, 300), []);
+});
+
+function monthTimeline(yearCount, monthCount = 12, imagesPerMonth = 50) {
+  const days = [];
+  const anchors = new Map();
+  const yearAnchors = new Map();
+  let index = 0;
+  let year = 2026;
+  for (let y = 0; y < yearCount; y++, year--) {
+    yearAnchors.set(year, index);
+    for (let m = monthCount - 1; m >= 0; m--) {
+      const key = `${year}-${String(m + 1).padStart(2, "0")}`;
+      days.push({
+        day: `${key}-15`,
+        count: imagesPerMonth,
+        first_index: index,
+      });
+      anchors.set(key, index);
+      index += imagesPerMonth;
+    }
+  }
+  const timeline = buildTimeline({ days, runs: [], total: index });
+  timeline.monthAnchor = anchors;
+  timeline.yearAnchor = yearAnchors;
+  return timeline;
+}
+
+test("phone ruler keeps every month at normal density", () => {
+  const timeline = monthTimeline(2);
+  const ticks = phoneRulerTicks(timeline, 2 * 12 * 50, 300);
+  assert.equal(ticks.filter((tick) => tick.kind === "month").length, 24);
+  assert.equal(ticks.filter((tick) => tick.kind === "year").length, 2);
+  assert.equal(ticks.filter((tick) => tick.label).length, 2);
+});
+
+test("phone ruler does not thin months for one partial month at the edge", () => {
+  const timeline = monthTimeline(2);
+  timeline.monthAnchor.set("2026-10", 19);
+  const ticks = phoneRulerTicks(timeline, 2 * 12 * 50, 300);
+  assert.equal(ticks.filter((tick) => tick.kind === "month").length, 24);
+});
+
+test("phone ruler falls back to quarter months when months are dense", () => {
+  const yearCount = 8;
+  const total = yearCount * 12 * 50;
+  const ticks = phoneRulerTicks(monthTimeline(yearCount), total, 300);
+  const months = ticks.filter((tick) => tick.kind === "month");
+  assert.equal(months.length, yearCount * 4);
+  assert.ok(months.every((tick) => /-(01|04|07|10)$/.test(tick.key)));
+});
+
+test("phone ruler drops months and thins year labels when even quarters are dense", () => {
+  const yearCount = 36;
+  const total = yearCount * 12 * 50;
+  const ticks = phoneRulerTicks(monthTimeline(yearCount), total, 300);
+  assert.equal(ticks.filter((tick) => tick.kind === "month").length, 0);
+  assert.equal(ticks.filter((tick) => tick.kind === "year").length, yearCount);
+  assert.equal(ticks.filter((tick) => tick.label).length, yearCount / 2);
+});
+
+test("phone ruler keeps the newer year label when two labels would overlap", () => {
+  const timeline = monthTimeline(3);
+  timeline.yearAnchor = new Map([
+    [2026, 0],
+    [2025, 5],
+    [2024, 200],
+  ]);
+  const labels = phoneRulerTicks(timeline, 3 * 12 * 50, 300)
+    .filter((tick) => tick.kind === "year" && tick.label)
+    .map((tick) => tick.label);
+  assert.deepEqual(labels, ["2026", "2024"]);
 });

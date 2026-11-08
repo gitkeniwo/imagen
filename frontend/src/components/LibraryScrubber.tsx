@@ -1,4 +1,5 @@
 import {
+  memo,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
@@ -14,10 +15,11 @@ import { useI18n } from "../i18n";
 import {
   formatMonthYear,
   indexToDay,
+  phoneRulerTicks,
   type Timeline,
   type TimelineDay,
+  type PhoneRulerTick,
 } from "../timeline";
-import Icon from "./ui/Icon";
 
 export type ScrubberMode = "compact" | "full" | "phone";
 
@@ -46,9 +48,44 @@ interface Mark {
   year: boolean;
 }
 
+const PHONE_RULER_H = 240;
+
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
 }
+
+const PhoneRulerMarks = memo(function PhoneRulerMarks({
+  ticks,
+  height,
+}: {
+  ticks: PhoneRulerTick[];
+  height: number;
+}) {
+  return (
+    <>
+      {ticks.map((tick) => (
+        <span
+          key={tick.key}
+          className={`lib-phone-ruler-tick ${tick.kind}`}
+          style={{ top: tick.ratio * height }}
+          aria-hidden="true"
+        />
+      ))}
+      {ticks.map((tick) =>
+        tick.label ? (
+          <span
+            key={`${tick.key}-label`}
+            className="lib-phone-ruler-label"
+            style={{ top: tick.ratio * height }}
+            aria-hidden="true"
+          >
+            {tick.label}
+          </span>
+        ) : null,
+      )}
+    </>
+  );
+});
 
 /**
  * Timeline scrubber pinned to the right edge of the Library's scroll area.
@@ -81,6 +118,8 @@ export default function LibraryScrubber({
   const [dragging, setDragging] = useState(false);
   const [active, setActive] = useState<number | null>(null);
   const [bubble, setBubble] = useState(false);
+  const [phoneExpanded, setPhoneExpanded] = useState(false);
+  const [phoneScrubbing, setPhoneScrubbing] = useState(false);
   const [bubbleTop, setBubbleTop] = useState<number | null>(null);
   const [faded, setFaded] = useState(false);
   const [height, setHeight] = useState(0);
@@ -88,7 +127,9 @@ export default function LibraryScrubber({
   const hideTimer = useRef<number | null>(null);
   const fadeTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
-  const start = useRef<{ y: number } | null>(null);
+  const phoneDrag = useRef(false);
+  const phoneYear = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
   // WebKit can emit a pointermove when a large scroll changes what is under a
   // stationary pointer. Do not let that synthetic event replace a keyboard
   // seek; only a real pointer movement should preview a new position.
@@ -104,6 +145,33 @@ export default function LibraryScrubber({
   }, []);
 
   useEffect(() => clearTimers, [clearTimers]);
+
+  const scheduleFade = useCallback(() => {
+    if (mode !== "phone") return;
+    if (fadeTimer.current !== null) window.clearTimeout(fadeTimer.current);
+    fadeTimer.current = window.setTimeout(() => {
+      fadeTimer.current = null;
+      setFaded(true);
+    }, PHONE_FADE_MS);
+  }, [mode]);
+
+  const showPhoneScrubber = useCallback(() => {
+    if (mode !== "phone") return;
+    setFaded(false);
+    scheduleFade();
+  }, [mode, scheduleFade]);
+
+  useEffect(() => showPhoneScrubber(), [showPhoneScrubber]);
+
+  useEffect(() => {
+    if (mode !== "phone") return;
+    const onScroll = (event: Event) => {
+      if (event.target !== scrollerRef.current || start.current) return;
+      showPhoneScrubber();
+    };
+    document.addEventListener("scroll", onScroll, true);
+    return () => document.removeEventListener("scroll", onScroll, true);
+  }, [mode, scrollerRef, showPhoneScrubber]);
 
   // Measure the scroller and sticky header so the track starts below the
   // header and ends at the scroller's bottom edge. All offsets are relative to
@@ -130,7 +198,10 @@ export default function LibraryScrubber({
       const head = headerRef.current?.getBoundingClientRect();
       const top = Math.max(rect.top + 6, (head?.bottom ?? rect.top) + 6) - hostTop;
       const bottom = Math.max(0, hostBottom - rect.bottom + 6);
-      const right = Math.max(0, hostRight - rect.right + (mode === "full" ? 8 : 4));
+      const right =
+        mode === "phone"
+          ? hostRight - document.documentElement.clientWidth
+          : Math.max(0, hostRight - rect.right + (mode === "full" ? 8 : 4));
       setHeight(Math.max(0, hostBottom - hostTop - top - bottom));
       setFrame((prev) =>
         prev && Math.abs(prev.top - top) < 0.5 && Math.abs(prev.bottom - bottom) < 0.5 && Math.abs(prev.right - right) < 0.5
@@ -166,13 +237,29 @@ export default function LibraryScrubber({
   const shownIndex = active ?? index;
   const shownRatio = total > 1 ? clamp01(shownIndex / (total - 1)) : 0;
 
-  const bubbleText = useMemo(() => {
+  const { bubbleText, phoneMonthText, phoneCountText } = useMemo(() => {
     const day: TimelineDay | null = timeline ? indexToDay(timeline, shownIndex) : null;
     const month = day ? formatMonthYear(day.day, lang) : "";
-    const number = `#${(shownIndex + 1).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}`;
-    if (mode === "phone") return month || number;
-    return month ? `${month} · ${number}` : number;
-  }, [lang, mode, shownIndex, timeline]);
+    const locale = lang === "zh" ? "zh-CN" : "en-US";
+    const indexText = (shownIndex + 1).toLocaleString(locale);
+    const number = `#${indexText}`;
+    const count = t("lib_scrubber_count", {
+      index: indexText,
+      total: total.toLocaleString(locale),
+    });
+    return {
+      bubbleText:
+        mode === "phone"
+          ? month
+            ? `${month} · ${count}`
+            : count || number
+          : month
+            ? `${month} · ${number}`
+            : number,
+      phoneMonthText: month || number,
+      phoneCountText: count,
+    };
+  }, [lang, mode, shownIndex, t, timeline, total]);
 
   const marks = useMemo<Mark[]>(() => {
     if (!timeline || mode === "phone" || total <= 0) return [];
@@ -214,6 +301,11 @@ export default function LibraryScrubber({
     });
   }, [height, mode, timeline, total]);
 
+  const phoneTicks = useMemo(
+    () => (mode === "phone" ? phoneRulerTicks(timeline, total, height) : []),
+    [height, mode, timeline, total],
+  );
+
   const indexAt = useCallback(
     (clientY: number) => {
       const rect = hitRef.current?.getBoundingClientRect();
@@ -246,40 +338,52 @@ export default function LibraryScrubber({
     [onSeek, peek, total],
   );
 
+  const yearAtIndex = useCallback(
+    (next: number) => {
+      const day = timeline ? indexToDay(timeline, next) : null;
+      return day ? Number(day.day.slice(0, 4)) : null;
+    },
+    [timeline],
+  );
+
   const stopHold = () => {
     if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
     holdTimer.current = null;
     start.current = null;
   };
 
-  const scheduleFade = () => {
-    if (mode !== "phone") return;
-    if (fadeTimer.current !== null) window.clearTimeout(fadeTimer.current);
-    fadeTimer.current = window.setTimeout(() => {
-      fadeTimer.current = null;
-      setFaded(true);
-    }, PHONE_FADE_MS);
-  };
-
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || total === 0) return;
     event.preventDefault();
+    clearTimers();
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragging(true);
     setFaded(false);
-    setActive(indexAt(event.clientY));
+    const pressed = indexAt(event.clientY);
+    setActive(pressed);
     const rect = hitRef.current?.getBoundingClientRect();
-    if (mode !== "phone" && rect) setBubbleTop(event.clientY - rect.top);
+    if (mode !== "phone" && rect) {
+      setBubbleTop(event.clientY - rect.top);
+    } else {
+      setPhoneExpanded(false);
+      setPhoneScrubbing(false);
+      phoneDrag.current = false;
+      phoneYear.current = yearAtIndex(pressed);
+    }
     // On the phone the press may become a long press; only show the bubble
     // once the gesture actually becomes a drag.
     if (mode !== "phone") peek();
     longPressed.current = false;
-    start.current = { y: event.clientY };
+    start.current = { x: event.clientX, y: event.clientY };
     if (mode === "phone" && onLongPress) {
       holdTimer.current = window.setTimeout(() => {
         holdTimer.current = null;
         longPressed.current = true;
+        phoneDrag.current = false;
+        phoneYear.current = null;
         setDragging(false);
+        setPhoneExpanded(false);
+        setPhoneScrubbing(false);
         setActive(null);
         setBubble(false);
         onLongPress();
@@ -309,7 +413,11 @@ export default function LibraryScrubber({
       return;
     }
     if (!start.current) return;
-    if (Math.abs(event.clientY - start.current.y) > 8) {
+    const distance = Math.hypot(
+      event.clientX - start.current.x,
+      event.clientY - start.current.y,
+    );
+    if (distance > 8) {
       if (holdTimer.current !== null) {
         window.clearTimeout(holdTimer.current);
         holdTimer.current = null;
@@ -321,7 +429,26 @@ export default function LibraryScrubber({
       return;
     }
     if (longPressed.current) return;
-    seek(indexAt(event.clientY));
+    const next = indexAt(event.clientY);
+    if (mode === "phone") {
+      if (!phoneDrag.current) {
+        phoneDrag.current = true;
+        setPhoneExpanded(true);
+        setPhoneScrubbing(true);
+      }
+      const nextYear = yearAtIndex(next);
+      if (phoneYear.current !== null && nextYear !== null && nextYear !== phoneYear.current) {
+        try {
+          navigator.vibrate?.(5);
+        } catch {
+          // Browsers may expose the API but reject it in this context.
+        }
+      }
+      phoneYear.current = nextYear;
+      seek(next, false);
+    } else {
+      seek(next);
+    }
   };
 
   const endPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -330,16 +457,42 @@ export default function LibraryScrubber({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     stopHold();
-    if (!longPressed.current) {
-      seek(indexAt(event.clientY));
-      peek();
-    } else {
-      setBubble(false);
-      setActive(null);
-    }
+    const wasLongPress = longPressed.current;
+    const wasPhoneDrag = phoneDrag.current;
     longPressed.current = false;
+    phoneDrag.current = false;
+    phoneYear.current = null;
     setDragging(false);
-    scheduleFade();
+    setPhoneScrubbing(false);
+
+    if (wasLongPress) {
+      setBubble(false);
+      setPhoneExpanded(false);
+      setActive(null);
+      scheduleFade();
+      return;
+    }
+
+    if (mode === "phone") {
+      seek(indexAt(event.clientY), false);
+      if (wasPhoneDrag) {
+        setPhoneExpanded(true);
+        hideTimer.current = window.setTimeout(() => {
+          hideTimer.current = null;
+          setPhoneExpanded(false);
+          setActive(null);
+          scheduleFade();
+        }, BUBBLE_HOLD_MS);
+      } else {
+        setPhoneExpanded(false);
+        setActive(null);
+        scheduleFade();
+      }
+      return;
+    }
+
+    seek(indexAt(event.clientY));
+    peek();
   };
 
   const onPointerLeave = () => {
@@ -372,17 +525,21 @@ export default function LibraryScrubber({
 
   if (total === 0 || !frame || !host || height < 40) return null;
 
-  const thumbH = mode === "phone" ? 56 : 46;
+  const thumbH = mode === "phone" ? 44 : 46;
+  const rulerY =
+    (height - thumbH) * shownRatio + thumbH / 2 - PHONE_RULER_H / 2;
   const style = {
     top: frame.top,
     right: frame.right,
     bottom: frame.bottom,
-    "--ratio": ratio,
+    "--ratio": mode === "phone" ? shownRatio : ratio,
   } as CSSProperties;
 
   return createPortal(
     <div
-      className={`lib-scrubber ${mode}${dragging ? " dragging" : ""}${faded ? " faded" : ""}`}
+      className={`lib-scrubber ${mode}${dragging ? " dragging" : ""}${faded ? " faded" : ""}${
+        phoneScrubbing ? " scrubbing" : ""
+      }${phoneExpanded ? " expanded" : ""}`}
       style={style}
     >
       <div className="lib-scrubber-track" aria-hidden="true" />
@@ -406,6 +563,20 @@ export default function LibraryScrubber({
           </span>
         ) : null,
       )}
+      {mode === "phone" && (
+        <div
+          className={`lib-phone-ruler${phoneScrubbing ? " on" : ""}`}
+          style={{ transform: `translate3d(0, ${rulerY}px, 0)` }}
+          aria-hidden="true"
+        >
+          <div
+            className="lib-phone-ruler-track"
+            style={{ transform: `translate3d(0, ${-rulerY}px, 0)` }}
+          >
+            <PhoneRulerMarks ticks={phoneTicks} height={height} />
+          </div>
+        </div>
+      )}
       <div
         ref={hitRef}
         className="lib-scrubber-hit"
@@ -427,22 +598,33 @@ export default function LibraryScrubber({
         onFocus={() => setFaded(false)}
         onBlur={() => scheduleFade()}
       />
-      <div className="lib-scrubber-thumb" aria-hidden="true">
+      <div
+        className={`lib-scrubber-thumb${mode === "phone" ? " lib-phone-thumb" : ""}${
+          phoneExpanded ? " expanded" : ""
+        }`}
+        aria-hidden="true"
+      >
         {mode === "phone" && (
           <>
-            <Icon name="chevronUp" size="sm" />
-            <Icon name="chevronDown" size="sm" />
+            <div className="lib-phone-copy">
+              <span className="lib-phone-month">{phoneMonthText}</span>
+              <span className="lib-phone-count">{phoneCountText}</span>
+            </div>
+            <span className="lib-phone-grip">
+              <i />
+              <i />
+              <i />
+            </span>
           </>
         )}
       </div>
-      {bubble && total > 0 && (
+      {mode !== "phone" && bubble && total > 0 && (
         <div
           className="lib-scrubber-bubble"
           style={{
-            top:
-              mode !== "phone" && bubbleTop !== null
-                ? `${bubbleTop}px`
-                : `calc((100% - ${thumbH}px) * ${shownRatio} + ${thumbH / 2}px)`,
+            top: bubbleTop !== null
+              ? `${bubbleTop}px`
+              : `calc((100% - ${thumbH}px) * ${shownRatio} + ${thumbH / 2}px)`,
           }}
           aria-hidden="true"
         >
