@@ -1055,6 +1055,7 @@ body.resizing-sidebar .side-panel {
   border-radius: var(--radius-full); background: var(--scrubber-dot); pointer-events: none;
 }
 .lib-scrubber-tick.year { right: 4px; width: 6px; height: 6px; margin-top: -3px; background: var(--scrubber-dot); z-index: 1; }
+.lib-scrubber-tick.active { background: var(--ui-accent); }
 .lib-scrubber-label {
   position: absolute; right: 27px; transform: translateY(3px);
   color: var(--text); font-size: 12px; line-height: 14px; font-weight: 700;
@@ -1075,10 +1076,6 @@ body.resizing-sidebar .side-panel {
   width: 12px; height: var(--thumb-h); border: 2px solid var(--ui-accent); border-radius: 999px;
   background: transparent; box-shadow: 0 0 0 3px var(--ui-accent-soft);
   pointer-events: none; transition: box-shadow 0.12s ease;
-}
-.lib-scrubber:not(.phone) .lib-scrubber-thumb::after {
-  content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
-  border-radius: var(--radius-full); background: var(--ui-accent); transform: translate(-50%, -50%);
 }
 .lib-scrubber:not(.phone).dragging .lib-scrubber-thumb { box-shadow: 0 0 0 5px var(--ui-accent-soft); }
 .lib-scrubber.phone .lib-scrubber-track { display: none; }

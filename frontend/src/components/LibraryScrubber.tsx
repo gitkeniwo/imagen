@@ -529,9 +529,24 @@ export default function LibraryScrubber({
   const thumbH = mode === "phone" ? 44 : 46;
   const thumbTop = (height - thumbH) * ratio;
   const thumbBottom = thumbTop + thumbH;
+  const thumbCenter = thumbTop + thumbH / 2;
+  let activeMark: string | null = null;
+  let activeDistance = Infinity;
+  for (const mark of marks) {
+    const y = mark.ratio * height;
+    if (y < thumbTop || y > thumbBottom) continue;
+    const distance = Math.abs(y - thumbCenter);
+    if (distance < activeDistance) {
+      activeMark = mark.key;
+      activeDistance = distance;
+    }
+  }
+  // The hollow thumb shows the track through it, plus the single dot nearest
+  // its center in the accent color. Other dots inside the outline would stack
+  // into a blob (and a dot on the top edge would look like it covers the rim).
   const visibleMarks = marks.filter((mark) => {
     const y = mark.ratio * height;
-    return y < thumbTop - 4 || y > thumbBottom + 4;
+    return y < thumbTop || y > thumbBottom || mark.key === activeMark;
   });
   const rulerY =
     (height - thumbH) * shownRatio + thumbH / 2 - PHONE_RULER_H / 2;
@@ -553,7 +568,9 @@ export default function LibraryScrubber({
       {visibleMarks.map((mark) => (
         <span
           key={mark.key}
-          className={`lib-scrubber-tick${mark.year ? " year" : ""}`}
+          className={`lib-scrubber-tick${mark.year ? " year" : ""}${
+            mark.key === activeMark ? " active" : ""
+          }`}
           style={{ top: `${mark.ratio * 100}%` }}
           aria-hidden="true"
         />
