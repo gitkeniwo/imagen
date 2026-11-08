@@ -527,6 +527,12 @@ export default function LibraryScrubber({
   if (total === 0 || !frame || !host || height < 40) return null;
 
   const thumbH = mode === "phone" ? 44 : 46;
+  const thumbTop = (height - thumbH) * ratio;
+  const thumbBottom = thumbTop + thumbH;
+  const visibleMarks = marks.filter((mark) => {
+    const y = mark.ratio * height;
+    return y < thumbTop - 4 || y > thumbBottom + 4;
+  });
   const rulerY =
     (height - thumbH) * shownRatio + thumbH / 2 - PHONE_RULER_H / 2;
   const style = {
@@ -544,7 +550,7 @@ export default function LibraryScrubber({
       style={style}
     >
       <div className="lib-scrubber-track" aria-hidden="true" />
-      {marks.map((mark) => (
+      {visibleMarks.map((mark) => (
         <span
           key={mark.key}
           className={`lib-scrubber-tick${mark.year ? " year" : ""}`}

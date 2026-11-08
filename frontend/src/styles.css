@@ -1071,7 +1071,7 @@ body.resizing-sidebar .side-panel {
   box-shadow: 0 0 0 3px var(--ui-accent), 0 0 0 6px var(--ui-accent-soft);
 }
 .lib-scrubber-thumb {
-  position: absolute; right: 1px; top: calc((100% - var(--thumb-h)) * var(--ratio, 0));
+  position: absolute; z-index: 2; right: 1px; top: calc((100% - var(--thumb-h)) * var(--ratio, 0));
   width: 12px; height: var(--thumb-h); border: 2px solid var(--ui-accent); border-radius: 999px;
   background: transparent; box-shadow: 0 0 0 3px var(--ui-accent-soft);
   pointer-events: none; transition: box-shadow 0.12s ease;
