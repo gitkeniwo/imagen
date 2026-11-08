@@ -259,7 +259,6 @@ test("dragging the drawer handle down closes the jump drawer", async ({ page }) 
 });
 
 test("tapping a day in the drawer jumps and closes it", async ({ page }) => {
-  const before = await page.locator(".lib-position-range").innerText();
   await page.locator(".lib-position").tap();
   const dialog = page.getByRole("dialog", { name: "Jump to" });
   await expect(dialog).toBeVisible();
@@ -267,7 +266,9 @@ test("tapping a day in the drawer jumps and closes it", async ({ page }) => {
   await expect(current).toHaveCount(1);
   await tap(page, current);
   await expect(dialog).toHaveCount(0);
-  await expect(page.locator(".lib-position-range")).toHaveText(before);
+  // The template library's only day starts at #1, so the jump lands at the top
+  // even if sessionStorage had restored a scrolled position first.
+  await expect(page.locator(".lib-position-range")).toContainText("1–");
 });
 
 test("typing turns the drawer into a results list and its go key jumps", async ({ page }) => {
@@ -296,27 +297,76 @@ test("typing turns the drawer into a results list and its go key jumps", async (
   await expect(page.locator(".lib-position-range")).toContainText("9–");
 });
 
-test("swiping the phone month strip snaps to whole months", async ({ page }) => {
+async function stripRest(page: Page) {
+  const strip = page.locator(".jump-strip");
+  let previous = await strip.evaluate((el) => el.scrollLeft);
+  let stable = 0;
+  for (let i = 0; i < 60; i++) {
+    await page.waitForTimeout(120);
+    const current = await strip.evaluate((el) => el.scrollLeft);
+    stable = Math.abs(current - previous) < 0.5 ? stable + 1 : 0;
+    previous = current;
+    if (stable >= 3) return current;
+  }
+  return previous;
+}
+
+test("a quick phone swipe carries momentum and snaps to a whole month", async ({ page }) => {
+  // A three-year timeline (the template library only has today's images) so a
+  // flick can legitimately travel more than three months.
+  const response = await page.request.get("/api/images?limit=1");
+  const { total } = await response.json();
+  const days = [
+    ["2024-01-10", 0],
+    ["2024-06-05", 1],
+    ["2025-01-15", 2],
+    ["2025-06-10", 3],
+    ["2025-12-20", 4],
+    ["2026-03-14", 5],
+    ["2026-06-15", 6],
+    ["2026-11-08", 7],
+  ].filter(([, index]) => (index as number) < total);
+  const timeline = {
+    days: days.map(([day, index]) => ({ day, count: 1, first_index: index })),
+    runs: days.map(([day, index]) => [index, day]),
+    total,
+  };
+  await page.route("**/api/images/timeline*", (route) => route.fulfill({ json: timeline }));
+  await page.reload();
+  await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
+  await expect((await shownLibTile(page, "landscape-alps.jpg"))).toBeVisible();
+
   await page.locator(".lib-position").tap();
   const strip = page.locator(".jump-strip");
   await expect(strip).toBeVisible();
   await page.waitForTimeout(500);
   const box = (await strip.boundingBox())!;
   const cellW = box.width / 7;
-  const before = await strip.evaluate((el) => el.scrollLeft);
-  expect(before).toBeGreaterThan(0);
+  // Start at January 2024 so a swipe to the right has room to travel.
+  await strip.evaluate((el) => {
+    el.scrollLeft = 0;
+  });
+  await page.waitForTimeout(300);
+
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Input.synthesizeScrollGesture", {
     x: box.x + box.width / 2,
     y: box.y + box.height / 2,
-    xDistance: 200,
+    xDistance: -600,
     yDistance: 0,
     gestureSourceType: "touch",
-    speed: 800,
+    speed: 2000,
   });
-  await page.waitForTimeout(900);
-  const after = await strip.evaluate((el) => el.scrollLeft);
-  expect(after).toBeLessThan(before);
-  expect(Math.abs(after - Math.round(after / cellW) * cellW)).toBeLessThan(1.5);
-  await expect.poll(() => visibleMonths(page)).toBe(7);
+  const resting = await stripRest(page);
+  expect(resting).toBeGreaterThan(3 * cellW);
+  expect(Math.abs(resting - Math.round(resting / cellW) * cellW)).toBeLessThan(1.5);
+
+  // Pinned year follows the leftmost month after momentum/snap.
+  const index = Math.round(resting / cellW);
+  const cell = strip.locator(".jump-strip-month").nth(index);
+  const label = (await cell.getAttribute("aria-label"))!;
+  const year = label.match(/\d{4}/)![0];
+  const pin = page.locator(".jump-strip-year-pin");
+  if (await pin.count()) await expect(pin).toHaveText(year);
+  else await expect(cell.locator(".jump-strip-year")).toHaveText(year);
 });

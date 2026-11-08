@@ -164,6 +164,104 @@ test("the strip snaps to whole months and pins the leftmost year", async ({ page
   await expect(next).toBeDisabled();
 });
 
+/** Wait until native scrolling / snapping has come to rest. */
+async function stripRest(page: import("@playwright/test").Page) {
+  const strip = page.locator(".jump-strip");
+  let previous = await strip.evaluate((el) => el.scrollLeft);
+  let stable = 0;
+  for (let i = 0; i < 60; i++) {
+    await page.waitForTimeout(120);
+    const current = await strip.evaluate((el) => el.scrollLeft);
+    stable = Math.abs(current - previous) < 0.5 ? stable + 1 : 0;
+    previous = current;
+    if (stable >= 3) return current;
+  }
+  return previous;
+}
+
+async function expectLeftmostYear(page: import("@playwright/test").Page) {
+  const strip = page.locator(".jump-strip");
+  const box = (await strip.boundingBox())!;
+  const cellW = box.width / 12;
+  const left = await strip.evaluate((el) => el.scrollLeft);
+  const index = Math.round(left / cellW);
+  const cell = strip.locator(".jump-strip-month").nth(index);
+  const label = (await cell.getAttribute("aria-label"))!;
+  const year = label.match(/\d{4}/)![0];
+  const pin = page.locator(".jump-strip-year-pin");
+  if (await pin.count()) await expect(pin).toHaveText(year);
+  else await expect(cell.locator(".jump-strip-year")).toHaveText(year);
+}
+
+test("a sideways trackpad wheel scrolls natively and snaps to a whole month", async ({ page }) => {
+  await openWithTimeline(page);
+  await page.locator(".lib-position").click();
+  const strip = page.locator(".jump-strip");
+  const box = (await strip.boundingBox())!;
+  const cellW = box.width / 12;
+
+  await strip.hover();
+  await page.mouse.wheel(300, 0);
+  const resting = await stripRest(page);
+  expect(resting).toBeGreaterThan(cellW);
+  expect(Math.abs(resting - Math.round(resting / cellW) * cellW)).toBeLessThan(1.5);
+  await expectLeftmostYear(page);
+});
+
+test("a vertical mouse wheel moves the strip sideways and snaps", async ({ page }) => {
+  await openWithTimeline(page);
+  await page.locator(".lib-position").click();
+  const strip = page.locator(".jump-strip");
+  const box = (await strip.boundingBox())!;
+  const cellW = box.width / 12;
+
+  await strip.hover();
+  await page.mouse.wheel(0, 240);
+  const resting = await stripRest(page);
+  expect(resting).toBeGreaterThan(2 * cellW);
+  expect(Math.abs(resting - Math.round(resting / cellW) * cellW)).toBeLessThan(1.5);
+  await expectLeftmostYear(page);
+});
+
+test("small sideways trackpad deltas cross more than two months", async ({ page }) => {
+  await openWithTimeline(page);
+  await page.locator(".lib-position").click();
+  const strip = page.locator(".jump-strip");
+  const box = (await strip.boundingBox())!;
+  const cellW = box.width / 12;
+
+  await strip.hover();
+  for (let i = 0; i < 20; i++) {
+    // A real trackpad sends many small deltaX events with a little deltaY.
+    await page.mouse.wheel(8, i % 2 ? 0.5 : -0.5);
+    await page.waitForTimeout(12);
+  }
+  const resting = await stripRest(page);
+  expect(resting).toBeGreaterThan(2 * cellW);
+  expect(Math.abs(resting - Math.round(resting / cellW) * cellW)).toBeLessThan(1.5);
+  await expectLeftmostYear(page);
+});
+
+test("dragging the strip scrolls without selecting a month", async ({ page }) => {
+  await openWithTimeline(page);
+  await page.locator(".lib-position").click();
+  const strip = page.locator(".jump-strip");
+  const heading = page.locator(".jump-calendar-head b");
+  await expect(heading).toHaveText("January 2024");
+  const box = (await strip.boundingBox())!;
+  const y = box.y + box.height / 2;
+  const x = box.x + box.width / 2;
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 160, y, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+
+  expect(await strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  await expect(heading).toHaveText("January 2024");
+});
+
 test("Tab reaches the strip and the calendar; arrows and Enter navigate", async ({ page }) => {
   await openWithTimeline(page);
   await page.locator(".lib-position").click();
