@@ -277,10 +277,11 @@ export default function LibraryScrubber({
     }
 
     // Full screen and compact share the same rail: years are boundaries,
-    // months are ticks, and only full screen shows the year text.
+    // every other month is a tick, and only full screen shows the year text.
+    // Year boundaries already mark January, so odd months fill the gaps.
     const months: Mark[] = timeline.years
       .flatMap((y) => y.months)
-      .filter((m) => m.count > 0)
+      .filter((m) => m.count > 0 && m.month % 2 === 1)
       .map((m) => ({
         key: `m-${m.key}`,
         ratio: clamp01((timeline.monthAnchor.get(m.key) ?? m.firstIndex) / total),

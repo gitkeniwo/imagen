@@ -72,6 +72,7 @@
   --chart-error: #f87171;
   --chart-aborted: #94a3b8;
   --chart-other: #cbd5e1;
+  --scrubber-dot: color-mix(in srgb, var(--muted-2) 75%, var(--panel));
   --scrubber-pill-ring: rgba(255, 255, 255, 0.7);
 
   /* Scale tokens — use these instead of raw px for type, spacing and corners. */
@@ -1050,10 +1051,10 @@ body.resizing-sidebar .side-panel {
   border-radius: var(--radius-full); background: var(--border);
 }
 .lib-scrubber-tick {
-  position: absolute; right: 4.5px; width: 5px; height: 5px; margin-top: -2.5px;
-  border-radius: var(--radius-full); background: var(--muted-2); pointer-events: none;
+  position: absolute; right: 5px; width: 4px; height: 4px; margin-top: -2px;
+  border-radius: var(--radius-full); background: var(--scrubber-dot); pointer-events: none;
 }
-.lib-scrubber-tick.year { right: 3.5px; width: 7px; height: 7px; margin-top: -3.5px; background: var(--muted-2); z-index: 1; }
+.lib-scrubber-tick.year { right: 4px; width: 6px; height: 6px; margin-top: -3px; background: var(--scrubber-dot); z-index: 1; }
 .lib-scrubber-label {
   position: absolute; right: 27px; transform: translateY(3px);
   color: var(--text); font-size: 12px; line-height: 14px; font-weight: 700;
@@ -1070,10 +1071,14 @@ body.resizing-sidebar .side-panel {
   box-shadow: 0 0 0 3px var(--ui-accent), 0 0 0 6px var(--ui-accent-soft);
 }
 .lib-scrubber-thumb {
-  position: absolute; right: 3px; top: calc((100% - var(--thumb-h)) * var(--ratio, 0));
-  width: 8px; height: var(--thumb-h); border-radius: 4px;
-  background: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-soft);
+  position: absolute; right: 1px; top: calc((100% - var(--thumb-h)) * var(--ratio, 0));
+  width: 12px; height: var(--thumb-h); border: 2px solid var(--ui-accent); border-radius: 999px;
+  background: transparent; box-shadow: 0 0 0 3px var(--ui-accent-soft);
   pointer-events: none; transition: box-shadow 0.12s ease;
+}
+.lib-scrubber:not(.phone) .lib-scrubber-thumb::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
+  border-radius: var(--radius-full); background: var(--ui-accent); transform: translate(-50%, -50%);
 }
 .lib-scrubber:not(.phone).dragging .lib-scrubber-thumb { box-shadow: 0 0 0 5px var(--ui-accent-soft); }
 .lib-scrubber.phone .lib-scrubber-track { display: none; }
