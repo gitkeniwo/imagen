@@ -986,86 +986,71 @@ export default function Library({
     />
   );
 
-  const positionBar =
-    total > 0 ? (
-      <div className="lib-position-row">
-        {jumpDialog(
-          <button
-            type="button"
-            className="lib-position"
-            aria-live="off"
-            aria-haspopup="dialog"
-            aria-expanded={jumpOpen}
-            title={t("jump_to")}
-            onClick={() => setJumpOpen((v) => !v)}
+  const sizePicker = (
+    <div className="phone-size" role="group" aria-label={t("columns_per_row")}>
+      {[2, 3, 4].map((n) => (
+        <button
+          key={n}
+          type="button"
+          className={phoneColumns === n ? "on" : ""}
+          aria-pressed={phoneColumns === n}
+          aria-label={t("phone_columns_n", { n })}
+          onClick={() => setColumns(n)}
+        >
+          <i
+            style={{
+              gridTemplateColumns: `repeat(${n}, 1fr)`,
+              gridTemplateRows: `repeat(${n}, 1fr)`,
+            }}
           >
-            {positionMonth && <span className="lib-position-month">{positionMonth}</span>}
-            <span className="lib-position-range">{positionRange}</span>
-            <Icon name="chevronDown" size="sm" />
-          </button>,
+            {Array.from({ length: n * n }, (_, i) => (
+              <b key={i} />
+            ))}
+          </i>
+        </button>
+      ))}
+    </div>
+  );
+
+  const positionBar =
+    total > 0 || phone ? (
+      <div className="lib-position-row">
+        {total > 0 ? (
+          jumpDialog(
+            <button
+              type="button"
+              className="lib-position"
+              aria-live="off"
+              aria-haspopup="dialog"
+              aria-expanded={jumpOpen}
+              title={t("jump_to")}
+              onClick={() => setJumpOpen((v) => !v)}
+            >
+              {positionMonth && <span className="lib-position-month">{positionMonth}</span>}
+              <span className="lib-position-range">{positionRange}</span>
+              <Icon name="chevronDown" size="sm" />
+            </button>,
+          )
+        ) : (
+          <span className="phone-position">{t("phone_total_images", { n: total })}</span>
         )}
-        {!grid.atTop && (
+        {total > 0 && !grid.atTop && (
           <button
             type="button"
-            className="lib-newest-btn"
-            aria-label={t("lib_newest")}
-            title={t("lib_newest")}
+            className="lib-back-top"
+            aria-label={t("lib_back_to_top")}
+            title={t("lib_back_to_top")}
             onClick={() => {
               setNewCount(0);
               grid.scrollToTop(true);
             }}
           >
-            <Icon name="chevronUp" size="sm" />
+            <Icon name="backToTop" size="sm" />
           </button>
         )}
+        {phone && sizePicker}
       </div>
     ) : null;
-
-  const phonePager = (
-    <div className="phone-pager-row">
-      {total > 0 ? (
-        jumpDialog(
-          <button
-            type="button"
-            className="phone-position jump-trigger"
-            aria-haspopup="dialog"
-            aria-expanded={jumpOpen}
-            title={t("jump_to")}
-            onClick={() => setJumpOpen((v) => !v)}
-          >
-            {positionMonth && <b>{positionMonth}</b>}
-            <span>{positionRange}</span>
-            <Icon name="chevronDown" size="sm" />
-          </button>,
-        )
-      ) : (
-        <span className="phone-position">{t("phone_total_images", { n: total })}</span>
-      )}
-      <div className="phone-size" role="group" aria-label={t("columns_per_row")}>
-        {[2, 3, 4].map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={phoneColumns === n ? "on" : ""}
-            aria-pressed={phoneColumns === n}
-            aria-label={t("phone_columns_n", { n })}
-            onClick={() => setColumns(n)}
-          >
-            <i
-              style={{
-                gridTemplateColumns: `repeat(${n}, 1fr)`,
-                gridTemplateRows: `repeat(${n}, 1fr)`,
-              }}
-            >
-              {Array.from({ length: n * n }, (_, i) => (
-                <b key={i} />
-              ))}
-            </i>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 
   const newBadge =
     newCount > 0 ? (
@@ -1433,7 +1418,7 @@ export default function Library({
           </div>
         )}
 
-        {phone ? phonePager : positionBar}
+        {positionBar}
         {newBadge}
       </div>
 
