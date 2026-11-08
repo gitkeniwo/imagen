@@ -473,6 +473,30 @@ function invalidateTags() {
   tagsCache = null;
 }
 
+// Filters shared by the Library list, its ids and its timeline.
+export interface LibraryFilters {
+  source?: string;
+  tag?: number;
+  starred?: boolean;
+  q?: string;
+}
+
+export interface ImageTimeline {
+  days: { day: string; count: number; first_index: number }[];
+  // [start_index, day] wherever the day changes, in list order (first at 0).
+  runs: [number, string][];
+  total: number;
+}
+
+function libraryFilterQuery(params: LibraryFilters): URLSearchParams {
+  const q = new URLSearchParams();
+  if (params.source) q.set("source", params.source);
+  if (params.tag) q.set("tag", String(params.tag));
+  if (params.starred) q.set("starred", "true");
+  if (params.q && params.q.trim()) q.set("q", params.q.trim());
+  return q;
+}
+
 export const api = {
   async getProviders(): Promise<{ providers: ProviderInfo[] }> {
     return handle(await fetch("/api/providers", { cache: "no-store" }));
@@ -509,22 +533,30 @@ export const api = {
     files.forEach((f) => fd.append("files", f));
     return handle(await fetch("/api/images", { method: "POST", body: fd }));
   },
-  async listImages(params: {
-    limit?: number;
-    offset?: number;
-    source?: string;
-    tag?: number;
-    starred?: boolean;
-    q?: string;
-  } = {}): Promise<{ images: ImageRow[]; total: number }> {
-    const q = new URLSearchParams();
+  async listImages(
+    params: LibraryFilters & { limit?: number; offset?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<{ images: ImageRow[]; total: number }> {
+    const q = libraryFilterQuery(params);
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
-    if (params.source) q.set("source", params.source);
-    if (params.tag) q.set("tag", String(params.tag));
-    if (params.starred) q.set("starred", "true");
-    if (params.q && params.q.trim()) q.set("q", params.q.trim());
-    return handle(await fetch(`/api/images?${q.toString()}`));
+    return handle(await fetch(`/api/images?${q.toString()}`, { signal }));
+  },
+  // Ids only, same filters and order as `listImages` (range / select-all).
+  async listImageIds(
+    params: LibraryFilters & { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<{ ids: number[]; total: number }> {
+    const q = libraryFilterQuery(params);
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    return handle(await fetch(`/api/images/ids?${q.toString()}`, { signal }));
+  },
+  // Per-day counts; `first_index` is the day's first position in list order.
+  async imageTimeline(params: LibraryFilters): Promise<ImageTimeline> {
+    const q = libraryFilterQuery(params);
+    q.set("tz", String(-new Date().getTimezoneOffset()));
+    return handle(await fetch(`/api/images/timeline?${q.toString()}`));
   },
   // Restore saved composer references: live rows only, in the requested order.
   async lookupImages(ids: number[]): Promise<{ images: ImageRow[] }> {

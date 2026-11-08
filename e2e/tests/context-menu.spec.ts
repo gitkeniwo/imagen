@@ -10,7 +10,7 @@ import {
   test,
   watchContextMenuDefault,
 } from "../fixtures";
-import { libTile, viewer, openViewerOn, referenceTray } from "../ui";
+import { libTile, shownLibTile, viewer, openViewerOn, referenceTray } from "../ui";
 
 // Read-only checks (menus are opened and dismissed); one library per file.
 
@@ -20,7 +20,7 @@ test.beforeEach(async ({ page }) => {
 
 test("library thumbnail menu matches the image", async ({ page }) => {
   // A generated image is titled by its prompt, an upload by its name.
-  await rightClick(libTile(page, "poster-alps-4k.png"));
+  await rightClick((await shownLibTile(page, "poster-alps-4k.png")));
   await expect.poll(() => menuTitle(page)).toBe("Same composition, swap background for the alpine landscape");
   const labels = await menuLabels(page);
   expect(labels).toEqual(["View", "Add to input", "Unfavorite", "Download", "Tags", "Add to series", "Move to Bin"]);
@@ -28,7 +28,7 @@ test("library thumbnail menu matches the image", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(contextMenu(page)).toHaveCount(0);
 
-  await rightClick(libTile(page, "landscape-alps.jpg"));
+  await rightClick((await shownLibTile(page, "landscape-alps.jpg")));
   expect(await menuTitle(page)).toBe("landscape-alps.jpg");
   expect(await menuLabels(page)).toEqual([
     "View",
@@ -92,7 +92,7 @@ test("viewer main image and input image menus", async ({ page }) => {
 });
 
 test("reference tray menu", async ({ page }) => {
-  await rightClick(libTile(page, "landscape-alps.jpg"));
+  await rightClick((await shownLibTile(page, "landscape-alps.jpg")));
   await contextMenu(page).getByRole("menuitem", { name: "Add to input" }).click();
   const ref = referenceTray(page).getByRole("button", { name: /landscape-alps\.jpg/ }).first();
   await rightClick(ref);
@@ -102,13 +102,13 @@ test("reference tray menu", async ({ page }) => {
 
 test("move to bin asks first; cancel changes nothing", async ({ page }) => {
   const before = await page.request.get("/api/images?limit=1").then((r) => r.json());
-  await rightClick(libTile(page, "landscape-alps.jpg"));
+  await rightClick((await shownLibTile(page, "landscape-alps.jpg")));
   await contextMenu(page).getByRole("menuitem", { name: "Move to bin" }).click();
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(libTile(page, "landscape-alps.jpg")).toBeVisible();
+  await expect((await shownLibTile(page, "landscape-alps.jpg"))).toBeVisible();
   const after = await page.request.get("/api/images?limit=1").then((r) => r.json());
   expect(after.total).toBe(before.total);
   await expect(page.getByRole("button", { name: "Recycle bin (1)" })).toBeVisible();
@@ -143,7 +143,7 @@ test("text fields keep the system context menu", async ({ page }) => {
 });
 
 test("a touch contextmenu does not open the menu", async ({ page }) => {
-  const tile = libTile(page, "landscape-alps.jpg");
+  const tile = (await shownLibTile(page, "landscape-alps.jpg"));
   await tile.evaluate((el) => {
     const r = el.getBoundingClientRect();
     el.dispatchEvent(
@@ -164,7 +164,7 @@ test("menu near the bottom-right corner flips up-left and keeps 8px from the edg
   const size = page.viewportSize()!;
   // No thumbnail sits in the corner, so send a tile's contextmenu event with
   // corner coordinates: the menu opens at the event's clientX/clientY.
-  const tile = libTile(page, "landscape-alps.jpg");
+  const tile = (await shownLibTile(page, "landscape-alps.jpg"));
   await tile.evaluate(
     (el, { w, h }) => {
       el.dispatchEvent(

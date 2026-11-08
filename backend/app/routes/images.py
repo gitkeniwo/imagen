@@ -44,15 +44,17 @@ async def upload_images(files: list[UploadFile] = File(...)):
     return {"images": storage.public_images(out)}
 
 
-@router.get("")
-def list_images(
-    limit: int = Query(60, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    source: str | None = None,
-    starred: bool | None = None,
-    tag: int | None = None,
-    q: str | None = None,
-):
+def _library_where(
+    source: str | None,
+    starred: bool | None,
+    tag: int | None,
+    q: str | None,
+) -> tuple[str, list]:
+    """WHERE clause shared by the library list, timeline and ids endpoints.
+
+    Every endpoint that describes "the current Library result" must build its
+    filter here, so positions (offset / first_index) always agree.
+    """
     clauses, params = ["deleted_at IS NULL"], []
     # "generated" is every output image (imported results flip their output to
     # generated); "app" / "imported" split it by the record that produced it.
@@ -80,10 +82,26 @@ def list_images(
             "JOIN tags t ON t.id = it.tag_id WHERE t.name LIKE ?))"
         )
         params.extend([like, like])
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return f"WHERE {' AND '.join(clauses)}", params
+
+
+# The list order. Timeline positions are ROW_NUMBER() over this same order.
+_LIBRARY_ORDER = "id DESC"
+
+
+@router.get("")
+def list_images(
+    limit: int = Query(60, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    source: str | None = None,
+    starred: bool | None = None,
+    tag: int | None = None,
+    q: str | None = None,
+):
+    where, params = _library_where(source, starred, tag, q)
     sql = (
         f"SELECT * FROM images {where} "
-        "ORDER BY id DESC LIMIT ? OFFSET ?"
+        f"ORDER BY {_LIBRARY_ORDER} LIMIT ? OFFSET ?"
     )
     with get_conn() as conn:
         rows = [dict(r) for r in conn.execute(sql, (*params, limit, offset)).fetchall()]
@@ -92,6 +110,90 @@ def list_images(
             f"SELECT COUNT(*) c FROM images {where}", params
         ).fetchone()["c"]
     return {"images": storage.public_images(rows), "total": total}
+
+
+@router.get("/timeline")
+def images_timeline(
+    source: str | None = None,
+    starred: bool | None = None,
+    tag: int | None = None,
+    q: str | None = None,
+    tz: int = Query(0, ge=-1440, le=1440),
+):
+    """Per-day counts for the Library scrubber / jump dialog.
+
+    ``first_index`` is the 0-based position of the day's first image in the
+    list order (same filters as ``GET /api/images``). It is computed with a
+    window function, because ``created_at`` is not guaranteed to follow id
+    order (imported / migrated rows), so a day may be scattered through the
+    list. ``tz`` is minutes east of UTC. Rows whose ``created_at`` is missing
+    or unparseable are grouped under ``"unknown"``.
+
+    ``runs`` answers "which day is at position i": ``[start_index, day]`` for
+    every position where the day differs from the previous position, in list
+    order (the first entry always starts at 0). ``first_index`` alone cannot
+    answer it: one stray imported row puts its day's ``first_index`` in the
+    middle of another day's images.
+    """
+    where, params = _library_where(source, starred, tag, q)
+    ordered = f"""
+        WITH ordered AS (
+            SELECT date(created_at, ?) AS day,
+                   ROW_NUMBER() OVER (ORDER BY {_LIBRARY_ORDER}) - 1 AS idx
+            FROM images {where}
+        )
+    """
+    days_sql = ordered + """
+        SELECT day, COUNT(*) AS count, MIN(idx) AS first_index
+        FROM ordered GROUP BY day
+        ORDER BY (day IS NULL), day DESC
+    """
+    runs_sql = ordered + """
+        , marked AS (
+            SELECT idx, day, LAG(day) OVER (ORDER BY idx) AS prev FROM ordered
+        )
+        SELECT idx, day FROM marked
+        WHERE idx = 0 OR day IS NOT prev
+        ORDER BY idx
+    """
+    args = (f"{tz:+d} minutes", *params)
+    with get_conn() as conn:
+        rows = conn.execute(days_sql, args).fetchall()
+        runs = conn.execute(runs_sql, args).fetchall()
+    days = [
+        {"day": r["day"] or "unknown", "count": r["count"], "first_index": r["first_index"]}
+        for r in rows
+    ]
+    return {
+        "days": days,
+        "runs": [[r["idx"], r["day"] or "unknown"] for r in runs],
+        "total": sum(d["count"] for d in days),
+    }
+
+
+MAX_IDS_LIMIT = 5000
+
+
+@router.get("/ids")
+def list_image_ids(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(MAX_IDS_LIMIT, ge=1, le=MAX_IDS_LIMIT),
+    source: str | None = None,
+    starred: bool | None = None,
+    tag: int | None = None,
+    q: str | None = None,
+):
+    """Ids only, same filters and order as the list (range / select-all)."""
+    where, params = _library_where(source, starred, tag, q)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT id FROM images {where} ORDER BY {_LIBRARY_ORDER} LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        ).fetchall()
+        total = conn.execute(
+            f"SELECT COUNT(*) c FROM images {where}", params
+        ).fetchone()["c"]
+    return {"ids": [r["id"] for r in rows], "total": total}
 
 
 MAX_LOOKUP_IDS = 50
