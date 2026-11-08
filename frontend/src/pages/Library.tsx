@@ -1008,13 +1008,14 @@ export default function Library({
           <button
             type="button"
             className="lib-newest-btn"
+            aria-label={t("lib_newest")}
+            title={t("lib_newest")}
             onClick={() => {
               setNewCount(0);
               grid.scrollToTop(true);
             }}
           >
             <Icon name="chevronUp" size="sm" />
-            {t("lib_newest")}
           </button>
         )}
       </div>

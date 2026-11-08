@@ -12,7 +12,6 @@ import {
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import {
-  formatMonthShort,
   formatMonthYear,
   indexToDay,
   type Timeline,
@@ -88,6 +87,10 @@ export default function LibraryScrubber({
   const fadeTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
   const start = useRef<{ y: number } | null>(null);
+  // WebKit can emit a pointermove when a large scroll changes what is under a
+  // stationary pointer. Do not let that synthetic event replace a keyboard
+  // seek; only a real pointer movement should preview a new position.
+  const hoverY = useRef<number | null>(null);
 
   const clearTimers = useCallback(() => {
     if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
@@ -177,47 +180,30 @@ export default function LibraryScrubber({
       }
     }
 
-    if (mode === "compact") {
-      const months: Mark[] = timeline.years
-        .flatMap((y) => y.months)
-        .filter((m) => m.count > 0)
-        .map((m) => ({
-          key: `m-${m.key}`,
-          ratio: clamp01((timeline.monthAnchor.get(m.key) ?? m.firstIndex) / total),
-          year: false,
-        }));
-      return [...years, ...months];
-    }
-
-    // Full screen: year labels always, month labels only when there is room.
+    // Full screen and compact share the same rail: years are boundaries,
+    // months are ticks, and only full screen shows the year text.
     const months: Mark[] = timeline.years
       .flatMap((y) => y.months)
       .filter((m) => m.count > 0)
       .map((m) => ({
         key: `m-${m.key}`,
         ratio: clamp01((timeline.monthAnchor.get(m.key) ?? m.firstIndex) / total),
-        label: formatMonthShort(m.month, lang),
         year: false,
       }));
     const all = [...years, ...months].sort((a, b) => a.ratio - b.ratio);
-    if (height <= 0) return years;
-    const out: Mark[] = [];
-    let lastY = -Infinity;
-    for (const mark of all) {
+    if (mode === "compact" || height <= 0) return all;
+
+    // Imported rows can put two years very close together. Keep both boundary
+    // lines, but hide a label that would otherwise overlap the previous one.
+    let lastLabelY = -Infinity;
+    return all.map((mark) => {
       const y = mark.ratio * height;
-      if (mark.year) {
-        // A handful of imported rows can put a whole year's first_index next
-        // to another year's; keep the label rows at least 10px apart.
-        if (y - lastY < 10) continue;
-        out.push(mark);
-        lastY = y;
-      } else if (y - lastY >= 14) {
-        out.push(mark);
-        lastY = y;
-      }
-    }
-    return out;
-  }, [height, lang, mode, timeline, total]);
+      if (!mark.year || mark.label === undefined) return mark;
+      if (y - lastLabelY < 10) return { ...mark, label: undefined };
+      lastLabelY = y;
+      return mark;
+    });
+  }, [height, mode, timeline, total]);
 
   const indexAt = useCallback(
     (clientY: number) => {
@@ -290,7 +276,21 @@ export default function LibraryScrubber({
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
+    if (!dragging) {
+      // The bubble is the only month readout on the rail now, so preview the
+      // position under the pointer without moving the thumb.
+      if (mode !== "phone") {
+        const moved = hoverY.current === null || Math.abs(event.clientY - hoverY.current) > 0.5;
+        hoverY.current = event.clientY;
+        if (hideTimer.current !== null) {
+          window.clearTimeout(hideTimer.current);
+          hideTimer.current = null;
+        }
+        setBubble(true);
+        if (moved) setActive(indexAt(event.clientY));
+      }
+      return;
+    }
     if (!start.current) return;
     if (Math.abs(event.clientY - start.current.y) > 8) {
       if (holdTimer.current !== null) {
@@ -325,6 +325,17 @@ export default function LibraryScrubber({
     scheduleFade();
   };
 
+  const onPointerLeave = () => {
+    if (dragging || mode === "phone") return;
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setBubble(false);
+    setActive(null);
+    hoverY.current = null;
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (total === 0) return;
     const page = Math.max(1, step);
@@ -357,24 +368,25 @@ export default function LibraryScrubber({
       style={style}
     >
       <div className="lib-scrubber-track" aria-hidden="true" />
+      {marks.map((mark) => (
+        <span
+          key={mark.key}
+          className={`lib-scrubber-tick${mark.year ? " year" : ""}`}
+          style={{ top: `${mark.ratio * 100}%` }}
+          aria-hidden="true"
+        />
+      ))}
       {marks.map((mark) =>
         mark.label !== undefined ? (
           <span
-            key={mark.key}
-            className={`lib-scrubber-label${mark.year ? " year" : ""}`}
+            key={`${mark.key}-label`}
+            className="lib-scrubber-label"
             style={{ top: `${mark.ratio * 100}%` }}
             aria-hidden="true"
           >
             {mark.label}
           </span>
-        ) : (
-          <span
-            key={mark.key}
-            className={`lib-scrubber-tick${mark.year ? " year" : ""}`}
-            style={{ top: `${mark.ratio * 100}%` }}
-            aria-hidden="true"
-          />
-        ),
+        ) : null,
       )}
       <div
         ref={hitRef}
@@ -388,9 +400,11 @@ export default function LibraryScrubber({
         aria-valuenow={Math.min(total, shownIndex + 1)}
         aria-valuetext={bubbleText}
         onPointerDown={onPointerDown}
+        onPointerEnter={onPointerMove}
         onPointerMove={onPointerMove}
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
+        onPointerLeave={onPointerLeave}
         onKeyDown={onKeyDown}
         onFocus={() => setFaded(false)}
         onBlur={() => scheduleFade()}

@@ -102,7 +102,7 @@ export default function FullscreenManager({
             onClick={onClose}
           />
         </div>
-        <div className="manager-body">
+        <div className={`manager-body${panel === "library" ? " library-body" : ""}`}>
           {panel === "library" ? (
             <Library
               addToTray={addToTray}

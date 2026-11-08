@@ -1016,12 +1016,12 @@ body.resizing-sidebar .side-panel {
 .lib-position-month { color: var(--text); font-weight: 600; white-space: nowrap; }
 .lib-position-range { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-newest-btn {
-  display: inline-flex; align-items: center; gap: var(--space-1); flex: 0 0 auto;
-  margin: 0 0 0 auto; padding: var(--space-1) var(--space-2); min-height: 0;
-  border: 0; border-radius: var(--radius-md); background: transparent; box-shadow: none;
-  color: var(--muted); font-size: var(--fs-sm); font-weight: 500;
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 30px; height: 30px; margin: 0; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); box-shadow: none;
+  color: var(--muted);
 }
-.lib-newest-btn:hover { background: var(--panel-2); color: var(--text); }
+.lib-newest-btn:hover { background: var(--panel-2); border-color: var(--hover-border); color: var(--text); }
 .lib-newest-btn .icon { color: var(--ui-accent); }
 /* "↑ N new": floats just under the sticky header. */
 .lib-new-badge {
@@ -1040,7 +1040,7 @@ body.resizing-sidebar .side-panel {
   --thumb-h: 46px; --thumb-half: 23px;
   transition: opacity 0.35s ease;
 }
-.lib-scrubber.full { width: 56px; }
+.lib-scrubber.full { width: 52px; }
 .lib-scrubber.phone { width: 44px; --thumb-h: 56px; --thumb-half: 28px; }
 .lib-scrubber.faded { opacity: 0.22; }
 .lib-scrubber-track {
@@ -1048,16 +1048,19 @@ body.resizing-sidebar .side-panel {
   border-radius: var(--radius-full); background: var(--border);
 }
 .lib-scrubber-tick {
-  position: absolute; right: 5px; width: 4px; height: 4px; margin-top: -2px;
+  position: absolute; right: 6px; width: 5px; height: 1px; margin-top: -0.5px;
   border-radius: var(--radius-full); background: var(--muted-2); pointer-events: none;
 }
-.lib-scrubber-tick.year { right: 4px; width: 6px; height: 6px; margin-top: -3px; background: var(--muted); }
+.lib-scrubber-tick.year { right: 6px; width: 14px; height: 2px; margin-top: -1px; background: var(--muted); z-index: 1; }
+.lib-scrubber.compact .lib-scrubber-tick.year {
+  right: 4px; width: 6px; height: 6px; margin-top: -3px;
+  border-radius: var(--radius-full); background: var(--muted); z-index: auto;
+}
 .lib-scrubber-label {
-  position: absolute; right: 16px; transform: translateY(-50%);
-  color: var(--muted); font-size: var(--fs-xs); line-height: 14px;
+  position: absolute; right: 25px; transform: translateY(3px);
+  color: var(--text); font-size: 12px; line-height: 14px; font-weight: 700;
   white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums;
 }
-.lib-scrubber-label.year { color: var(--text); font-size: var(--fs-sm); font-weight: 700; }
 .lib-scrubber-hit {
   position: absolute; top: 0; bottom: 0; right: -6px; width: 28px;
   pointer-events: auto; touch-action: none; cursor: grab; border-radius: var(--radius-full);
@@ -1751,6 +1754,8 @@ button.source-badge { height: 22px; font: inherit; font-size: var(--fs-sm); curs
   padding: var(--space-3) var(--space-5) var(--space-1);
 }
 .manager-island .manager-body { margin: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.manager-body.library-body { scrollbar-width: none; -ms-overflow-style: none; }
+.manager-body.library-body::-webkit-scrollbar { display: none; }
 .manager-island .library-sticky,
 .manager-island .history-toolbar { background: var(--sidebar-bg); }
 
