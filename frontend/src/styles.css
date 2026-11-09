@@ -1047,20 +1047,21 @@ body.resizing-sidebar .side-panel {
   min-width: 0;
 }
 .side-panel .lib-position-row, .manager-body .lib-position-row { padding-left: 0; padding-right: 0; }
-.lib-position {
+.lib-position, .list-position {
   display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%;
   height: 24px; min-height: 0; margin: 0; padding: 0 var(--space-1) 0 0; border: 0;
   border-radius: var(--radius-sm); background: transparent; box-shadow: none;
   text-align: left; cursor: pointer;
   font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums;
 }
-.lib-position:hover, .lib-position[aria-expanded="true"] {
+.lib-position:hover, .lib-position[aria-expanded="true"],
+.list-position:hover, .list-position[aria-expanded="true"] {
   background: var(--panel-2); border-color: transparent; color: var(--text);
 }
-.lib-position:focus-visible { box-shadow: 0 0 0 3px var(--ring); }
-.lib-position .icon { flex: none; color: var(--muted-2); }
-.lib-position-month { color: var(--text); font-weight: 600; white-space: nowrap; }
-.lib-position-range { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-position:focus-visible, .list-position:focus-visible { box-shadow: 0 0 0 3px var(--ring); }
+.lib-position .icon, .list-position .icon { flex: none; color: var(--muted-2); }
+.lib-position-month, .list-position-month { color: var(--text); font-weight: 600; white-space: nowrap; }
+.lib-position-range, .list-position-range { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-back-top {
   flex: 0 0 auto; width: 24px; height: 24px; min-height: 0; margin: 0 0 0 auto; padding: 0;
   border: 0; border-radius: var(--radius-full); background: var(--lib-top-bg);
@@ -1098,6 +1099,10 @@ body.resizing-sidebar .side-panel {
   border-radius: var(--radius-full); background: var(--scrubber-dot); pointer-events: none;
 }
 .lib-scrubber-tick.year { right: 4px; width: 6px; height: 6px; margin-top: -3px; background: var(--scrubber-dot); z-index: 1; }
+.lib-scrubber-tick.pinned {
+  right: 3px; width: 8px; height: 8px; margin-top: -4px;
+  background: var(--ui-accent);
+}
 .lib-scrubber-tick.active { background: var(--ui-accent); }
 .lib-scrubber-label {
   position: absolute; right: 27px; transform: translateY(3px);
@@ -2716,6 +2721,49 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 .hcard-star { position: absolute; top: 6px; right: 6px; }
 .hcard.list .hcard-star { top: 4px; right: 4px; width: 26px; height: 26px; }
 .hcard-star.is-starred { color: var(--warning); }
+/* Shared virtual-list geometry. Card heights are fixed; long text uses the
+   full-text popover instead of growing a row. */
+.virtual-list {
+  --hcard-body-h: 176px;
+  --hcard-list-h: 156px;
+  --hlist-day-step: 38px;
+}
+.history-vgrid {
+  position: relative;
+  contain: layout;
+  margin-right: 16px;
+}
+.history-vgrid > .history-list,
+.history-vgrid > .history-vstack {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+.history-vstack,
+.history-vrow {
+  display: flex;
+  flex-direction: column;
+}
+.history-cell,
+.history-vstack .hsel-wrap {
+  min-width: 0;
+  height: 100%;
+}
+.virtual-list .hcard {
+  height: 100%;
+  overflow: hidden;
+}
+.virtual-list .hcard.grid .hcard-body {
+  height: var(--hcard-body-h);
+  overflow: hidden;
+}
+.virtual-list .hcard.list {
+  height: var(--hcard-list-h);
+}
+.manager-body .history-vgrid { margin-right: 70px; }
+.phone-island .history-vgrid { margin-right: 5px; }
 .hcard-status {
   position: absolute; inset: 0; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1);
   color: var(--muted); font-size: var(--fs-sm); line-height: 1.45;
@@ -3935,7 +3983,11 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-island .history-toolbar-row .searchbox input { font-size: 15px; }
   .phone-island .history-toolbar-row .view-seg { flex: none; }
   .phone-island .history-toolbar .filter-row { margin-top: var(--space-2); }
-  .phone-island .history-phone .phone-pager-row { padding-bottom: var(--space-2); }
+  .phone-island .history-vgrid {
+    --hcard-body-h: 170px;
+    --hcard-list-h: 150px;
+    --hlist-day-step: 34px;
+  }
 
   /* Favorites/drafts open as subpages: the head sits above the scroller, so the
      sticky toolbar pins at 0 (not 44px, which left a see-through gap) and the

@@ -82,6 +82,7 @@ test("tap opens the viewer; no hover preview is left behind", async ({ page }) =
 
   // History input chips have hover previews on desktop; a tap must not leave one stuck.
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "History" }).click();
+  await page.getByPlaceholder("Search prompt…").fill("Sneaker on dunes");
   const chip = page.getByRole("article").filter({ hasText: "Sneaker on dunes at golden hour" }).getByRole("button", {
     name: "landscape-dunes.jpg",
     exact: true,

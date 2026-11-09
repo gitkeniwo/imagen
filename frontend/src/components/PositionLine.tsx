@@ -14,6 +14,9 @@ interface Props {
   timelineError: string | null;
   phone: boolean;
   unit?: ListUnit;
+  // Library keeps the historical `.lib-position` hook; other virtual lists
+  // use a distinct class so hidden mounted phone tabs do not shadow it.
+  buttonClass?: string;
   // Used before the timeline arrives (Library derives it from created_at).
   fallbackMonth?: string;
   newCount?: number;
@@ -39,6 +42,7 @@ export default function PositionLine({
   timelineError,
   phone,
   unit = "images",
+  buttonClass = "lib-position",
   fallbackMonth = "",
   newCount = 0,
   jumpOpen,
@@ -50,6 +54,8 @@ export default function PositionLine({
 }: Props) {
   const { t, lang } = useI18n();
   const [innerOpen, setInnerOpen] = useState(false);
+  const monthClass = buttonClass.replace(/position$/, "position-month");
+  const rangeClass = buttonClass.replace(/position$/, "position-range");
   const open = jumpOpen ?? innerOpen;
   const setOpen = (next: boolean) => {
     if (jumpOpen === undefined) setInnerOpen(next);
@@ -84,15 +90,15 @@ export default function PositionLine({
             trigger={
               <button
                 type="button"
-                className="lib-position"
+                className={buttonClass}
                 aria-live="off"
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 title={t("jump_to")}
                 onClick={() => setOpen(!open)}
               >
-                {positionMonth && <span className="lib-position-month">{positionMonth}</span>}
-                <span className="lib-position-range">{positionRange}</span>
+                {positionMonth && <span className={monthClass}>{positionMonth}</span>}
+                <span className={rangeClass}>{positionRange}</span>
                 <Icon name="chevronDown" size="sm" />
               </button>
             }

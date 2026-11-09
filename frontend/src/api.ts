@@ -672,12 +672,13 @@ export const api = {
   },
   async listDrafts(
     params: DraftFilters & { limit?: number; offset?: number; pinned?: boolean } = {},
+    signal?: AbortSignal,
   ): Promise<{ drafts: Draft[]; total: number }> {
     const q = draftFilterQuery(params);
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     if (params.pinned !== undefined) q.set("pinned", String(params.pinned));
-    return handle(await fetch(`/api/drafts?${q.toString()}`));
+    return handle(await fetch(`/api/drafts?${q.toString()}`, { signal }));
   },
   async draftsTimeline(params: DraftFilters): Promise<ImageTimeline> {
     const q = draftFilterQuery(params);
@@ -711,6 +712,7 @@ export const api = {
       offset?: number;
       uniqueOutputs?: boolean;
     } = {},
+    signal?: AbortSignal,
   ): Promise<{
     generations: Generation[];
     total: number;
@@ -721,7 +723,7 @@ export const api = {
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     if (params.uniqueOutputs) q.set("unique_outputs", "true");
-    return handle(await fetch(`/api/generations?${q.toString()}`));
+    return handle(await fetch(`/api/generations?${q.toString()}`, { signal }));
   },
   async generationTimeline(params: GenerationFilters): Promise<ImageTimeline> {
     const q = generationFilterQuery(params);

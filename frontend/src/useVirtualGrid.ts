@@ -338,9 +338,12 @@ export function useVirtualGrid({
     tileWidth,
     itemHeight: itemPx,
     rowHeight,
+    sectionHeaderHeight: headerHeight,
     totalHeight,
     sectionRows,
     atTop: m.viewTop < rowHeight,
+    startRow,
+    endRow,
     // Rendered tile range [startIndex, endIndex] (inclusive, may be empty).
     startIndex: startRow * cols,
     endIndex: Math.min(count - 1, (endRow + 1) * cols - 1),
