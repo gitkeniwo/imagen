@@ -15,6 +15,8 @@ import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import GenerationCard, { downloadImage } from "../components/GenerationCard";
+import { SeriesBadge } from "../components/SeriesBits";
+import { useSeriesActions } from "../components/SeriesMenu";
 import type { MenuItem } from "../components/ui/Menu";
 import { IconButton } from "../components/ui/Button";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
@@ -263,6 +265,11 @@ export default function Drafts({
     }
   };
 
+  const series = useSeriesActions(() => {
+    void refresh();
+    onChanged?.();
+  });
+
   const openDraftImageMenu = (
     draft: Draft,
     img: ImageRow,
@@ -318,7 +325,9 @@ export default function Drafts({
       images: [img],
       prompt: draft.prompt,
       quickActions,
-      sections: [],
+      sections: [
+        series.section([draft.series_id], { body: { draftIds: [draft.id] }, members: [draft.series_id ?? null] }),
+      ],
       ariaLabel: t("image_menu"),
     });
   };
@@ -531,6 +540,14 @@ export default function Drafts({
                       },
                     ]}
                     menuItems={menuItems}
+                    footerBadge={
+                      draft.series_id ? (
+                        <SeriesBadge
+                          seriesId={draft.series_id}
+                          subject={{ kind: "draft", draftId: draft.id, seriesId: draft.series_id }}
+                        />
+                      ) : undefined
+                    }
                   />
                 </div>
               );
@@ -560,6 +577,7 @@ export default function Drafts({
           }}
         />
       )}
+      {series.dialog}
       {editing && (
         <DraftEditorModal
           existing={editing}

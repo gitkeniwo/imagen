@@ -40,6 +40,8 @@ import { useTimeline } from "../useTimeline";
 import { useAnchoredRefresh } from "../useAnchoredRefresh";
 import { useRowHeightCheck } from "../useRowHeightCheck";
 import { type SeriesTarget, useSeriesActions } from "../components/SeriesMenu";
+import { fetchImageSeries, useImageSeries } from "../seriesContext";
+import { useSeries } from "../seriesStore";
 import Popover from "../components/ui/Popover";
 
 const GRID_COLUMNS_KEY = "imagen-library-columns";
@@ -591,7 +593,10 @@ export default function Library({
   const [batchTarget, setBatchTarget] = useState<SeriesTarget | null>(null);
   const seriesTargetFor = async (ids: number[]): Promise<SeriesTarget | null> => {
     try {
-      const { items } = await seriesApi.membership(ids);
+      const items: Awaited<ReturnType<typeof seriesApi.membership>>["items"] = [];
+      for (let i = 0; i < ids.length; i += 500) {
+        items.push(...(await seriesApi.membership(ids.slice(i, i + 500))).items);
+      }
       const filed = items.filter((item) => item.generationIds.length > 0);
       if (filed.length === 0) return null;
       return {
@@ -615,7 +620,7 @@ export default function Library({
       const known = knownRows(idList);
       const images = known.length ? known : [img];
       const count = idList.length;
-      const seriesTarget = await seriesTargetFor(images.map((row) => row.id));
+      const seriesTarget = await seriesTargetFor(idList);
       const folders: ContextMenuSection[] = [
         [
           {
@@ -716,7 +721,12 @@ export default function Library({
           hint: hasTags,
           submenu: tagMenu,
         },
-        ...(!picker ? [series.menuItem(seriesTarget)] : []),
+        ...(!picker
+          ? series.section(
+              (await fetchImageSeries(img.id)).map((e) => e.seriesId),
+              seriesTarget,
+            )
+          : []),
       ],
       ...(!picker
         ? [
@@ -873,6 +883,24 @@ export default function Library({
     </PositionLine>
   );
 
+  // series-v2 B1a: series dots for the tiles on screen (input use counts).
+  const visibleIds: number[] = [];
+  for (let i = grid.startIndex; i <= grid.endIndex && total > 0; i++) {
+    const img = data.get(i);
+    if (img) visibleIds.push(img.id);
+  }
+  const imageSeries = useImageSeries(phone ? [] : visibleIds);
+  const seriesStore = useSeries();
+  const tileSeries = (id: number): string | undefined => {
+    const entries = imageSeries(id);
+    if (!entries?.length) return undefined;
+    const list = entries.flatMap((e) => {
+      const path = seriesStore.get(e.seriesId);
+      return path ? [[path.color, path.name]] : [];
+    });
+    return list.length ? JSON.stringify(list) : undefined;
+  };
+
   const tiles: JSX.Element[] = [];
   if (total > 0) {
     for (let i = grid.startIndex; i <= grid.endIndex; i++) {
@@ -891,6 +919,7 @@ export default function Library({
             phone={phone}
             peeks={peeks}
             picker={!!picker}
+            series={tileSeries(img.id)}
           />
         ) : (
           <div key={i} className="lib-skeleton" aria-hidden="true" />

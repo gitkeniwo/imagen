@@ -35,7 +35,7 @@ import {
 import { downloadImage } from "../components/GenerationCard";
 import CustomSelect from "../components/CustomSelect";
 import Popover from "../components/ui/Popover";
-import { SeriesChip } from "../components/SeriesBits";
+import { SeriesBadge } from "../components/SeriesBits";
 import { useSeriesActions } from "../components/SeriesMenu";
 import { seriesPathText, useSeries } from "../seriesStore";
 import PositionLine from "../components/PositionLine";
@@ -342,7 +342,10 @@ export default function History({
       else if (g.status === "blocked") counts.blocked++;
       else counts.error++;
     }
-    const sameSeries = list[0]?.series_id && list.every((g) => g.series_id === list[0].series_id) ? list[0].series_id : null;
+    const sameSeries =
+      list.length === idList.length && list[0]?.series_id && list.every((g) => g.series_id === list[0].series_id)
+        ? list[0].series_id
+        : null;
     openContextMenu({
       x,
       y,
@@ -467,7 +470,9 @@ export default function History({
         });
       }
     }
-    const seriesSection: ContextMenuSection = isOutput ? [series.menuItem(targetFor([generation]))] : [];
+    const seriesSection: ContextMenuSection = isOutput
+      ? series.section([generation.series_id], targetFor([generation]))
+      : [];
     openContextMenu({
       x,
       y,
@@ -694,7 +699,10 @@ export default function History({
         <HistoryItem
           seriesChip={
             generation.series_id ? (
-              <SeriesChip seriesId={generation.series_id} />
+              <SeriesBadge
+                seriesId={generation.series_id}
+                subject={{ kind: "record", generationId: generation.id, seriesId: generation.series_id }}
+              />
             ) : undefined
           }
           g={generation}

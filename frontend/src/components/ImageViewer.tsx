@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { api, DerivedGeneration, Generation, ImageRow, imgFileUrl, imgThumbUrl, Tag } from "../api";
+import { api, DerivedGeneration, Generation, ImageRow, imgFileUrl, imgThumbUrl, seriesApi, Tag } from "../api";
+import { useImageSeries, useSeriesNav } from "../seriesContext";
+import { useSeries } from "../seriesStore";
+import { BadgePopover, SeriesDot } from "./SeriesBits";
+import SeriesInfoCard, { entryPosition } from "./SeriesInfoCard";
+import { useSeriesActions } from "./SeriesMenu";
+import Sheet from "./ui/Sheet";
 import { useI18n } from "../i18n";
 import { copyImageToClipboard, copyText } from "../clipboard";
 import TagPicker from "./TagPicker";
@@ -41,11 +47,46 @@ export interface ViewerPager {
   fetch(offset: number, limit: number): Promise<ImageRow[]>;
 }
 
+// series-v2 B1a: opened from a series detail, the viewer pages through every
+// attempt of that series that has an output, in series order (#1 first).
+export interface ViewerSeriesContext {
+  seriesId: number;
+  /** Every attempt in the series (the "of 18" in "#12 of 18"). */
+  total: number;
+  /** Outputs in series order. */
+  images: ImageRow[];
+  /** Image id → #N of the attempt that produced it. */
+  seqByImage: Map<number, number>;
+}
+
+export async function loadSeriesViewerContext(seriesId: number): Promise<ViewerSeriesContext> {
+  const rows: { seq: number; outputImage?: ImageRow | null }[] = [];
+  let total = 0;
+  for (let offset = 0; ; ) {
+    const page = await seriesApi.timeline(seriesId, { limit: 200, offset });
+    rows.push(...page.generations);
+    total = page.total;
+    offset += page.generations.length;
+    if (page.generations.length === 0 || offset >= page.total) break;
+  }
+  rows.sort((a, b) => a.seq - b.seq);
+  const images: ImageRow[] = [];
+  const seqByImage = new Map<number, number>();
+  for (const row of rows) {
+    const img = row.outputImage;
+    if (!img || img.deleted_at || seqByImage.has(img.id)) continue;
+    seqByImage.set(img.id, row.seq);
+    images.push(img);
+  }
+  return { seriesId, total, images, seqByImage };
+}
+
 export default function ImageViewer({
   image,
   list,
   pager,
   onIndexChange,
+  series: seriesContext,
   onClose,
   onAddToTray,
   onTagsChanged,
@@ -59,6 +100,7 @@ export default function ImageViewer({
   list: ImageRow[];
   pager?: ViewerPager;
   onIndexChange?: (globalIndex: number, image?: ImageRow) => void;
+  series?: ViewerSeriesContext;
   onClose: () => void;
   onAddToTray: (img: ImageRow) => void;
   onTagsChanged: () => void;
@@ -291,20 +333,19 @@ export default function ImageViewer({
     setExpanded(false);
   }, [current.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch the prompt that produced this image (generated images only).
+  // Fetch the record behind this image. Any image: manual records use an
+  // upload as their output, so "uploaded" images can have a prompt too.
   useEffect(() => {
     let alive = true;
     setGen(null);
-    if (source === "generated") {
-      api
-        .generationByOutput(current.id)
-        .then((g) => alive && setGen(g))
-        .catch(() => alive && setGen(null));
-    }
+    api
+      .generationByOutput(current.id)
+      .then((g) => alive && setGen(g))
+      .catch(() => alive && setGen(null));
     return () => {
       alive = false;
     };
-  }, [current.id, source]);
+  }, [current.id]);
 
   const toggleStar = async () => {
     const prev = starred;
@@ -400,7 +441,11 @@ export default function ImageViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return inTrail ? popTrail() : close();
+      if (e.key === "Escape") {
+        // A series card or sheet above the viewer handles its own Escape.
+        if (document.querySelector(".sv2-popover, .sv2-sheet")) return;
+        return inTrail ? popTrail() : close();
+      }
       const el = e.target instanceof Element ? e.target : null;
       if (el?.closest("input, textarea, select, [contenteditable='true']")) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -412,6 +457,42 @@ export default function ImageViewer({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [close, goTo, editingGen, duplicatingGen, togglePanel, inTrail, popTrail]);
+
+  // --- series-v2 B1a: the series this image belongs to ---------------------
+  const nav = useSeriesNav();
+  const seriesStore = useSeries();
+  const seriesActions = useSeriesActions(onChanged);
+  const inputIdsKey = (gen?.inputs ?? []).map((im) => im.id).join(",");
+  const lookupSeries = useImageSeries(
+    [current.id, ...(inputIdsKey ? inputIdsKey.split(",").map(Number) : [])],
+  );
+  const allSeries = lookupSeries(current.id);
+  // From a series: that series only, numbered by the series order.
+  const fixedSeriesId =
+    seriesContext && seriesContext.seqByImage.has(current.id) ? seriesContext.seriesId : null;
+  const seriesEntries = fixedSeriesId
+    ? [
+        {
+          seriesId: fixedSeriesId,
+          role: "output" as const,
+          seq: seriesContext!.seqByImage.get(current.id) ?? null,
+          generationId: gen?.id ?? 0,
+          total: seriesContext!.total,
+        },
+      ]
+    : allSeries ?? [];
+  const [seriesCard, setSeriesCard] = useState(false);
+  const [seriesPicking, setSeriesPicking] = useState(false);
+  const seriesStripRef = useRef<HTMLButtonElement>(null);
+  const seriesAddRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    setSeriesCard(false);
+    setSeriesPicking(false);
+  }, [current.id]);
+  const outputSeries = (allSeries ?? []).filter((e) => e.role === "output").map((e) => e.seriesId);
+  const imageTarget = gen
+    ? { body: { imageIds: [current.id] }, members: outputSeries.length ? outputSeries : [null] }
+    : null;
 
   // Reverse lineage: later generations that used this image as an input.
   // Every image (upload or generated) can have them; loaded a page at a time.
@@ -473,7 +554,6 @@ export default function ImageViewer({
       .join(" · ");
 
   const refreshGeneration = () => {
-    if (source !== "generated") return;
     api
       .generationByOutput(current.id)
       .then(setGen)
@@ -652,6 +732,10 @@ export default function ImageViewer({
       hint: (isCurrent ? tagIds.length : img.tags?.length ?? 0),
       submenu: tagSubmenuFor(img),
     });
+    const imgSeries = (lookupSeries(img.id) ?? []).map((e) => e.seriesId);
+    const seriesRows = isInput
+      ? [seriesActions.openItem(imgSeries)].filter((item): item is NonNullable<typeof item> => !!item)
+      : seriesActions.section(imgSeries, isCurrent ? imageTarget : null);
     openContextMenu({
       x,
       y,
@@ -661,7 +745,7 @@ export default function ImageViewer({
       sourceLabel:
         !isInput && gen?.source === "manual" ? t("imported_badge") : undefined,
       quickActions,
-      sections: [records, [
+      sections: [records, ...(seriesRows.length ? [seriesRows] : []), [
         {
           icon: "delete",
           label: t("move_to_bin"),
@@ -724,6 +808,114 @@ export default function ImageViewer({
         .concat(formatGenerationDuration(gen.duration_ms, t) ?? [])
         .join(" · ")
     : "";
+
+  // series-v2 B1a: context strip (opened from a series) and series block.
+  const fixedPath = seriesStore.get(fixedSeriesId);
+  const seriesCardSubject = { kind: "image" as const, imageId: current.id, entries: allSeries };
+  const seriesStrip = fixedPath && !inTrail && (() => {
+    const pos = seriesEntries[0]?.seq;
+    const [before, after] = t("sv2_viewer_strip", {
+      series: "\u0000",
+      n: pos ?? "?",
+      total: seriesContext?.total ?? "?",
+    }).split("\u0000");
+    return (
+      <button
+        ref={seriesStripRef}
+        type="button"
+        className="sv2-viewer-strip"
+        aria-haspopup="dialog"
+        aria-expanded={seriesCard}
+        onClick={() => setSeriesCard((v) => !v)}
+      >
+        {fixedPath.archived ? <Icon name="archive" size="sm" /> : <SeriesDot color={fixedPath.color} />}
+        <span className="sv2-viewer-strip-text">
+          {before}
+          <b>{fixedPath.name}</b>
+          {after}
+        </span>
+        {phone && <Icon name="next" size="sm" />}
+      </button>
+    );
+  })();
+  const seriesCardLayer =
+    seriesCard &&
+    (phone ? (
+      <Sheet title={fixedPath?.name ?? t("sv2_card_label")} onClose={() => setSeriesCard(false)} hideHead grabDraggable className="sv2-sheet">
+        <SeriesInfoCard subject={seriesCardSubject} fixedSeriesId={fixedSeriesId} actions={seriesActions} variant="sheet" onClose={() => setSeriesCard(false)} />
+      </Sheet>
+    ) : (
+      <BadgePopover anchor={seriesStripRef} onClose={() => setSeriesCard(false)}>
+        <SeriesInfoCard subject={seriesCardSubject} fixedSeriesId={fixedSeriesId} actions={seriesActions} variant="popover" onClose={() => setSeriesCard(false)} />
+      </BadgePopover>
+    ));
+  const seriesPickerLayer =
+    seriesPicking && imageTarget && (
+      <BadgePopover anchor={seriesAddRef} onClose={() => setSeriesPicking(false)}>
+        <div className="sv2-card popover picking">
+          {seriesActions.picker(imageTarget, () => setSeriesPicking(false), true)}
+        </div>
+      </BadgePopover>
+    );
+  const showSeriesBlock =
+    !inTrail &&
+    !(phone && fixedSeriesId) &&
+    (fixedSeriesId !== null || (allSeries !== undefined && (allSeries.length > 0 || !!gen)));
+  const seriesBlock = showSeriesBlock && (
+    <section className="viewer-section sv2-viewer-series" aria-label={t("sv2_viewer_series")}>
+      <div className="viewer-section-head">
+        <h3>
+          {seriesEntries.length > 1
+            ? t("sv2_viewer_series_n", { n: seriesEntries.length })
+            : t("sv2_viewer_series")}
+        </h3>
+        {fixedSeriesId ? (
+          <button type="button" className="sv2-link" onClick={() => nav.openSeries(fixedSeriesId)}>
+            {t("sv2_open_series")}
+          </button>
+        ) : seriesEntries.length === 0 && imageTarget ? (
+          <button
+            ref={seriesAddRef}
+            type="button"
+            className="sv2-link"
+            aria-haspopup="dialog"
+            aria-expanded={seriesPicking}
+            onClick={() => setSeriesPicking((v) => !v)}
+          >
+            <Icon name="add" size="sm" />
+            {t("sv2_add_to_series")}
+          </button>
+        ) : null}
+      </div>
+      {seriesEntries.length === 0 ? (
+        <p className="sv2-viewer-empty">{t("sv2_not_in_series")}</p>
+      ) : (
+        <div className="sv2-viewer-rows">
+          {seriesEntries.map((entry, i) => {
+            const path = seriesStore.get(entry.seriesId);
+            if (!path) return null;
+            return (
+              <button
+                key={entry.seriesId}
+                type="button"
+                className={`sv2-viewer-row${i === 0 ? " is-primary" : ""}`}
+                title={t("sv2_open_series")}
+                onClick={() => nav.openSeries(entry.seriesId)}
+              >
+                {path.archived ? <Icon name="archive" size="sm" /> : <SeriesDot color={path.color} />}
+                <span className="sv2-viewer-row-theme">
+                  {path.theme ? `${path.theme.name} /` : `${t("series_no_theme")} /`}
+                </span>
+                <span className="sv2-viewer-row-name">{path.name}</span>
+                <span className="sv2-viewer-row-pos">{entryPosition(entry, t)}</span>
+                <Icon name="next" size="sm" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 
   const backButton = inTrail && (
     <button type="button" className="viewer-back" onClick={popTrail}>
@@ -836,6 +1028,7 @@ export default function ImageViewer({
             />
           )}
           <div className="viewer-top">
+            {seriesStrip}
             {inTrail && (
               <nav className="viewer-trail" aria-label={t("viewer_trail")}>
                 <button type="button" onClick={() => setTrail([])} title={displayName(base, t)}>
@@ -946,7 +1139,8 @@ export default function ImageViewer({
           </div>
 
           <div className="viewer-sections">
-            {source === "generated" && gen?.prompt && (
+            {seriesBlock}
+            {gen?.prompt && (
               <section className="viewer-section">
                 <div className="viewer-section-head">
                   <h3>{t("prompt_label")}</h3>
@@ -969,7 +1163,7 @@ export default function ImageViewer({
               </section>
             )}
 
-            {source === "generated" && gen?.inputs && gen.inputs.length > 0 && (
+            {gen?.inputs && gen.inputs.length > 0 && (
               <section className="viewer-section">
                 <h3>{t("viewer_inputs", { n: gen.inputs.length })}</h3>
                 <div className="viewer-inputs">
@@ -1124,6 +1318,9 @@ export default function ImageViewer({
         </aside>
       </div>
 
+      {seriesCardLayer}
+      {seriesPickerLayer}
+      {seriesActions.dialog}
       {editingGen && (
         <AddHistoryModal
           existing={editingGen}

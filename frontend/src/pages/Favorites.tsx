@@ -8,6 +8,9 @@ import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { copyText } from "../clipboard";
 import HistoryItem from "../components/HistoryItem";
+import { SeriesBadge } from "../components/SeriesBits";
+import { useSeriesActions } from "../components/SeriesMenu";
+import { useImageSeries } from "../seriesContext";
 import { downloadImage } from "../components/GenerationCard";
 import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
@@ -237,6 +240,11 @@ export default function Favorites({
     else onUseAsRef?.(img);
   };
 
+  const series = useSeriesActions(() => {
+    void refresh();
+    onChanged?.();
+  });
+
   const openFavoriteMenu = (
     generation: Generation,
     img: ImageRow,
@@ -278,6 +286,14 @@ export default function Favorites({
       },
     ];
     const recordActions: ContextMenuSection = [];
+    const imgSeries = imageSeries(img.id) ?? [];
+    const outputSeries = imgSeries.filter((e) => e.role === "output").map((e) => e.seriesId);
+    const seriesRows: ContextMenuSection = isOutput
+      ? series.section(
+          imgSeries.map((e) => e.seriesId),
+          { body: { imageIds: [img.id] }, members: outputSeries.length ? outputSeries : [null] },
+        )
+      : [series.openItem(imgSeries.map((e) => e.seriesId))].filter((item) => !!item) as ContextMenuSection;
     if (isOutput && generation.prompt) {
       recordActions.push({
         icon: "copy",
@@ -306,7 +322,7 @@ export default function Favorites({
       prompt: isOutput ? generation.prompt : undefined,
       sourceLabel: generation.source === "manual" ? t("imported_badge") : undefined,
       quickActions,
-      sections: recordActions.length ? [recordActions] : [],
+      sections: [recordActions, seriesRows].filter((section) => section.length > 0),
       ariaLabel: t("image_menu"),
     });
   };
@@ -383,6 +399,14 @@ export default function Favorites({
       }}
     />
   );
+
+  // series-v2 B1a: favorites are images, so a badge can carry "+N".
+  const visibleOutputIds: number[] = [];
+  for (let i = grid.startIndex; i <= grid.endIndex; i++) {
+    const out = data.get(i)?.outputImage;
+    if (out && !out.deleted_at) visibleOutputIds.push(out.id);
+  }
+  const imageSeries = useImageSeries(visibleOutputIds);
 
   return (
     <div ref={rootRef}>
@@ -490,6 +514,17 @@ export default function Favorites({
               return (
                 <div key={generation.id} className="history-cell">
                   <HistoryItem
+                    seriesChip={(() => {
+                      const entries = outImg ? imageSeries(outImg.id) : undefined;
+                      if (!outImg || !entries?.length) return undefined;
+                      return (
+                        <SeriesBadge
+                          seriesId={entries[0].seriesId}
+                          more={entries.length - 1}
+                          subject={{ kind: "image", imageId: outImg.id, entries }}
+                        />
+                      );
+                    })()}
                     g={generation}
                     layout="grid"
                     output={outImg}
@@ -567,6 +602,7 @@ export default function Favorites({
         onLongPress={phone ? () => setJumpOpen(true) : undefined}
       />
 
+      {series.dialog}
       {editingGen && (
         <AddHistoryModal
           existing={editingGen}

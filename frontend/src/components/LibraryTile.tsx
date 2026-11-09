@@ -40,6 +40,12 @@ interface Props {
   phone: boolean;
   peeks: boolean;
   picker: boolean;
+  /**
+   * series-v2 B1a: the image's series, primary first, as JSON
+   * `[[color, name], …]` — a string so the memoized tile only re-renders when
+   * its series change.
+   */
+  series?: string;
 }
 
 function LibraryTile({
@@ -53,6 +59,7 @@ function LibraryTile({
   phone,
   peeks,
   picker,
+  series,
 }: Props) {
   const { t } = useI18n();
   const tagNames = (img.tags ?? []).map((tg) => tg.name);
@@ -115,6 +122,7 @@ function LibraryTile({
           <Icon name="favorite" size="sm" filled />
         </span>
       )}
+      {series && !phone && <TileSeries series={series} />}
       {selectMode && (
         <span className="select-check">{selected && <Icon name="check" size="sm" />}</span>
       )}
@@ -186,3 +194,30 @@ function LibraryTile({
 }
 
 export default memo(LibraryTile);
+
+/** Hover / focus / selected only: up to 3 overlapping dots, or (≥ 220 px
+ *  tiles) a pill with the primary series name. Not a button. */
+function TileSeries({ series }: { series: string }) {
+  let list: [string | null, string][] = [];
+  try {
+    list = JSON.parse(series);
+  } catch {
+    return null;
+  }
+  if (list.length === 0) return null;
+  const names = list.map(([, name]) => name).join(" · ");
+  return (
+    <span className="lib-series" title={names} aria-hidden="true">
+      <span className="lib-series-dots">
+        {list.slice(0, 3).map(([color], i) => (
+          <i key={i} style={{ background: color ?? undefined, zIndex: 3 - i }} />
+        ))}
+      </span>
+      <span className="lib-series-pill">
+        <i style={{ background: list[0][0] ?? undefined }} />
+        {list[0][1]}
+      </span>
+    </span>
+  );
+}
+
