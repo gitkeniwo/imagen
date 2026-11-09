@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  firstVisibleRowAtY as geometryFirstVisibleRowAtY,
   itemTop as geometryItemTop,
   rowAtY as geometryRowAtY,
   rowTop as geometryRowTop,
@@ -49,6 +58,8 @@ export interface VirtualGridOptions {
   sectionHeaderHeight?: number | ((windowEl: HTMLDivElement | null) => number);
   // Height hidden under sticky headers at the top of the scroller.
   topInset?: (scroller: HTMLElement) => number;
+  // Observe this element when its own height can change the sticky inset.
+  topInsetTarget?: RefObject<HTMLElement | null>;
 }
 
 function scrollParent(el: HTMLElement | null): HTMLElement {
@@ -77,6 +88,7 @@ export function useVirtualGrid({
   sections,
   sectionHeaderHeight,
   topInset,
+  topInsetTarget,
 }: VirtualGridOptions) {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const windowRef = useRef<HTMLDivElement | null>(null);
@@ -217,6 +229,14 @@ export function useVirtualGrid({
     };
   }, [measure, trackAnchor]);
 
+  useLayoutEffect(() => {
+    const target = topInsetTarget?.current;
+    if (!target) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [measure, topInsetTarget]);
+
   const setScrollTop = useCallback((top: number) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -287,7 +307,9 @@ export function useVirtualGrid({
 
   // Visible and rendered rows. Overscan is about one screen each way.
   const firstVisibleRow =
-    rowHeight > 0 ? geometryRowAtY(geometry, Math.max(0, m.viewTop)) : 0;
+    rowHeight > 0
+      ? geometryFirstVisibleRowAtY(geometry, Math.max(0, m.viewTop))
+      : 0;
   const lastVisibleRow =
     rowHeight > 0
       ? Math.max(

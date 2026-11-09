@@ -2775,6 +2775,12 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
   --hlist-day-step: 38px;
   --hcard-grid-gap: var(--space-3);
 }
+/* The window is translated between rows; WebKit scroll anchoring would
+   otherwise adjust a programmatic jump when that window swaps its children. */
+.library-vgrid,
+.virtual-list {
+  overflow-anchor: none;
+}
 .favorites-vgrid { --hcard-body-h: 224px; }
 .history-vgrid {
   position: relative;

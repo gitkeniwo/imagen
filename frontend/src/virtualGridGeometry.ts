@@ -86,3 +86,27 @@ export function rowAtY(geometry: VirtualGridGeometry, y: number): number {
   }
   return best;
 }
+
+/** First row whose item extends below `y`; inter-row gaps belong to the next row. */
+export function firstVisibleRowAtY(
+  geometry: VirtualGridGeometry,
+  y: number,
+): number {
+  const rows = Math.ceil(geometry.count / geometry.cols);
+  if (rows <= 0) return 0;
+  let lo = 0;
+  let hi = rows - 1;
+  let best = rows - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const bottom =
+      itemTop(geometry, mid * geometry.cols) + geometry.itemHeight;
+    if (bottom > y) {
+      best = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return best;
+}

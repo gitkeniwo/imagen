@@ -220,6 +220,7 @@ export default function History({
       if (!sticky) return 0;
       return sticky.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
     },
+    topInsetTarget: stickyRef,
   });
 
   const { refresh, newCount, clearNew } = useAnchoredRefresh({

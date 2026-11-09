@@ -160,6 +160,7 @@ export default function Favorites({
       if (!sticky) return 0;
       return sticky.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
     },
+    topInsetTarget: stickyRef,
   });
   const { refresh, newCount, clearNew } = useAnchoredRefresh({
     data,
