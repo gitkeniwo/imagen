@@ -1,6 +1,8 @@
 import type { ImageTimeline } from "./api";
 import type { Lang } from "./i18n";
 
+export type ListUnit = "images" | "records" | "drafts";
+
 /**
  * Library timeline model.
  *
@@ -33,6 +35,8 @@ export interface TimelineYear {
 }
 
 export interface Timeline {
+  // Pinned drafts occupy [0, pinned) and have no calendar day.
+  pinned: number;
   // Valid (YYYY-MM-DD) days in list-position order.
   days: TimelineDay[];
   // Day changes in list order: runStarts[k] is where runDays[k] begins.
@@ -81,6 +85,7 @@ export function dateOfDay(day: string): Date {
 }
 
 export function buildTimeline(input: ImageTimeline): Timeline {
+  const pinned = Math.max(0, input.pinned ?? 0);
   const valid = input.days
     .filter((d) => DAY_RE.test(d.day))
     .map((d) => ({ ...d }))
@@ -176,6 +181,7 @@ export function buildTimeline(input: ImageTimeline): Timeline {
   const yearAnchor = anchors((day) => Number(day.slice(0, 4)));
 
   return {
+    pinned,
     days: valid,
     runStarts,
     runDays,
@@ -194,6 +200,7 @@ export function buildTimeline(input: ImageTimeline): Timeline {
  * because a single stray row moves its whole day's `first_index`.
  */
 export function indexToDay(timeline: Timeline | null, index: number): TimelineDay | null {
+  if (timeline && index >= 0 && index < timeline.pinned) return null;
   const starts = timeline?.runStarts;
   if (starts?.length) {
     let lo = 0;
@@ -226,6 +233,10 @@ export function indexToDay(timeline: Timeline | null, index: number): TimelineDa
     }
   }
   return days[best];
+}
+
+export function indexInPinned(timeline: Timeline | null, index: number): boolean {
+  return !!timeline && timeline.pinned > 0 && index >= 0 && index < timeline.pinned;
 }
 
 function ticksTooClose(ticks: PhoneRulerTick[], trackHeight: number, minGap: number): boolean {

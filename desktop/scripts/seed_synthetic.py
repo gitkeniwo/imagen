@@ -21,6 +21,16 @@ Large timeline library (Library virtual-scroll tests): 5000 small images whose
 API always stamps "now", so `created_at` is rewritten after uploading (with the
 backend still running; a plain UPDATE on images, no schema knowledge).
 
+History / Favorites / Drafts stress data (on top of the small default set):
+
+    uv run --project backend python desktop/scripts/seed_synthetic.py \
+        --data-dir "$TMPDIR/imagen-lists-3k" --images 20 --small \
+        --generations 3000 --drafts 500 --history-span-days 800
+
+Extra generations are logged through /api/generations/manual (no provider
+calls). Extra drafts get deterministic `updated_at` values over the same span;
+every 40th is pinned so the pinned prefix can be exercised too.
+
 Safety:
   * `--data-dir` is mandatory and must not be the real data directory.
   * An existing, non-empty directory is refused unless it already carries the
@@ -228,8 +238,40 @@ def spread_created_at(data_dir: Path, ids: list[int], span_days: int) -> dict:
             "swapped": swapped, "null_created_at": len(nulls)}
 
 
+def spread_draft_updated_at(data_dir: Path, ids: list[int], span_days: int) -> dict:
+    """Spread draft updated_at values over the span, with a few out of order."""
+    import sqlite3
+
+    if not ids or span_days <= 0:
+        return {"span_days": span_days, "records": len(ids)}
+    rnd = random.Random(515151)
+    now = datetime.now(timezone.utc)
+    stamps = [
+        (now - timedelta(days=span_days * (1 - i / max(1, len(ids) - 1)),
+                         minutes=rnd.randrange(0, 1440))).isoformat()
+        for i in range(len(ids))
+    ]
+    stamps.sort()
+    for _ in range(max(1, len(ids) // 50)):
+        a, b = rnd.randrange(len(ids)), rnd.randrange(len(ids))
+        stamps[a], stamps[b] = stamps[b], stamps[a]
+    conn = sqlite3.connect(data_dir / "app.db", timeout=30)
+    try:
+        conn.executemany(
+            "UPDATE drafts SET created_at = ?, updated_at = ? WHERE id = ?",
+            [(stamp, stamp, draft_id) for stamp, draft_id in zip(stamps, ids)],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"span_days": span_days, "records": len(ids),
+            "oldest": min(stamps), "newest": max(stamps)}
+
+
 def seed(client: httpx.Client, count: int, *, small: bool = False,
-         span_days: int = 0, data_dir: Path | None = None) -> dict:
+         span_days: int = 0, data_dir: Path | None = None,
+         extra_generations: int = 0, extra_drafts: int = 0,
+         history_span_days: int = 800) -> dict:
     created: list[dict] = []
     hashes: set[str] = set()
     formats: dict[str, int] = {}
@@ -326,6 +368,62 @@ def seed(client: httpx.Client, count: int, *, small: bool = False,
         http_ok(client.post("/api/generations/manual", json=payload), "create manual generation")
         generation_status[status] = generation_status.get(status, 0) + 1
 
+    extra_history = 0
+    for idx in range(extra_generations):
+        status = ["success", "success", "error", "blocked"][idx % 4]
+        created_at = now - timedelta(
+            days=history_span_days * (1 - idx / max(1, extra_generations - 1)),
+            minutes=idx % 1440,
+        )
+        prompt = (
+            f"Synthetic history record {idx + 1:04d}"
+            + (" · " + "long prompt " * 30 if idx % 17 == 0 else "")
+        )
+        payload = {
+            "prompt": prompt,
+            "provider": "gemini" if idx % 3 == 0 else "vertex",
+            "model": "gemini-2.5-flash-image" if idx % 5 == 0 else "gemini-3-pro-image",
+            "aspectRatio": ["1:1", "16:9", "3:4", "4:5"][idx % 4],
+            "resolution": "2K" if idx % 5 else None,
+            "status": status,
+            "source": "manual",
+            "errorMessage": None if status == "success" else (
+                "IMAGE_SAFETY" if status == "blocked" else "429 quota"
+            ),
+            "inputImageIds": live[idx % max(1, len(live)):idx % max(1, len(live)) + 1],
+            "outputImageId": success_output_a if status == "success" else None,
+            "createdAt": created_at.isoformat(),
+        }
+        http_ok(client.post("/api/generations/manual", json=payload),
+                "create extra history generation")
+        extra_history += 1
+        if extra_history % 500 == 0:
+            print(f"  history {extra_history}/{extra_generations}", file=sys.stderr, flush=True)
+
+    extra_draft_ids: list[int] = []
+    for idx in range(extra_drafts):
+        input_at = idx % max(1, len(live))
+        spec = {
+            "prompt": f"Synthetic draft {idx + 1:04d}"
+                      + (" · " + "draft detail " * 24 if idx % 11 == 0 else ""),
+            "provider": "gemini" if idx % 4 == 0 else "vertex",
+            "model": "gemini-2.5-flash-image" if idx % 6 == 0 else "gemini-3-pro-image",
+            "aspectRatio": ["1:1", "16:9", "3:4", "4:5"][idx % 4],
+            "resolution": "2K" if idx % 6 else None,
+            "outputFormat": "image/png" if idx % 9 == 0 else "image/jpeg",
+            "inputImageIds": live[input_at:input_at + 1],
+            "outputImageIds": live[input_at + 2:input_at + 3] if idx % 3 == 0 else [],
+            "tagIds": tag_ids[:1] if idx % 7 == 0 else [],
+            "pinned": idx % 40 == 0,
+        }
+        draft = http_ok(client.post("/api/drafts", json=spec), "create extra draft")
+        extra_draft_ids.append(draft["id"])
+        if len(extra_draft_ids) % 100 == 0:
+            print(f"  drafts {len(extra_draft_ids)}/{extra_drafts}", file=sys.stderr, flush=True)
+    draft_timeline = None
+    if data_dir is not None and extra_draft_ids:
+        draft_timeline = spread_draft_updated_at(data_dir, extra_draft_ids, history_span_days)
+
     http_ok(client.put("/api/settings/vertex",
                        json={"project": "synthetic-not-a-project", "location": "global"}),
             "set synthetic vertex project")
@@ -348,8 +446,10 @@ def seed(client: httpx.Client, count: int, *, small: bool = False,
         **({"timeline": timeline} if timeline else {}),
         "tags": {"created": len(tag_ids), "links": tag_links,
                  "listed": len(http_ok(client.get("/api/tags"), "list tags")["tags"])},
-        "drafts": {"created": len(drafts), "listed": drafts_body["total"]},
-        "generations": {"manual_created": len(manual_specs), "by_status": generation_status,
+        "drafts": {"created": len(drafts) + len(extra_draft_ids), "listed": drafts_body["total"],
+                   **({"timeline": draft_timeline} if draft_timeline else {})},
+        "generations": {"manual_created": len(manual_specs) + extra_history,
+                        "extra_history": extra_history, "by_status": generation_status,
                         "listed": gens_body["total"]},
         "stats": {"periods": list(stats["periods"].keys()), "tags": stats["tags"]},
         "settings": http_ok(client.get("/api/settings/vertex"), "read settings"),
@@ -365,6 +465,12 @@ def main() -> int:
                              "needs a few days per 100 images to look natural, e.g. 800 for 5000")
     parser.add_argument("--small", action="store_true",
                         help="tiny (<=320px) images, for seeding thousands quickly")
+    parser.add_argument("--generations", type=int, default=0,
+                        help="extra synthetic history records (logged, no provider calls)")
+    parser.add_argument("--drafts", type=int, default=0,
+                        help="extra synthetic drafts (every 40th pinned)")
+    parser.add_argument("--history-span-days", type=int, default=800,
+                        help="spread extra history/drafts over this many days (default 800)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"backend port (default {DEFAULT_PORT})")
     args = parser.parse_args()
 
@@ -372,6 +478,10 @@ def main() -> int:
         parser.error("--images must be >= 1")
     if args.span_days < 0:
         parser.error("--span-days must be >= 0")
+    if args.generations < 0 or args.drafts < 0:
+        parser.error("--generations and --drafts must be >= 0")
+    if args.history_span_days < 0:
+        parser.error("--history-span-days must be >= 0")
     if args.images > 500 and not args.small:
         print("note: large seed without --small will be slow (multi-MB images)", file=sys.stderr)
     if args.port in RESERVED_PORTS:
@@ -417,7 +527,16 @@ def main() -> int:
                 _, err = proc.communicate()
             raise SystemExit(f"{exc}\nbackend stderr:\n{(err or '')[-3000:]}")
         print("  backend healthy", file=sys.stderr, flush=True)
-        summary_payload = seed(client, args.images, small=args.small, span_days=args.span_days, data_dir=data_dir)
+        summary_payload = seed(
+            client,
+            args.images,
+            small=args.small,
+            span_days=args.span_days,
+            data_dir=data_dir,
+            extra_generations=args.generations,
+            extra_drafts=args.drafts,
+            history_span_days=args.history_span_days,
+        )
     finally:
         client.close()
         if proc.poll() is None:

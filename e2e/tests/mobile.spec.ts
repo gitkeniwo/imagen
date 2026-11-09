@@ -82,6 +82,7 @@ test("tap opens the viewer; no hover preview is left behind", async ({ page }) =
 
   // History input chips have hover previews on desktop; a tap must not leave one stuck.
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "History" }).click();
+  await page.getByPlaceholder("Search prompt…").fill("Sneaker on dunes");
   const chip = page.getByRole("article").filter({ hasText: "Sneaker on dunes at golden hour" }).getByRole("button", {
     name: "landscape-dunes.jpg",
     exact: true,
@@ -369,4 +370,63 @@ test("a quick phone swipe carries momentum and snaps to a whole month", async ({
   const pin = page.locator(".jump-strip-year-pin");
   if (await pin.count()) await expect(pin).toHaveText(year);
   else await expect(cell.locator(".jump-strip-year")).toHaveText(year);
+});
+
+async function expectJumpControls(page: Page, panel: Locator) {
+  const position = panel.locator(".list-position");
+  await expect(position).toBeVisible();
+  await position.tap();
+  const dialog = page.getByRole("dialog", { name: "Jump to" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).tap();
+  await expect(dialog).toHaveCount(0);
+
+  const scrollbar = panel.getByRole("scrollbar", { name: "Browse position" });
+  await expect(scrollbar).toBeVisible();
+  const box = (await scrollbar.boundingBox())!;
+  const cdp = await touchDown(
+    page,
+    box.x + box.width / 2,
+    box.y + box.height / 2,
+  );
+  try {
+    await page.waitForTimeout(520);
+  } finally {
+    await touchUp(cdp);
+  }
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).tap();
+  await expect(dialog).toHaveCount(0);
+}
+
+test("History has the shared position line and scrubber drawer", async ({ page }) => {
+  const panel = page.locator(".phone-panel:not([hidden])");
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("button", { name: "History" })
+    .click();
+  await expect(panel.locator(".history-vgrid")).toBeVisible();
+  await expectJumpControls(page, panel);
+});
+
+test("Favorites has the shared position line and scrubber drawer", async ({ page }) => {
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("button", { name: "More" })
+    .click();
+  await page.getByRole("button", { name: /Favorites/ }).click();
+  const panel = page.locator(".phone-panel:not([hidden])");
+  await expect(panel.locator(".favorites-vgrid")).toBeVisible();
+  await expectJumpControls(page, panel);
+});
+
+test("Drafts has the shared position line and scrubber drawer", async ({ page }) => {
+  await page
+    .getByRole("navigation", { name: "Sections" })
+    .getByRole("button", { name: "More" })
+    .click();
+  await page.getByRole("button", { name: /Drafts/ }).click();
+  const panel = page.locator(".phone-panel:not([hidden])");
+  await expect(panel.locator(".drafts-vgrid")).toBeVisible();
+  await expectJumpControls(page, panel);
 });

@@ -4,7 +4,6 @@ import {
   type MouseEvent,
   type PointerEvent,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,12 +31,14 @@ import Segmented from "../components/ui/Segmented";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import type { ViewerPager } from "../components/ImageViewer";
 import LibraryTile, { type LibraryTileActions } from "../components/LibraryTile";
-import JumpPopover from "../components/JumpPopover";
-import LibraryScrubber from "../components/LibraryScrubber";
+import PositionLine from "../components/PositionLine";
+import TimelineScrubber from "../components/LibraryScrubber";
 import { CHUNK, useChunkedImages } from "../useChunkedImages";
-import { type GridAnchor, useVirtualGrid } from "../useVirtualGrid";
+import { useVirtualGrid } from "../useVirtualGrid";
 import { monthYear, parseTime } from "../historyTime";
-import { buildTimeline, formatMonthYear, indexToDay, type Timeline } from "../timeline";
+import { useTimeline } from "../useTimeline";
+import { useAnchoredRefresh } from "../useAnchoredRefresh";
+import { useRowHeightCheck } from "../useRowHeightCheck";
 import { type SeriesTarget, useSeriesActions } from "../components/SeriesMenu";
 import Popover from "../components/ui/Popover";
 
@@ -65,15 +66,6 @@ function initialGridColumns() {
 function initialThumbSize(): ThumbSize {
   const saved = localStorage.getItem(THUMB_SIZE_KEY) as ThumbSize | null;
   return saved && THUMB_SIZES.includes(saved) ? saved : "m";
-}
-
-function readSaved(key: string): { filtersKey: string; id: number; index: number } | null {
-  try {
-    const raw = sessionStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
 }
 
 export default function Library({
@@ -138,14 +130,9 @@ export default function Library({
   const [draft, setDraft] = useState("");
   // Phone only: tag batch actions live in a bottom sheet.
   const [batchSheet, setBatchSheet] = useState(false);
-  // Jump dialog (desktop popover / phone sheet) and its timeline data.
-  const [jumpOpen, setJumpOpen] = useState(false);
-  const [timeline, setTimeline] = useState<Timeline | null>(null);
-  const [timelineLoading, setTimelineLoading] = useState(true);
-  const [timelineError, setTimelineError] = useState<string | null>(null);
+  // Timeline data is shared by the scrubber, position line and jump dialog.
   const [timelineTick, setTimelineTick] = useState(0);
-  // "↑ N new": images that arrived above the viewport while scrolled down.
-  const [newCount, setNewCount] = useState(0);
+  const [jumpOpen, setJumpOpen] = useState(false);
   // Long-press → multi-select on the phone. Timers live for the whole grid.
   const pressTimer = useRef<number | null>(null);
   const pressStart = useRef<{ x: number; y: number } | null>(null);
@@ -180,30 +167,11 @@ export default function Library({
 
   // Timeline is shared by the scrubber, the position label and the jump
   // dialog. It is reloaded when the filters change and after a refresh.
-  useEffect(() => {
-    let alive = true;
-    setTimelineLoading(true);
-    api
-      .imageTimeline(filters)
-      .then((r) => {
-        if (!alive) return;
-        setTimeline(buildTimeline(r));
-        setTimelineError(null);
-      })
-      .catch((e) => {
-        if (!alive) return;
-        setTimelineError((e as Error).message);
-      })
-      .finally(() => {
-        if (alive) setTimelineLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-    // `refreshKey` is not a dependency: every refresh (including the one a
-    // `refreshKey` change starts) bumps `timelineTick`, so listing both
-    // fetched the timeline twice.
-  }, [filters, filtersKey, timelineTick]);
+  const {
+    timeline,
+    loading: timelineLoading,
+    error: timelineError,
+  } = useTimeline(() => api.imageTimeline(filters), filtersKey, timelineTick);
 
   const grid = useVirtualGrid({
     count: total,
@@ -229,8 +197,6 @@ export default function Library({
 
   // Fetch the rendered range once scrolling pauses; a drag or fling across
   // thousands of rows only shows skeletons on the way.
-  const rangeRef = useRef<[number, number]>([0, 0]);
-  rangeRef.current = [grid.startIndex, grid.endIndex];
   useEffect(() => {
     if (!data.ready || total === 0) return;
     const timer = window.setTimeout(
@@ -240,137 +206,21 @@ export default function Library({
     return () => window.clearTimeout(timer);
   }, [data.ready, data.ensure, total, grid.startIndex, grid.endIndex]);
 
-  // New filters: start over at the top.
-  const firstFilters = useRef(true);
-  useEffect(() => {
-    if (firstFilters.current) {
-      firstFilters.current = false;
-      return;
-    }
-    setNewCount(0);
-    setJumpOpen(false);
-    grid.scrollToTop();
-  }, [filtersKey]);
-
-  // Soft refresh that keeps the first visible image where it is. New rows
-  // land above it (the list is newest first), so without this the grid
-  // would jump down by the number of new rows.
-  type Pending = {
-    anchor: GridAnchor | null;
-    anchorId: number | null;
-    // Newest id before the refresh. The list is id DESC, so only rows above
-    // it are new images; restored or re-filtered old rows never count.
-    topId: number | null;
-    atTop: boolean;
-    delta: number;
-  };
-  const pendingAnchor = useRef<Pending | null>(null);
-  const refreshing = useRef(false);
-  // A refresh asked for while one runs: run once more afterwards.
-  const queued = useRef(false);
-  const refresh = async (): Promise<void> => {
-    if (refreshing.current) {
-      queued.current = true;
-      return;
-    }
-    refreshing.current = true;
-    try {
-      // The anchor is staged inside `beforeSwap`, i.e. before the fresh rows
-      // and their version bump exist, so the layout effect below always
-      // finds it on the commit that shows them.
-      await data.refresh(rangeRef.current, ({ oldTotal, newTotal }) => {
-        const anchor = grid.readAnchor();
-        pendingAnchor.current = {
-          anchor,
-          anchorId: anchor ? data.get(anchor.index)?.id ?? null : null,
-          topId: data.get(0)?.id ?? null,
-          // "Near the top" = less than one row scrolled.
-          atTop: !anchor || (anchor.index === 0 && anchor.offset > -grid.rowHeight),
-          delta: newTotal - oldTotal,
-        };
-      });
-    } finally {
-      refreshing.current = false;
-      // Even a failed or superseded refresh reloads the timeline: this is the
-      // only path a `refreshKey` change takes to it.
-      setTimelineTick((n) => n + 1);
-    }
-    if (queued.current) {
-      queued.current = false;
-      // Let the layout effect apply this result before the next one starts.
-      window.setTimeout(() => handlersRef.current.refresh(), 0);
-    }
-  };
-
-  // Runs after the refreshed rows are on screen, before paint.
-  useLayoutEffect(() => {
-    const pending = pendingAnchor.current;
-    if (!pending) return;
-    pendingAnchor.current = null;
-    const { anchor, anchorId, topId, atTop, delta } = pending;
-    let fresh = 0;
-    if (topId !== null) {
-      for (let i = 0; i < Math.min(CHUNK, total); i++) {
-        const row = data.get(i);
-        if (!row || row.id <= topId) break;
-        fresh += 1;
-      }
-      // A whole chunk of new rows: the count can only come from the totals.
-      if (fresh === CHUNK) fresh = Math.max(fresh, delta);
-    }
-    if (!anchor || atTop) return; // at the top: new images simply appear
-    let index = anchorId !== null ? data.indexOf(anchorId, anchor.index + fresh) : -1;
-    if (index < 0) index = Math.max(0, anchor.index + fresh);
-    grid.restoreAnchor({ index, offset: anchor.offset });
-    // Deletes and restores only re-anchor; the badge is for new images.
-    if (fresh > 0) setNewCount((n) => n + fresh);
-  }, [data.version]);
-
-  const firstRefresh = useRef(true);
-  useEffect(() => {
-    if (firstRefresh.current) {
-      firstRefresh.current = false;
-      return;
-    }
-    refresh();
-  }, [refreshKey]);
-
-  // Back at the top by any means: the badge has done its job.
-  useEffect(() => {
-    if (grid.atTop && newCount > 0) setNewCount(0);
-  }, [grid.atTop, newCount]);
-
-  // Remember the first visible image per layout; a remount (panel switch)
-  // returns to it when the filters are the same.
-  const anchorStoreKey = picker ? null : ANCHOR_KEY + layoutKey;
-  const restored = useRef(false);
-  useEffect(() => {
-    if (!anchorStoreKey || !restored.current || !data.ready) return;
-    const row = data.get(grid.visibleStart);
-    if (!row) return;
-    try {
-      sessionStorage.setItem(
-        anchorStoreKey,
-        JSON.stringify({ filtersKey, id: row.id, index: grid.visibleStart }),
-      );
-    } catch {
-      /* storage unavailable: nothing to restore later */
-    }
-  }, [grid.visibleStart, data.version]);
-  useEffect(() => {
-    if (restored.current || !data.ready || !grid.measured) return;
-    restored.current = true;
-    const saved = anchorStoreKey ? readSaved(anchorStoreKey) : null;
-    if (!saved || saved.filtersKey !== filtersKey || saved.index <= 0) return;
-    const from = Math.max(0, saved.index - 500);
-    api
-      .listImageIds({ ...filters, offset: from, limit: 1000 })
-      .then((r) => {
-        const at = r.ids.indexOf(saved.id);
-        if (at >= 0) grid.scrollToIndex(from + at, "start");
-      })
-      .catch(() => {});
-  }, [data.ready, grid.measured]);
+  const { refresh, newCount, clearNew } = useAnchoredRefresh({
+    data,
+    grid,
+    idOf: (image) => image.id,
+    filtersKey,
+    refreshKey,
+    storageKey: picker ? undefined : ANCHOR_KEY + layoutKey,
+    onRefreshDone: () => setTimelineTick((n) => n + 1),
+  });
+  useRowHeightCheck({
+    windowRef: grid.windowRef,
+    expected: grid.itemHeight,
+    selector: ".lib-tile",
+    version: data.version,
+  });
 
   useEffect(() => {
     localStorage.setItem(GRID_COLUMNS_KEY, String(columns));
@@ -955,47 +805,18 @@ export default function Library({
   // HoverPeek); the phone layout never attaches it.
   const peeks = !phone && (compact || thumbSize !== "l");
 
-  // "Oct 2026 · 1,021–1,060 / 2,997": month of the first visible image.
-  const fmt = (n: number) => n.toLocaleString(lang === "zh" ? "zh-CN" : "en-US");
+  // Used until the timeline arrives: month of the first visible image.
   const firstVisible = data.get(grid.visibleStart);
   const firstDate = parseTime(firstVisible?.created_at);
-  const timelineDay = timeline ? indexToDay(timeline, grid.visibleStart) : null;
-  const positionMonth = timelineDay
-    ? formatMonthYear(timelineDay.day, lang)
-    : firstDate
-      ? monthYear(firstDate, lang)
-      : "";
-  const positionRange =
-    total > 0
-      ? t("lib_position", {
-          from: fmt(grid.visibleStart + 1),
-          to: fmt(Math.max(grid.visibleStart + 1, grid.visibleEnd + 1)),
-          total: fmt(total),
-        })
-      : "";
+  const fallbackMonth = firstDate ? monthYear(firstDate, lang) : "";
 
   const jumpToIndex = (next: number) => {
     if (total === 0) return;
     const index = Math.max(0, Math.min(total - 1, next));
     grid.scrollToIndex(index, "start");
     data.ensure(index, Math.min(total - 1, index + Math.max(1, grid.cols) * 2));
-    setNewCount(0);
+    clearNew();
   };
-
-  const jumpDialog = (trigger: JSX.Element) => (
-    <JumpPopover
-      phone={phone}
-      open={jumpOpen}
-      onClose={() => setJumpOpen(false)}
-      trigger={trigger}
-      timeline={timeline}
-      loading={timelineLoading}
-      error={timelineError}
-      total={total}
-      currentIndex={grid.visibleStart}
-      onJump={jumpToIndex}
-    />
-  );
 
   const sizePicker = (
     <div className="phone-size" role="group" aria-label={t("columns_per_row")}>
@@ -1023,60 +844,34 @@ export default function Library({
     </div>
   );
 
-  const positionBar =
-    total > 0 || phone ? (
-      <div className="lib-position-row">
-        {total > 0 ? (
-          jumpDialog(
-            <button
-              type="button"
-              className="lib-position"
-              aria-live="off"
-              aria-haspopup="dialog"
-              aria-expanded={jumpOpen}
-              title={t("jump_to")}
-              onClick={() => setJumpOpen((v) => !v)}
-            >
-              {positionMonth && <span className="lib-position-month">{positionMonth}</span>}
-              <span className="lib-position-range">{positionRange}</span>
-              <Icon name="chevronDown" size="sm" />
-            </button>,
-          )
-        ) : (
-          <span className="phone-position">{t("phone_total_images", { n: total })}</span>
-        )}
-        {total > 0 && !grid.atTop && (
-          <button
-            type="button"
-            className="lib-back-top"
-            aria-label={t("lib_back_to_top")}
-            title={t("lib_back_to_top")}
-            onClick={() => {
-              setNewCount(0);
-              grid.scrollToTop(true);
-            }}
-          >
-            <Icon name="backToTop" size="sm" />
-          </button>
-        )}
-        {phone && sizePicker}
-      </div>
-    ) : null;
-
-  const newBadge =
-    newCount > 0 ? (
-      <button
-        type="button"
-        className="lib-new-badge"
-        onClick={() => {
-          setNewCount(0);
-          grid.scrollToTop(true);
-        }}
-      >
-        <Icon name="chevronUp" size="sm" />
-        {t("lib_new_n", { n: fmt(newCount) })}
-      </button>
-    ) : null;
+  const positionLine = (
+    <PositionLine
+      total={total}
+      index={grid.visibleStart}
+      endIndex={grid.visibleEnd}
+      atTop={grid.atTop}
+      timeline={timeline}
+      timelineLoading={timelineLoading}
+      timelineError={timelineError}
+      phone={phone}
+      unit="images"
+      fallbackMonth={fallbackMonth}
+      newCount={newCount}
+      jumpOpen={jumpOpen}
+      onJumpOpenChange={setJumpOpen}
+      onJump={jumpToIndex}
+      onBackToTop={() => {
+        clearNew();
+        grid.scrollToTop(true);
+      }}
+      onNewClick={() => {
+        clearNew();
+        grid.scrollToTop(true);
+      }}
+    >
+      {phone && sizePicker}
+    </PositionLine>
+  );
 
   const tiles: JSX.Element[] = [];
   if (total > 0) {
@@ -1429,8 +1224,7 @@ export default function Library({
           </div>
         )}
 
-        {positionBar}
-        {newBadge}
+        {positionLine}
       </div>
 
       {!data.ready ? (
@@ -1470,7 +1264,7 @@ export default function Library({
           style={
             {
               gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`,
-              gridAutoRows: grid.tileWidth > 0 ? `${grid.tileWidth}px` : undefined,
+              gridAutoRows: grid.itemHeight > 0 ? `${grid.itemHeight}px` : undefined,
               transform: `translateY(${grid.offsetY}px)`,
             } as CSSProperties
           }
@@ -1479,7 +1273,7 @@ export default function Library({
         </div>
       </div>
 
-      <LibraryScrubber
+      <TimelineScrubber
         mode={phone ? "phone" : compact ? "compact" : "full"}
         total={total}
         index={grid.visibleStart}

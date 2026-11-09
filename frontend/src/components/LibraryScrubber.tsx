@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import {
   formatMonthYear,
+  indexInPinned,
   indexToDay,
   phoneRulerTicks,
   type Timeline,
@@ -46,6 +47,7 @@ interface Mark {
   ratio: number;
   label?: string;
   year: boolean;
+  pinned?: boolean;
 }
 
 const PHONE_RULER_H = 240;
@@ -105,7 +107,7 @@ const PhoneRulerMarks = memo(function PhoneRulerMarks({
 });
 
 /**
- * Timeline scrubber pinned to the right edge of the Library's scroll area.
+ * Timeline scrubber pinned to the right edge of a virtual list's scroll area.
  *
  * It is portaled into the scroller's positioned parent and offset against the
  * scroller's rect, because the Library scrolls inside the sidebar / fullscreen
@@ -114,7 +116,7 @@ const PhoneRulerMarks = memo(function PhoneRulerMarks({
  * `role="scrollbar"`: pointer capture for dragging, arrows for one row,
  * PageUp / PageDown for a screen, Home / End for the ends.
  */
-export default function LibraryScrubber({
+export default function TimelineScrubber({
   mode,
   total,
   index,
@@ -254,6 +256,7 @@ export default function LibraryScrubber({
   const shownIndex = active ?? index;
   const shownRatio = total > 1 ? clamp01(shownIndex / (total - 1)) : 0;
   const activeMonthKey = useMemo(() => {
+    if (indexInPinned(timeline, shownIndex)) return null;
     const day = timeline ? indexToDay(timeline, shownIndex) : null;
     return day?.day.slice(0, 7) ?? null;
   }, [shownIndex, timeline]);
@@ -264,8 +267,9 @@ export default function LibraryScrubber({
   }, [activeMonthKey, timeline, total]);
 
   const { bubbleText, phoneMonthText, phoneCountText } = useMemo(() => {
+    const pinned = indexInPinned(timeline, shownIndex);
     const day: TimelineDay | null = timeline ? indexToDay(timeline, shownIndex) : null;
-    const month = day ? formatMonthYear(day.day, lang) : "";
+    const month = pinned ? t("pinned") : day ? formatMonthYear(day.day, lang) : "";
     const locale = lang === "zh" ? "zh-CN" : "en-US";
     const indexText = (shownIndex + 1).toLocaleString(locale);
     const number = `#${indexText}`;
@@ -290,6 +294,17 @@ export default function LibraryScrubber({
   const marks = useMemo<Mark[]>(() => {
     if (!timeline || mode === "phone" || total <= 0) return [];
     const years: Mark[] = [];
+    const pinned: Mark[] = indexInPinned(timeline, 0)
+      ? [
+          {
+            key: "pinned",
+            ratio: 0,
+            label: undefined,
+            year: false,
+            pinned: true,
+          },
+        ]
+      : [];
     for (const y of timeline.years) {
       const first = timeline.yearAnchor.get(y.year) ?? -1;
       if (first >= 0) {
@@ -313,7 +328,7 @@ export default function LibraryScrubber({
         ratio: clamp01((timeline.monthAnchor.get(m.key) ?? m.firstIndex) / total),
         year: false,
       }));
-    const all = [...years, ...months].sort((a, b) => a.ratio - b.ratio);
+    const all = [...pinned, ...years, ...months].sort((a, b) => a.ratio - b.ratio);
     if (mode === "compact" || height <= 0) return all;
 
     // Imported rows can put two years very close together. Keep both boundary
@@ -595,6 +610,8 @@ export default function LibraryScrubber({
         <span
           key={mark.key}
           className={`lib-scrubber-tick${mark.year ? " year" : ""}${
+            mark.pinned ? " pinned" : ""
+          }${
             mark.key === activeMark ? " active" : ""
           }`}
           style={{ top: `${mark.ratio * 100}%` }}

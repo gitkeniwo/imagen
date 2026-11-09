@@ -45,6 +45,7 @@ test("library thumbnail menu matches the image", async ({ page }) => {
 
 test("history item menu carries the generation actions", async ({ page }) => {
   await sidebarTab(page, "History");
+  await page.getByPlaceholder("Search prompt…").fill("Sneaker on dunes");
   const item = page.getByRole("article").filter({ hasText: "Sneaker on dunes at golden hour" });
   await rightClick(item.getByRole("button").first());
   expect(await menuTitle(page)).toBe("Sneaker on dunes at golden hour");

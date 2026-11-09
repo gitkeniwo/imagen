@@ -1047,20 +1047,21 @@ body.resizing-sidebar .side-panel {
   min-width: 0;
 }
 .side-panel .lib-position-row, .manager-body .lib-position-row { padding-left: 0; padding-right: 0; }
-.lib-position {
+.lib-position, .list-position {
   display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%;
   height: 24px; min-height: 0; margin: 0; padding: 0 var(--space-1) 0 0; border: 0;
   border-radius: var(--radius-sm); background: transparent; box-shadow: none;
   text-align: left; cursor: pointer;
   font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums;
 }
-.lib-position:hover, .lib-position[aria-expanded="true"] {
+.lib-position:hover, .lib-position[aria-expanded="true"],
+.list-position:hover, .list-position[aria-expanded="true"] {
   background: var(--panel-2); border-color: transparent; color: var(--text);
 }
-.lib-position:focus-visible { box-shadow: 0 0 0 3px var(--ring); }
-.lib-position .icon { flex: none; color: var(--muted-2); }
-.lib-position-month { color: var(--text); font-weight: 600; white-space: nowrap; }
-.lib-position-range { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-position:focus-visible, .list-position:focus-visible { box-shadow: 0 0 0 3px var(--ring); }
+.lib-position .icon, .list-position .icon { flex: none; color: var(--muted-2); }
+.lib-position-month, .list-position-month { color: var(--text); font-weight: 600; white-space: nowrap; }
+.lib-position-range, .list-position-range { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-back-top {
   flex: 0 0 auto; width: 24px; height: 24px; min-height: 0; margin: 0 0 0 auto; padding: 0;
   border: 0; border-radius: var(--radius-full); background: var(--lib-top-bg);
@@ -1098,6 +1099,10 @@ body.resizing-sidebar .side-panel {
   border-radius: var(--radius-full); background: var(--scrubber-dot); pointer-events: none;
 }
 .lib-scrubber-tick.year { right: 4px; width: 6px; height: 6px; margin-top: -3px; background: var(--scrubber-dot); z-index: 1; }
+.lib-scrubber-tick.pinned {
+  right: 3px; width: 8px; height: 8px; margin-top: -4px;
+  background: var(--ui-accent);
+}
 .lib-scrubber-tick.active { background: var(--ui-accent); }
 .lib-scrubber-label {
   position: absolute; right: 27px; transform: translateY(3px);
@@ -2153,16 +2158,68 @@ body.manager-open { overflow: hidden; }
 /* ===== persistent task drafts ===== */
 .draft-toolbar {
   display: flex; align-items: center; gap: var(--space-2_5); margin-bottom: var(--space-3); flex-wrap: wrap;
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
 }
 .draft-toolbar > :first-child { flex: 1; min-width: 0; }
 .draft-new-button { flex: 0 0 auto; white-space: nowrap; }
 .draft-columns { flex: 0 0 auto; }
 .draft-list {
-  display: grid; grid-template-columns: repeat(var(--draft-columns, 1), minmax(0, 1fr)); gap: var(--space-3); align-items: start;
+  display: grid; grid-template-columns: repeat(var(--draft-columns, 1), minmax(0, 1fr)); gap: var(--space-3); align-items: stretch;
 }
+.drafts-vgrid {
+  --gcard-body-h: 200px;
+  position: relative;
+  contain: layout;
+  margin-right: 16px;
+}
+.drafts-vgrid > .draft-list {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+.draft-cell {
+  min-width: 0;
+  height: 100%;
+}
+.drafts-vgrid .gcard.fixed {
+  height: 100%;
+}
+.gcard.fixed .gcard-media {
+  aspect-ratio: 4 / 3 !important;
+}
+.gcard.fixed .gcard-body {
+  height: var(--gcard-body-h);
+  overflow: hidden;
+}
+.gcard.fixed .gcard-meta,
+.gcard.fixed .hcard-prompt,
+.gcard.fixed .gcard-inputs,
+.gcard.fixed .gcard-actions {
+  flex: none;
+}
+.gcard.fixed .gcard-inputs {
+  height: 32px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.gcard.fixed .gcard-inputs .card-tag {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gcard-more {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.manager-body .drafts-vgrid { margin-right: 70px; }
 .draft-pin.is-pinned { color: var(--accent); }
 .gcard-overlay .draft-pin.is-pinned { color: #fff; }
-.draft-empty-prompt { align-self: flex-start; font-style: italic; color: var(--muted); }
 .draft-editor-modal { width: 680px; max-height: 88vh; overflow-y: auto; }
 .draft-output-hint { margin: var(--space-0_5) 0 var(--space-2); }
 .draft-editor-toggles { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
@@ -2342,6 +2399,7 @@ body.manager-open { overflow: hidden; }
 }
 .gcard-media img { width: 100%; height: 100%; object-fit: contain; display: block; cursor: zoom-in; }
 .gcard-media-note { display: inline-flex; align-items: center; gap: var(--space-1_5); color: var(--muted-2); font-size: var(--fs-sm); }
+.gcard-media-empty { width: 100%; height: 100%; background: var(--panel-2); }
 .gcard-badges { position: absolute; top: var(--space-2); left: var(--space-2); display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .gcard-badges .badge { gap: var(--space-1); white-space: nowrap; }
 .gcard-media .gcard-badges .badge { box-shadow: var(--shadow); }
@@ -2363,14 +2421,7 @@ body.manager-open { overflow: hidden; }
 .gcard-error.aborted { background: var(--badge-pending-bg); color: var(--badge-pending-text); border-color: var(--badge-pending-border); }
 .gcard-error.note { background: var(--badge-note-bg); color: var(--badge-note-text); border-color: var(--badge-note-border); }
 .gcard-error-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gcard-error.open .gcard-error-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.gcard-error-toggle { flex: 0 0 auto; color: inherit; font-size: var(--fs-sm); text-decoration: underline; }
-.prompt-fold-text {
-  margin: 0; white-space: pre-wrap; line-height: 1.45; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: var(--prompt-lines, 3); -webkit-box-orient: vertical; overflow: hidden;
-}
-.prompt-fold-text.expanded { display: block; overflow: visible; }
-.prompt-fold-toggle { margin-top: var(--space-0_5); font-size: var(--fs-sm); }
+.gcard-error .fulltext-trigger { color: inherit; text-decoration: underline; }
 .gcard-inputs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
 .gcard-inputs img, .gcard-inputs .deleted-tile {
   width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-xs);
@@ -2716,6 +2767,51 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 .hcard-star { position: absolute; top: 6px; right: 6px; }
 .hcard.list .hcard-star { top: 4px; right: 4px; width: 26px; height: 26px; }
 .hcard-star.is-starred { color: var(--warning); }
+/* Shared virtual-list geometry. Card heights are fixed; long text uses the
+   full-text popover instead of growing a row. */
+.virtual-list {
+  --hcard-body-h: 192px;
+  --hcard-list-h: 156px;
+  --hlist-day-step: 38px;
+  --hcard-grid-gap: var(--space-3);
+}
+.favorites-vgrid { --hcard-body-h: 224px; }
+.history-vgrid {
+  position: relative;
+  contain: layout;
+  margin-right: 16px;
+}
+.history-vgrid > .history-list,
+.history-vgrid > .history-vstack {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+.history-vstack,
+.history-vrow {
+  display: flex;
+  flex-direction: column;
+}
+.history-cell,
+.history-vstack .hsel-wrap {
+  min-width: 0;
+  height: 100%;
+}
+.virtual-list .hcard {
+  height: 100%;
+  overflow: hidden;
+}
+.virtual-list .hcard.grid .hcard-body {
+  height: var(--hcard-body-h);
+  overflow: hidden;
+}
+.virtual-list .hcard.list {
+  height: var(--hcard-list-h);
+}
+.manager-body .history-vgrid { margin-right: 70px; }
+.phone-island .history-vgrid { margin-right: 5px; }
 .hcard-status {
   position: absolute; inset: 0; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1);
   color: var(--muted); font-size: var(--fs-sm); line-height: 1.45;
@@ -3760,16 +3856,6 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     justify-content: center;
   }
 
-  .phone-pager-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1_5);
-    padding-bottom: var(--space-1);
-    font-size: var(--fs-md);
-    color: var(--muted);
-  }
-  .phone-pg { display: inline-flex; align-items: center; gap: 2px; }
-  .phone-pg span { min-width: 54px; text-align: center; font-weight: 600; color: var(--accent-2); }
   .phone-position {
     display: inline-flex; align-items: baseline; gap: var(--space-1_5); min-width: 0; flex: 1;
     margin: 0; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent;
@@ -3779,23 +3865,6 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-position b { color: var(--accent-2); font-weight: 600; }
   .phone-position .icon { flex: none; color: var(--muted); }
   .phone-position:active { opacity: 0.7; }
-  .phone-pg-btn {
-    width: 32px;
-    height: 26px;
-    min-height: 0;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: var(--radius-md);
-    background: transparent;
-    box-shadow: none;
-    color: var(--accent-2);
-  }
-  .phone-pg-btn:hover:not(:disabled) { background: var(--panel-2); }
-  .phone-pg-btn:disabled { opacity: 0.35; }
-  .phone-pager-total { color: var(--muted); font-size: var(--fs-sm); }
   .phone-size {
     margin-left: auto;
     display: inline-flex;
@@ -3935,7 +4004,12 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-island .history-toolbar-row .searchbox input { font-size: 15px; }
   .phone-island .history-toolbar-row .view-seg { flex: none; }
   .phone-island .history-toolbar .filter-row { margin-top: var(--space-2); }
-  .phone-island .history-phone .phone-pager-row { padding-bottom: var(--space-2); }
+  .phone-island .history-vgrid {
+    --hcard-body-h: 184px;
+    --hcard-list-h: 150px;
+    --hlist-day-step: 34px;
+  }
+  .phone-island .favorites-vgrid { --hcard-body-h: 216px; }
 
   /* Favorites/drafts open as subpages: the head sits above the scroller, so the
      sticky toolbar pins at 0 (not 44px, which left a see-through gap) and the
@@ -3950,6 +4024,10 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   }
   .phone-island .draft-toolbar .searchbox input { font-size: 15px; }
   .phone-island .draft-toolbar .draft-new-button { width: 40px; height: 40px; flex: none; }
+  .phone-island .drafts-vgrid {
+    --gcard-body-h: 190px;
+    margin-right: 5px;
+  }
 
   /* Cards: one per row, thumbnail on the left, like the queue rows. */
   .phone-island .hlist,

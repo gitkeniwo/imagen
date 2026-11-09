@@ -75,6 +75,55 @@ conn.execute(
     "INSERT INTO generations (prompt, model, status, output_image_id, created_at, source, provider) "
     "VALUES ('p', 'm', 'success', 4, '2026-01-01T00:00:00+00:00', 'manual', 'vertex')"
 )
+conn.execute(
+    "INSERT INTO series (kind, parent_id, name, created_at, updated_at) "
+    "VALUES ('series', NULL, 'timeline-series', '2026-01-01T00:00:00+00:00', "
+    "'2026-01-01T00:00:00+00:00')"
+)
+GENERATIONS = [
+    # prompt, model, status, output, created, source, provider, series
+    ("alpha running", "gemini-3-pro-image", "running", None,
+     "2026-04-01T10:00:00.000001+00:00", "vertex", "gemini", None),
+    ("alpha blocked", "gemini-3-pro-image", "blocked", 5,
+     "2026-02-10T10:00:00.000002+00:00", "vertex", "vertex", None),
+    ("beta error old", "gemini-3-pro-image", "error", 3,
+     "2026-03-01T10:00:00.000003+00:00", "manual", "gemini", None),
+    ("gamma aborted", "gemini-3-pro-image", "aborted", None,
+     "2026-03-01T11:00:00.000004+00:00", "vertex", "vertex", None),
+    ("legacy note", "gemini-3-pro-image", "note", 4,
+     "2026-05-01T10:00:00.000005+00:00", "vertex", "vertex", None),
+    ("series success", "gemini-2.5-flash-image", "success", 5,
+     "2026-04-12T10:00:00.000006+00:00", "vertex", "vertex", 1),
+    ("stray old date high id", "gemini-2.5-flash-image", "success", 1,
+     "2025-12-01T10:00:00.000007+00:00", "manual", "vertex", None),
+    ("bad generation date", "gemini-3-pro-image", "success", 2,
+     "not a date", "vertex", "vertex", None),
+]
+for prompt, model, status, output, created, source, provider, series_id in GENERATIONS:
+    conn.execute(
+        "INSERT INTO generations "
+        "(prompt, model, status, output_image_id, created_at, source, provider, series_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (prompt, model, status, output, created, source, provider, series_id),
+    )
+DRAFTS = [
+    # prompt, pinned, updated_at
+    ("Pinned A", 1, "2026-04-01T10:00:00.000001+00:00"),
+    ("Pinned B", 1, "2025-01-01T10:00:00.000002+00:00"),
+    ("Draft C", 0, "2026-03-10T10:00:00.000003+00:00"),
+    ("Draft D", 0, "2026-02-01T10:00:00.000004+00:00"),
+    ("Draft E", 0, "2026-03-10T11:00:00.000005+00:00"),
+    ("Draft bad date", 0, "not a date"),
+    ("Draft old", 0, "2024-12-31T10:00:00.000007+00:00"),
+    ("Draft oldest", 0, "2024-01-01T10:00:00.000008+00:00"),
+]
+for prompt, pinned, updated in DRAFTS:
+    conn.execute(
+        "INSERT INTO drafts "
+        "(prompt, model, output_format, pinned, created_at, updated_at, provider) "
+        "VALUES (?, 'gemini-3-pro-image', 'image/jpeg', ?, ?, ?, 'vertex')",
+        (prompt, pinned, updated, updated),
+    )
 conn.commit()
 conn.close()
 
@@ -182,7 +231,7 @@ for label, params in [
     check(sorted(d["first_index"] for d in tf["days"]) == sorted(set(d["first_index"] for d in tf["days"])),
           f"filter {label}: first_index values distinct")
     _ = ids_f
-check(timeline(source="app")["total"] == 1 and timeline(source="imported")["total"] == 1,
+check(timeline(source="app")["total"] == 3 and timeline(source="imported")["total"] == 3,
       "app/imported split by generation source")
 check(timeline(q="no-such-thing")["days"] == [], "empty result -> no days")
 
@@ -218,6 +267,141 @@ check(get("/api/images/ids", limit=5001).status_code == 422, "ids: limit 5001 re
 check(get("/api/images/ids", limit=0).status_code == 422, "ids: limit 0 rejected")
 check(get("/api/images/ids", offset=-1).status_code == 422, "ids: negative offset rejected")
 check(get("/api/images/lookup", ids="1,2").status_code == 200, "lookup route not shadowed")
+
+# --- generation history: shared filters, runs and ids ----------------------
+
+
+def gen_listing(**params) -> dict:
+    res = get("/api/generations", limit=200, **params)
+    check(res.status_code == 200, f"generations list {params} -> {res.status_code}")
+    return res.json()
+
+
+def gen_timeline(**params) -> dict:
+    res = get("/api/generations/timeline", **params)
+    check(res.status_code == 200, f"generations timeline {params} -> {res.status_code}")
+    return res.json()
+
+
+def gen_day(g: dict) -> str:
+    created = g.get("created_at") or ""
+    canonical = (
+        len(created) == 32
+        and created[10] == "T"
+        and created[19] == "."
+        and created.endswith("+00:00")
+    )
+    return day_of(created) if canonical else "unknown"
+
+
+gt = gen_timeline()
+gl = gen_listing()
+check(gt["total"] == gl["total"] == 9, f"generations total matches list ({gt['total']} vs {gl['total']}); note hidden")
+check(sum(d["count"] for d in gt["days"]) == gt["total"], "generation day counts add up")
+gids = [g["id"] for g in gl["generations"]]
+check(gids.index(9) > gids.index(4),
+      "out-of-order generation date follows the list order, not id")
+check(any(d["day"] == "unknown" for d in gt["days"]),
+      "unparseable generation date is grouped as unknown")
+gruns = {start: day for start, day in gt["runs"]}
+gstarts = sorted(gruns)
+for pos, generation in enumerate(gl["generations"]):
+    k = max(i for i, start in enumerate(gstarts) if start <= pos)
+    check(gruns[gstarts[k]] == gen_day(generation),
+          f"generation runs: position {pos} is {gen_day(generation)}")
+
+for label, params in [
+    ("q=alpha", {"q": "alpha"}),
+    ("status=error", {"status": "error"}),
+    ("status=success", {"status": "success"}),
+    ("kind=manual", {"kind": "manual"}),
+    ("starred=true", {"starred": "true"}),
+    ("with_output=true", {"with_output": "true"}),
+    ("series=1", {"series": 1}),
+    ("series=none", {"series": "none"}),
+    ("provider=gemini", {"provider": "gemini"}),
+    ("model=flash", {"model": "gemini-2.5-flash-image"}),
+    ("q=no-such-generation", {"q": "no-such-generation"}),
+]:
+    tf = gen_timeline(**params)
+    lf = gen_listing(**params)
+    check(tf["total"] == lf["total"], f"generation filter {label}: totals match")
+    ids_f = [g["id"] for g in lf["generations"]]
+    id_res = get("/api/generations/ids", **params).json()
+    check(id_res["ids"] == ids_f and id_res["total"] == lf["total"],
+          f"generation filter {label}: ids match list")
+    for d in tf["days"]:
+        first = get("/api/generations", limit=1, offset=d["first_index"], **params).json()["generations"][0]
+        check(gen_day(first) == d["day"], f"generation filter {label}: first_index {d['first_index']} lands on {d['day']}")
+
+gids_all = [g["id"] for g in gl["generations"]]
+r = get("/api/generations/ids", offset=2, limit=3).json()
+check(r["ids"] == gids_all[2:5], "generation ids: offset/limit window equals list slice")
+r = get("/api/generations/ids", q="alpha").json()
+check(r["ids"] == [g["id"] for g in gen_listing(q="alpha")["generations"]],
+      "generation ids: filters match the list")
+check(get("/api/generations/ids", limit=5000).status_code == 200,
+      "generation ids: limit 5000 accepted")
+check(get("/api/generations/ids", limit=5001).status_code == 422,
+      "generation ids: limit 5001 rejected")
+check(get("/api/generations/timeline", status="nope").status_code == 400,
+      "generation timeline: invalid status rejected")
+check(get("/api/generations/timeline", tz=99999).status_code == 422,
+      "generation timeline: absurd tz rejected")
+
+# --- drafts: pinned prefix + updated_at calendar section ------------------
+
+
+def draft_listing(**params) -> dict:
+    res = get("/api/drafts", limit=200, **params)
+    check(res.status_code == 200, f"drafts list {params} -> {res.status_code}")
+    return res.json()
+
+
+def draft_timeline(**params) -> dict:
+    res = get("/api/drafts/timeline", **params)
+    check(res.status_code == 200, f"drafts timeline {params} -> {res.status_code}")
+    return res.json()
+
+
+dt = draft_timeline()
+dl = draft_listing()
+check(dt["pinned"] == 2 and dt["total"] == dl["total"] == 8,
+      f"draft timeline: pinned/total ({dt['pinned']}/{dt['total']})")
+check([d["id"] for d in dl["drafts"][:2]] == [1, 2],
+      "draft list: pinned records come first by updated_at")
+check(sum(d["count"] for d in dt["days"]) == 6,
+      "draft calendar counts exclude the pinned prefix")
+check(all(d["first_index"] >= 2 for d in dt["days"]),
+      "draft day indexes start after the pinned prefix")
+check(dt["runs"] and dt["runs"][0][0] == 2,
+      "draft runs start at the first non-pinned record")
+check(any(d["day"] == "unknown" for d in dt["days"]),
+      "unparseable draft updated_at is grouped as unknown")
+
+drafts_by_position = dl["drafts"]
+druns = {start: day for start, day in dt["runs"]}
+dstarts = sorted(druns)
+for pos, draft in enumerate(drafts_by_position[2:], start=2):
+    k = max(i for i, start in enumerate(dstarts) if start <= pos)
+    expected = day_of(draft.get("updated_at"))
+    check(druns[dstarts[k]] == expected,
+          f"draft runs: position {pos} is {expected}")
+
+for label, params in [
+    ("q=Pinned", {"q": "Pinned"}),
+    ("q=Draft", {"q": "Draft"}),
+    ("q=none", {"q": "nothing-matches"}),
+]:
+    tf = draft_timeline(**params)
+    lf = draft_listing(**params)
+    check(tf["total"] == lf["total"], f"draft filter {label}: totals match")
+    check(tf["pinned"] == sum(1 for d in lf["drafts"] if d["pinned"]),
+          f"draft filter {label}: pinned count matches")
+check(draft_timeline(q="Pinned")["days"] == [],
+      "pinned-only draft result has no calendar days")
+check(get("/api/drafts/timeline", tz=99999).status_code == 422,
+      "draft timeline: absurd tz rejected")
 
 if failures:
     print(f"\nTIMELINE CHECK FAIL ({len(failures)})")

@@ -1,11 +1,19 @@
-import { type CSSProperties, Fragment, useEffect, useRef, useState } from "react";
-import { api, Generation, HistoryResult, ImageRow, ProviderId, providerOf, Tag } from "../api";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import {
+  api,
+  type Generation,
+  type GenerationFilters,
+  type HistoryResult,
+  type ImageRow,
+  type ProviderId,
+  providerOf,
+  type Tag,
+} from "../api";
 import { useI18n } from "../i18n";
-import { dayKey, dayLabel, sortableTime } from "../historyTime";
+import { dayLabel } from "../historyTime";
 import { useFitColumns } from "../useFitColumns";
 import { useProviders } from "../useProviders";
 import AddHistoryModal from "../components/AddHistoryModal";
-import { pageSizedToColumns } from "../pageSize";
 import SearchBox from "../components/SearchBox";
 import TagFilterRow from "../components/TagFilterRow";
 import { useToast } from "../components/Toast";
@@ -30,13 +38,22 @@ import Popover from "../components/ui/Popover";
 import { SeriesChip } from "../components/SeriesBits";
 import { useSeriesActions } from "../components/SeriesMenu";
 import { seriesPathText, useSeries } from "../seriesStore";
+import PositionLine from "../components/PositionLine";
+import TimelineScrubber from "../components/LibraryScrubber";
+import { CHUNK, useChunkedList } from "../useChunkedList";
+import { useVirtualGrid } from "../useVirtualGrid";
+import { useAnchoredRefresh } from "../useAnchoredRefresh";
+import { useTimeline } from "../useTimeline";
+import { dateOfDay } from "../timeline";
+import { useRowHeightCheck } from "../useRowHeightCheck";
 
-const COMPACT_PAGE_SIZE = 12;
-const FULL_PAGE_SIZE = 30;
 const HISTORY_COLUMNS_KEY = "imagen-history-columns";
+const HISTORY_ANCHOR_KEY = "imagen-history-anchor:";
 const HISTORY_COLUMN_OPTIONS = [1, 2, 3];
 const HISTORY_COLUMN_OPTIONS_FULL = [1, 2, 3, 4, 5];
 const HISTORY_LAYOUT_KEY = "imagen-history-layout";
+const MAX_SELECT_IDS = 5000;
+const ENSURE_DELAY_MS = 100;
 
 function initialHistoryLayout(): HistoryLayout {
   return localStorage.getItem(HISTORY_LAYOUT_KEY) === "list" ? "list" : "grid";
@@ -45,6 +62,16 @@ function initialHistoryLayout(): HistoryLayout {
 function initialHistoryColumns() {
   const saved = Number(localStorage.getItem(HISTORY_COLUMNS_KEY));
   return HISTORY_COLUMN_OPTIONS_FULL.includes(saved) ? saved : 2;
+}
+
+function cssPx(
+  element: HTMLElement | null,
+  property: string,
+  fallback: number,
+) {
+  if (!element) return fallback;
+  const value = parseFloat(getComputedStyle(element).getPropertyValue(property));
+  return Number.isFinite(value) ? value : fallback;
 }
 
 export default function History({
@@ -80,7 +107,6 @@ export default function History({
   const toast = useToast();
   const { open: openContextMenu } = useContextMenu();
   const { remote } = useRemote();
-  const [gens, setGens] = useState<Generation[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | null>(null);
   const [kindFilter, setKindFilter] = useState<"vertex" | "manual" | null>(null);
@@ -101,82 +127,160 @@ export default function History({
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
   const [columns, setColumns] = useState(initialHistoryColumns);
   const [layout, setLayout] = useState(initialHistoryLayout);
-  const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(0);
   const [outputTotal, setOutputTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Enter grid rows per page, never a ragged last row; list view has one item
-  // per row, so it keeps the plain target size. The phone grid is two columns;
-  // elsewhere columns drop while cards would be too narrow for their buttons.
+  const [timelineTick, setTimelineTick] = useState(0);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const [resultIds, setResultIds] = useState<{
+    key: string;
+    total: number;
+    ids: number[];
+  } | null>(null);
+  const rowsById = useRef(new Map<number, Generation>());
+  const stickyRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const fitColumns = useFitColumns(rootRef, columns);
   const effectiveColumns = phone ? 2 : fitColumns;
-  const pageSize = pageSizedToColumns(
-    compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
-    layout === "list" ? 1 : effectiveColumns,
-  );
+  const layoutKey = phone ? "phone" : compact ? "compact" : "full";
 
-  const filterParams = {
-    tag: tagFilter ?? undefined,
-    q: query || undefined,
-    kind: kindFilter ?? undefined,
-    status: resultFilter ?? undefined,
-    model: modelFilter ?? undefined,
-    provider: providerFilter ?? undefined,
-    series: seriesFilter ?? undefined,
-  };
-  const filterDeps = [tagFilter, kindFilter, onlyWithImage, query, resultFilter, modelFilter, providerFilter, seriesFilter];
+  const filterParams = useMemo<GenerationFilters>(
+    () => ({
+      tag: tagFilter ?? undefined,
+      q: query.trim() || undefined,
+      kind: kindFilter ?? undefined,
+      status: resultFilter ?? undefined,
+      model: modelFilter ?? undefined,
+      provider: providerFilter ?? undefined,
+      series: seriesFilter ?? undefined,
+      withOutput: onlyWithImage || undefined,
+    }),
+    [kindFilter, modelFilter, onlyWithImage, providerFilter, query, resultFilter, seriesFilter, tagFilter],
+  );
+  const filtersKey = JSON.stringify(filterParams);
   const moreFilters = [resultFilter, modelFilter, providerFilter, seriesFilter].filter((v) => v !== null).length;
 
-  const load = (quiet = false) => {
-    if (!quiet) {
-      setLoading(true);
-      setLoadError(null);
-    }
-    Promise.all([
-      api.listGenerations({
-        limit: pageSize,
-        offset: page * pageSize,
-        ...filterParams,
-        withOutput: onlyWithImage,
-      }),
-      api.listTags(),
-    ])
-      .then(([r, tagsRes]) => {
-        setGens(r.generations);
-        setTotal(r.total);
-        setOutputTotal(r.output_total);
-        setTags(tagsRes.tags);
-        if (r.total > 0 && page * pageSize >= r.total) {
-          setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
-        }
-      })
-      .catch((e) => {
-        // A background refresh should never replace the current card with a
-        // flashing error state. The next normal refresh can surface an error.
-        if (!quiet) setLoadError((e as Error).message);
-      })
-      .finally(() => {
-        if (!quiet) setLoading(false);
-      });
+  const data = useChunkedList<Generation>({
+    key: filtersKey,
+    fetchChunk: async (offset, limit, signal) => {
+      const result = await api.listGenerations(
+        { ...filterParams, limit, offset },
+        signal,
+      );
+      setOutputTotal((current) =>
+        current === result.output_total ? current : result.output_total,
+      );
+      return { rows: result.generations, total: result.total };
+    },
+    fetchIds: async (offset, limit, signal) =>
+      (
+        await api.listGenerationIds(
+          { ...filterParams, offset, limit },
+          signal,
+        )
+      ).ids,
+    idOf: (generation) => generation.id,
+    onRows: (rows) => {
+      for (const generation of rows) {
+        rowsById.current.set(generation.id, generation);
+      }
+    },
+  });
+  const total = data.total;
+  const loading = !data.ready;
+  const loadError = data.error;
+  const {
+    timeline,
+    loading: timelineLoading,
+    error: timelineError,
+  } = useTimeline(
+    () => api.generationTimeline(filterParams),
+    filtersKey,
+    timelineTick,
+  );
+  const sections = useMemo(
+    () => (layout === "list" ? timeline?.runStarts : undefined),
+    [layout, timeline],
+  );
+  const grid = useVirtualGrid({
+    count: total,
+    columns: effectiveColumns,
+    itemHeight: (width, element) =>
+      layout === "list"
+        ? cssPx(element, "--hcard-list-h", 148)
+        : Math.max(0, width - 2) * 0.75 +
+          cssPx(element, "--hcard-body-h", 192) +
+          cssPx(element, "--hcard-grid-gap", 12) +
+          2,
+    sections,
+    sectionHeaderHeight:
+      layout === "list"
+        ? (element) => cssPx(element, "--hlist-day-step", 38)
+        : undefined,
+    topInset: (scroller) => {
+      const sticky = stickyRef.current;
+      if (!sticky) return 0;
+      return sticky.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
+    },
+  });
+
+  const { refresh, newCount, clearNew } = useAnchoredRefresh({
+    data,
+    grid,
+    idOf: (generation) => generation.id,
+    filtersKey,
+    refreshKey,
+    storageKey: `${HISTORY_ANCHOR_KEY}${layoutKey}:${layout}`,
+    onRefreshDone: () => setTimelineTick((n) => n + 1),
+  });
+  useRowHeightCheck({
+    windowRef: grid.windowRef,
+    expected: grid.itemHeight,
+    selector: ".hcard",
+    version: data.version,
+  });
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
+  useEffect(() => {
+    if (!data.ready || total === 0) return;
+    const timer = window.setTimeout(
+      () => data.ensure(grid.startIndex, grid.endIndex),
+      ENSURE_DELAY_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [data.ready, data.ensure, grid.endIndex, grid.startIndex, total]);
+
+  const loadTags = () => {
+    api
+      .listTags()
+      .then((result) => setTags(result.tags))
+      .catch(() => {});
   };
+  useEffect(loadTags, [refreshKey]);
 
-  useEffect(load, [page, pageSize, refreshKey, ...filterDeps]);
-
-  // While a request is in flight, poll only when History is actually mounted.
-  // This makes the backend-created `running` placeholder appear without
-  // refreshing Library or the rest of the workspace.
+  // While live, refresh the loaded chunks only; the anchored hook keeps the
+  // reader in place and surfaces "↑ N new" for rows that arrived above.
   useEffect(() => {
     if (!live) return;
-    const id = window.setInterval(() => load(true), 3000);
+    const id = window.setInterval(() => void refreshRef.current(), 3000);
     return () => window.clearInterval(id);
-  }, [live, page, pageSize, ...filterDeps]);
+  }, [filtersKey, live]);
+
+  useEffect(() => {
+    localStorage.setItem(HISTORY_COLUMNS_KEY, String(columns));
+  }, [columns]);
+
+  useEffect(() => {
+    localStorage.setItem(HISTORY_LAYOUT_KEY, layout);
+  }, [layout]);
+
+  useEffect(() => {
+    setJumpOpen(false);
+  }, [filtersKey]);
 
   const toggleStar = async (img: ImageRow) => {
     try {
       await api.patchImage(img.id, { starred: !img.starred });
-      load();
+      void refresh();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -187,7 +291,7 @@ export default function History({
     try {
       await api.patchImage(img.id, { starred: next });
       img.starred = next ? 1 : 0;
-      load();
+      void refresh();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
     }
@@ -198,12 +302,17 @@ export default function History({
     else onUseAsRef?.(img);
   };
 
-  const series = useSeriesActions(() => load(true));
-  const targetFor = (list: Generation[]) => ({
-    body: { generationIds: list.map((g) => g.id) },
-    members: list.map((g) => g.series_id ?? null),
+  const series = useSeriesActions(() => void refresh());
+  const targetForIds = (ids: number[]) => ({
+    body: { generationIds: ids },
+    members: ids.map((id) => rowsById.current.get(id)?.series_id ?? null),
   });
-  const selectedGens = () => gens.filter((g) => selected.has(g.id));
+  const targetFor = (list: Generation[]) =>
+    targetForIds(list.map((generation) => generation.id));
+  const selectedLoaded = () =>
+    [...selected]
+      .map((id) => rowsById.current.get(id))
+      .filter((generation): generation is Generation => !!generation);
   const toggleSelected = (id: number) =>
     setSelected((current) => {
       const next = new Set(current);
@@ -224,7 +333,9 @@ export default function History({
       ids.add(generation.id);
       setSelected(ids);
     }
-    const list = gens.filter((g) => ids.has(g.id));
+    const idList = [...ids];
+    const list = selectedLoaded().filter((generation) => ids.has(generation.id));
+    if (!list.some((row) => row.id === generation.id)) list.push(generation);
     const counts = { success: 0, blocked: 0, error: 0 };
     for (const g of list) {
       if (g.status === "success") counts.success++;
@@ -237,14 +348,14 @@ export default function History({
       y,
       trigger,
       images: list.flatMap((g) => (g.outputImage && !g.outputImage.deleted_at ? [g.outputImage] : [])).slice(0, 3),
-      title: t("series_n_generations", { n: list.length }),
+      title: t("series_n_generations", { n: idList.length }),
       subtitle: [
         counts.success ? `${counts.success} ${t("hist_result_success")}` : null,
         counts.blocked ? `${counts.blocked} ${t("hist_result_blocked")}` : null,
         counts.error ? `${counts.error} ${t("hist_result_error")}` : null,
       ].filter(Boolean).join(" · "),
       sections: [
-        [series.menuItem(targetFor(list))],
+        [series.menuItem(targetForIds(idList))],
         [
           {
             icon: "copy",
@@ -258,7 +369,6 @@ export default function History({
                 label: t("series_select_all_in"),
                 onSelect: () => {
                   setSeriesFilter(sameSeries);
-                  setPage(0);
                 },
               }]
             : []),
@@ -266,6 +376,29 @@ export default function History({
       ],
       ariaLabel: t("batch_actions"),
     });
+  };
+
+  const allResultsSelected =
+    total > 0 &&
+    !!resultIds &&
+    resultIds.key === filtersKey &&
+    resultIds.total === total &&
+    resultIds.ids.every((id) => selected.has(id));
+
+  const selectAllResults = async () => {
+    try {
+      const result = await api.listGenerationIds({
+        ...filterParams,
+        limit: MAX_SELECT_IDS,
+      });
+      setResultIds({ key: filtersKey, total: result.total, ids: result.ids });
+      setSelected((current) => new Set([...current, ...result.ids]));
+      if (result.total > result.ids.length) {
+        toast(t("select_limit", { n: MAX_SELECT_IDS.toLocaleString() }), "info");
+      }
+    } catch (error) {
+      toast(t("op_failed", { msg: (error as Error).message }));
+    }
   };
 
   const openHistoryMenu = (
@@ -348,19 +481,8 @@ export default function History({
     });
   };
 
-  useEffect(() => {
-    localStorage.setItem(HISTORY_COLUMNS_KEY, String(columns));
-  }, [columns]);
-
-  useEffect(() => {
-    localStorage.setItem(HISTORY_LAYOUT_KEY, layout);
-  }, [layout]);
-
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const hasPages = total > pageSize;
-
   const openOutputViewer = (img: ImageRow, generation: Generation, gridIndex: number) => {
-    img.generation_offset = page * pageSize + gridIndex;
+    img.generation_offset = gridIndex;
     onOpenViewer(
       img,
       [img],
@@ -368,7 +490,7 @@ export default function History({
         // The clicked image is the first item, at its unique-output position.
         offset: generation.output_index ?? 0,
         total: outputTotal,
-        batchSize: pageSize,
+        batchSize: CHUNK,
         fetch: async (nextOffset, limit) => {
           const r = await api.listGenerations({
             limit,
@@ -388,64 +510,11 @@ export default function History({
       },
       (globalIndex, output) => {
         const generationOffset = output?.generation_offset ?? globalIndex;
-        setPage(Math.floor(generationOffset / pageSize));
+        grid.scrollToIndex(generationOffset, "nearest");
+        data.ensure(generationOffset, generationOffset);
       },
     );
   };
-
-  const pager = hasPages ? (
-    <div className="pager">
-      <button disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
-        {t("prev_page")}
-      </button>
-      <span className="muted small">
-        {t("page_status", { page: page + 1, pages: pageCount, total })}
-      </span>
-      <button
-        disabled={page >= pageCount - 1 || loading}
-        onClick={() => setPage((p) => p + 1)}
-      >
-        {t("next_page")}
-      </button>
-    </div>
-  ) : null;
-
-  // Phone keeps a single compact pager above the list (the bottom copy is
-  // hidden), matching the library island's ‹ 1/3 › + total row.
-  const phonePager = (
-    <div className="phone-pager-row">
-      <div className="phone-pg">
-        {hasPages && (
-          <button
-            type="button"
-            className="phone-pg-btn"
-            aria-label={t("prev_page")}
-            disabled={page === 0 || loading}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            <Icon name="prev" size="sm" />
-          </button>
-        )}
-        <span>
-          {hasPages
-            ? t("phone_page_status", { page: page + 1, pages: pageCount })
-            : t("phone_total_records", { n: total })}
-        </span>
-        {hasPages && (
-          <button
-            type="button"
-            className="phone-pg-btn"
-            aria-label={t("next_page")}
-            disabled={page >= pageCount - 1 || loading}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            <Icon name="next" size="sm" />
-          </button>
-        )}
-      </div>
-      {hasPages && <span className="phone-pager-total">{t("phone_total_records", { n: total })}</span>}
-    </div>
-  );
 
   const tagBar = (
     <TagFilterRow
@@ -453,7 +522,6 @@ export default function History({
       value={tagFilter}
       onChange={(id) => {
         setTagFilter(id);
-        setPage(0);
       }}
     />
   );
@@ -463,7 +531,6 @@ export default function History({
     setModelFilter(null);
     setProviderFilter(null);
     setSeriesFilter(null);
-    setPage(0);
   };
   // Every model any provider serves (catalog order, one entry per id).
   const modelOptions = providers
@@ -471,7 +538,6 @@ export default function History({
     .filter((m, i, all) => all.findIndex((x) => x.id === m.id) === i);
   const pickFilter = <T extends string>(setter: (v: T | null) => void) => (v: string) => {
     setter(v === "all" ? null : (v as T));
-    setPage(0);
   };
   const moreFilterPopover = (
     <FilterPopover active={moreFilters} onClear={clearMoreFilters}>
@@ -502,7 +568,6 @@ export default function History({
           value={seriesFilter === null ? "all" : String(seriesFilter)}
           onChange={(v) => {
             setSeriesFilter(v === "all" ? null : v === "none" ? "none" : Number(v));
-            setPage(0);
           }}
           options={[
             { id: "all", label: t("series_filter_any") },
@@ -527,17 +592,23 @@ export default function History({
     </FilterPopover>
   );
 
-  // List view: a heading before the first record of each local day.
-  const now = new Date();
-  const dayHeading = (index: number) => {
-    if (layout !== "list") return null;
-    const d = sortableTime(gens[index].created_at);
-    const prev = index > 0 ? sortableTime(gens[index - 1].created_at) : null;
-    if (index > 0 && (d ? dayKey(d) : "") === (prev ? dayKey(prev) : "")) return null;
-    return (
-      <h3 className="hlist-day">{d ? dayLabel(d, now, lang, t) : t("history_unknown_day")}</h3>
-    );
-  };
+  // List view: a heading before the first record of each local day. The
+  // timeline's runs already give every section's item index and need no rows.
+  const sectionLabels = useMemo(() => {
+    const labels = new Map<number, string>();
+    if (layout !== "list" || !timeline) return labels;
+    const now = new Date();
+    timeline.runStarts.forEach((start, index) => {
+      const day = timeline.runDays[index];
+      labels.set(
+        start,
+        day
+          ? dayLabel(dateOfDay(day.day), now, lang, t)
+          : t("history_unknown_day"),
+      );
+    });
+    return labels;
+  }, [lang, layout, t, timeline]);
 
   // Collect unique tags from all images in a generation (inputs + output).
   const genTags = (g: Generation) => {
@@ -548,6 +619,145 @@ export default function History({
       seen.add(tg.id);
       return true;
     });
+  };
+
+  const jumpToIndex = (next: number) => {
+    if (total === 0) return;
+    const index = Math.max(0, Math.min(total - 1, next));
+    grid.scrollToIndex(index, "start");
+    data.ensure(index, Math.min(total - 1, index + Math.max(1, grid.cols)));
+    clearNew();
+  };
+
+  const positionLine = (
+    <PositionLine
+      total={total}
+      index={grid.visibleStart}
+      endIndex={grid.visibleEnd}
+      atTop={grid.atTop}
+      timeline={timeline}
+      timelineLoading={timelineLoading}
+      timelineError={timelineError}
+      phone={phone}
+      unit="records"
+      buttonClass="list-position"
+      newCount={newCount}
+      jumpOpen={jumpOpen}
+      onJumpOpenChange={setJumpOpen}
+      onJump={jumpToIndex}
+      onBackToTop={() => {
+        clearNew();
+        grid.scrollToTop(true);
+      }}
+      onNewClick={() => {
+        clearNew();
+        grid.scrollToTop(true);
+      }}
+    />
+  );
+
+  const sectionRowSet = useMemo(
+    () => new Set(grid.sectionRows),
+    [grid.sectionRows],
+  );
+
+  const renderCard = (generation: Generation, index: number) => {
+    const outImg =
+      generation.outputImage && !generation.outputImage.deleted_at
+        ? generation.outputImage
+        : null;
+    const missing =
+      !!generation.outputImage?.deleted_at ||
+      (generation.status === "success" && !generation.outputImage);
+    return (
+      <div
+        className={`hsel-wrap${selectMode ? " selecting" : ""}${
+          selected.has(generation.id) ? " selected" : ""
+        }`}
+        onPointerDown={(event) => {
+          if (selectMode || event.pointerType === "mouse") return;
+          longPress.current = window.setTimeout(() => {
+            setSelectMode(true);
+            setSelected(new Set([generation.id]));
+          }, 500);
+        }}
+        onPointerUp={() =>
+          longPress.current && window.clearTimeout(longPress.current)
+        }
+        onPointerCancel={() =>
+          longPress.current && window.clearTimeout(longPress.current)
+        }
+        onPointerMove={() =>
+          longPress.current && window.clearTimeout(longPress.current)
+        }
+      >
+        <HistoryItem
+          seriesChip={
+            generation.series_id ? (
+              <SeriesChip seriesId={generation.series_id} />
+            ) : undefined
+          }
+          g={generation}
+          layout={layout}
+          output={outImg}
+          missing={missing}
+          onOpen={() =>
+            outImg && openOutputViewer(outImg, generation, index)
+          }
+          onToggleStar={outImg ? () => toggleStar(outImg) : undefined}
+          onOpenInput={(img) =>
+            onOpenViewer(img, generation.inputs ?? [])
+          }
+          tags={genTags(generation)}
+          onReuse={() => onReuse(generation)}
+          onRerun={
+            onRerun && isReady(providerOf(generation))
+              ? () => onRerun(generation)
+              : undefined
+          }
+          onUseAsRef={
+            onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined
+          }
+          onImageContextMenu={(img, trigger, x, y, isOutput, onView) =>
+            openHistoryMenu(
+              generation,
+              img,
+              isOutput,
+              trigger,
+              x,
+              y,
+              onView,
+            )
+          }
+          onEdit={() => setEditingGen(generation)}
+          onDuplicate={() => setDuplicatingGen(generation)}
+        />
+        {selectMode && (
+          <button
+            type="button"
+            className="hsel-cover"
+            aria-pressed={selected.has(generation.id)}
+            aria-label={t("select_image")}
+            onClick={() => toggleSelected(generation.id)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              const pointerType = (event.nativeEvent as PointerEvent).pointerType;
+              if (pointerType && pointerType !== "mouse") return;
+              openBatchMenu(
+                generation,
+                event.currentTarget,
+                event.clientX,
+                event.clientY,
+              );
+            }}
+          >
+            <span className="hsel-check">
+              {selected.has(generation.id) && <Icon name="check" size="sm" />}
+            </span>
+          </button>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -561,13 +771,12 @@ export default function History({
           {remote && <RemoteChip />}
         </div>
       )}
-      <div className="history-toolbar">
+      <div className="history-toolbar" ref={stickyRef}>
         <div className="history-toolbar-row">
           <SearchBox
             value={query}
             onChange={(q) => {
               setQuery(q);
-              setPage(0);
             }}
             placeholder={t("search_placeholder_history")}
           />
@@ -580,7 +789,6 @@ export default function History({
                 value={columns}
                 onChange={(n) => {
                   setColumns(n);
-                  setPage(0);
                 }}
                 options={(compact ? HISTORY_COLUMN_OPTIONS : HISTORY_COLUMN_OPTIONS_FULL).map((n) => ({
                   value: n,
@@ -606,7 +814,6 @@ export default function History({
             value={kindFilter ?? "all"}
             onChange={(v) => {
               setKindFilter(v === "all" ? null : v);
-              setPage(0);
             }}
             options={[
               { value: "all", label: t("filter_all") },
@@ -622,7 +829,6 @@ export default function History({
             aria-pressed={onlyWithImage}
             onClick={() => {
               setOnlyWithImage((value) => !value);
-              setPage(0);
             }}
           >
             <span className="filter-label">{t("hist_filter_with_image")}</span>
@@ -650,27 +856,36 @@ export default function History({
                     name: seriesPathText(seriesStore.get(seriesFilter), t("series_no_theme")),
                   })}
             </span>
-            <Button variant="link" onClick={() => { setSeriesFilter(null); setPage(0); }}>
+            <Button variant="link" onClick={() => setSeriesFilter(null)}>
               {t("clear_filters")}
             </Button>
           </div>
         )}
         {tagBar}
+        {positionLine}
       </div>
-      {phone ? phonePager : pager}
 
       {loading ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
           <span className="spinner" /> {t("loading")}
         </div>
       ) : loadError ? (
-        <div className={`panel history-panel${compact ? " compact" : ""}`}>
+        total === 0 ? (
+          <div className={`panel history-panel${compact ? " compact" : ""}`}>
+            <div className="load-error">
+              <span className="small">{t("load_error", { msg: loadError })}</span>
+              <button onClick={data.reset}>{t("retry")}</button>
+            </div>
+          </div>
+        ) : (
           <div className="load-error">
             <span className="small">{t("load_error", { msg: loadError })}</span>
-            <button onClick={() => load()}>{t("retry")}</button>
+            <button onClick={() => data.ensure(grid.startIndex, grid.endIndex)}>
+              {t("retry")}
+            </button>
           </div>
-        </div>
-      ) : gens.length === 0 ? (
+        )
+      ) : total === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
           {query || tagFilter !== null || kindFilter !== null || onlyWithImage || moreFilters > 0 ? (
             <div className="empty-state">
@@ -685,7 +900,6 @@ export default function History({
                   setModelFilter(null);
                   setProviderFilter(null);
                   setSeriesFilter(null);
-                  setPage(0);
                 }}
               >
                 {t("clear_filters")}
@@ -695,73 +909,107 @@ export default function History({
             t("history_empty")
           )}
         </div>
-      ) : (
-        <div
-          className={`history-list hlist ${layout}${compact ? " compact" : ""}${phone && layout === "grid" ? " phone-cols2" : ""}`}
-          style={layout === "grid" ? ({ "--history-columns": effectiveColumns } as CSSProperties) : undefined}
-        >
-          {gens.map((g, index) => {
-            const outImg = g.outputImage && !g.outputImage.deleted_at ? g.outputImage : null;
-            const missing = !!g.outputImage?.deleted_at || (g.status === "success" && !g.outputImage);
-            return (
-              <Fragment key={g.id}>
-              {dayHeading(index)}
-              <div
-                className={`hsel-wrap${selectMode ? " selecting" : ""}${selected.has(g.id) ? " selected" : ""}`}
-                onPointerDown={(e) => {
-                  if (selectMode || e.pointerType === "mouse") return;
-                  longPress.current = window.setTimeout(() => {
-                    setSelectMode(true);
-                    setSelected(new Set([g.id]));
-                  }, 500);
-                }}
-                onPointerUp={() => longPress.current && window.clearTimeout(longPress.current)}
-                onPointerCancel={() => longPress.current && window.clearTimeout(longPress.current)}
-                onPointerMove={() => longPress.current && window.clearTimeout(longPress.current)}
-              >
-              <HistoryItem
-                seriesChip={g.series_id ? <SeriesChip seriesId={g.series_id} /> : undefined}
-                g={g}
-                layout={layout}
-                output={outImg}
-                missing={missing}
-                onOpen={() => outImg && openOutputViewer(outImg, g, index)}
-                onToggleStar={outImg ? () => toggleStar(outImg) : undefined}
-                onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
-                tags={genTags(g)}
-                onReuse={() => onReuse(g)}
-                onRerun={onRerun && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
-                onUseAsRef={onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined}
-                onImageContextMenu={(img, trigger, x, y, isOutput, onView) =>
-                  openHistoryMenu(g, img, isOutput, trigger, x, y, onView)
-                }
-                onEdit={() => setEditingGen(g)}
-                onDuplicate={() => setDuplicatingGen(g)}
-              />
-              {selectMode && (
-                <button
-                  type="button"
-                  className="hsel-cover"
-                  aria-pressed={selected.has(g.id)}
-                  aria-label={t("select_image")}
-                  onClick={() => toggleSelected(g.id)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    if ((e.nativeEvent as PointerEvent).pointerType && (e.nativeEvent as PointerEvent).pointerType !== "mouse") return;
-                    openBatchMenu(g, e.currentTarget, e.clientX, e.clientY);
-                  }}
-                >
-                  <span className="hsel-check">{selected.has(g.id) && <Icon name="check" size="sm" />}</span>
-                </button>
-              )}
-              </div>
-              </Fragment>
-            );
-          })}
-        </div>
-      )}
+      ) : null}
 
-      {!phone && pager}
+      <div
+        className="history-vgrid virtual-list"
+        ref={grid.gridRef}
+        style={{ height: grid.totalHeight }}
+      >
+        {layout === "grid" ? (
+          <div
+            ref={grid.windowRef}
+            className={`history-list hlist grid${compact ? " compact" : ""}${
+              phone ? " phone-cols2" : ""
+            }`}
+            style={
+              {
+                "--history-columns": grid.cols,
+                gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`,
+                gridAutoRows:
+                  grid.itemHeight > 0 ? `${grid.itemHeight}px` : undefined,
+                transform: `translateY(${grid.offsetY}px)`,
+              } as CSSProperties
+            }
+          >
+            {Array.from(
+              { length: Math.max(0, grid.endIndex - grid.startIndex + 1) },
+              (_, offset) => {
+                const index = grid.startIndex + offset;
+                const generation = data.get(index);
+                return generation ? (
+                  <div key={generation.id} className="history-cell">
+                    {renderCard(generation, index)}
+                  </div>
+                ) : (
+                  <div key={index} className="lib-skeleton" aria-hidden="true" />
+                );
+              },
+            )}
+          </div>
+        ) : (
+          <div
+            ref={grid.windowRef}
+            className={`history-vstack${compact ? " compact" : ""}`}
+            style={{
+              gap: grid.gap,
+              transform: `translateY(${grid.offsetY}px)`,
+            }}
+          >
+            {Array.from(
+              { length: Math.max(0, grid.endRow - grid.startRow + 1) },
+              (_, offset) => {
+                const row = grid.startRow + offset;
+                const label = sectionRowSet.has(row)
+                  ? sectionLabels.get(row) ?? t("history_unknown_day")
+                  : null;
+                const generation = data.get(row);
+                return (
+                  <div key={row} className="history-vrow" style={{ gap: grid.gap }}>
+                    {label && (
+                      <h3
+                        className="hlist-day"
+                        style={{
+                          height: Math.max(
+                            0,
+                            grid.sectionHeaderHeight - grid.gap,
+                          ),
+                          margin: 0,
+                          display: "flex",
+                          alignItems: "center",
+                        }}
+                      >
+                        {label}
+                      </h3>
+                    )}
+                    {generation ? (
+                      renderCard(generation, row)
+                    ) : (
+                      <div
+                        className="lib-skeleton"
+                        aria-hidden="true"
+                        style={{ height: grid.itemHeight }}
+                      />
+                    )}
+                  </div>
+                );
+              },
+            )}
+          </div>
+        )}
+      </div>
+
+      <TimelineScrubber
+        mode={phone ? "phone" : compact ? "compact" : "full"}
+        total={total}
+        index={grid.visibleStart}
+        step={Math.max(1, grid.visibleEnd - grid.visibleStart + 1)}
+        timeline={timeline}
+        scrollerRef={grid.scrollerRef}
+        headerRef={stickyRef}
+        onSeek={(index) => grid.scrollToIndex(index, "start")}
+        onLongPress={phone ? () => setJumpOpen(true) : undefined}
+      />
 
       {selectMode && (
         <div className={`batch-bar history-batch${phone ? " phone" : ""}`}>
@@ -769,10 +1017,10 @@ export default function History({
             <span className="batch-count">{t("selected_n", { n: selected.size })}</span>
             <Button
               variant="link"
-              disabled={gens.length === 0 || gens.every((g) => selected.has(g.id))}
-              onClick={() => setSelected(new Set([...selected, ...gens.map((g) => g.id)]))}
+              disabled={total === 0 || allResultsSelected}
+              onClick={selectAllResults}
             >
-              {t("select_all")}
+              {t("select_all_results")}
             </Button>
             <div className="spacer" />
             <Popover
@@ -795,7 +1043,11 @@ export default function History({
                 </Button>
               }
             >
-              {series.picker(targetFor(selectedGens()), () => setBatchSeriesOpen(false), true)}
+              {series.picker(
+                targetForIds([...selected]),
+                () => setBatchSeriesOpen(false),
+                true,
+              )}
             </Popover>
             <Button size="sm" icon="check" onClick={exitSelect}>{t("done")}</Button>
           </div>
@@ -809,7 +1061,7 @@ export default function History({
           onClose={() => setEditingGen(null)}
           onSaved={() => {
             setEditingGen(null);
-            load();
+            void refresh();
           }}
         />
       )}
@@ -819,7 +1071,7 @@ export default function History({
           onClose={() => setDuplicatingGen(null)}
           onSaved={() => {
             setDuplicatingGen(null);
-            load();
+            void refresh();
           }}
         />
       )}

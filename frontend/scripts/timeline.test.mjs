@@ -1,7 +1,12 @@
 // Run: npm test   (node --test, no extra dependencies; Node strips the types)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildTimeline, indexToDay, phoneRulerTicks } from "../src/timeline.ts";
+import {
+  buildTimeline,
+  indexInPinned,
+  indexToDay,
+  phoneRulerTicks,
+} from "../src/timeline.ts";
 
 /** A /api/images/timeline answer for `dayAt[i]` = day of the image at list position i. */
 function fromPositions(dayAt) {
@@ -63,6 +68,25 @@ test("empty result", () => {
   const timeline = buildTimeline({ days: [], runs: [], total: 0 });
   assert.equal(indexToDay(timeline, 0), null);
   assert.deepEqual(phoneRulerTicks(timeline, 0, 300), []);
+});
+
+test("pinned drafts form a non-calendar prefix before the dated runs", () => {
+  const base = fromPositions(positions);
+  const timeline = buildTimeline({
+    ...base,
+    pinned: 2,
+    days: base.days.map((day) => ({ ...day, first_index: day.first_index + 2 })),
+    runs: base.runs.map(([start, day]) => [start + 2, day]),
+    total: base.total + 2,
+  });
+  assert.equal(timeline.pinned, 2);
+  assert.equal(indexInPinned(timeline, 0), true);
+  assert.equal(indexInPinned(timeline, 1), true);
+  assert.equal(indexInPinned(timeline, 2), false);
+  assert.equal(indexToDay(timeline, 0), null);
+  assert.equal(indexToDay(timeline, 1), null);
+  assert.equal(indexToDay(timeline, 2)?.day, positions[0]);
+  assert.deepEqual(timeline.runStarts.slice(0, 2), [2, 7]);
 });
 
 function monthTimeline(yearCount, monthCount = 12, imagesPerMonth = 50) {

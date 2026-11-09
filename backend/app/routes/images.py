@@ -14,6 +14,7 @@ from starlette.background import BackgroundTask
 from .. import storage, tagging
 from ..db import GENERATION_SORT_AT, get_conn
 from ..models import ImagePatch
+from ..timeline import MAX_IDS_LIMIT, query_timeline
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -136,42 +137,14 @@ def images_timeline(
     middle of another day's images.
     """
     where, params = _library_where(source, starred, tag, q)
-    ordered = f"""
-        WITH ordered AS (
-            SELECT date(created_at, ?) AS day,
-                   ROW_NUMBER() OVER (ORDER BY {_LIBRARY_ORDER}) - 1 AS idx
-            FROM images {where}
-        )
-    """
-    days_sql = ordered + """
-        SELECT day, COUNT(*) AS count, MIN(idx) AS first_index
-        FROM ordered GROUP BY day
-        ORDER BY (day IS NULL), day DESC
-    """
-    runs_sql = ordered + """
-        , marked AS (
-            SELECT idx, day, LAG(day) OVER (ORDER BY idx) AS prev FROM ordered
-        )
-        SELECT idx, day FROM marked
-        WHERE idx = 0 OR day IS NOT prev
-        ORDER BY idx
-    """
-    args = (f"{tz:+d} minutes", *params)
-    with get_conn() as conn:
-        rows = conn.execute(days_sql, args).fetchall()
-        runs = conn.execute(runs_sql, args).fetchall()
-    days = [
-        {"day": r["day"] or "unknown", "count": r["count"], "first_index": r["first_index"]}
-        for r in rows
-    ]
-    return {
-        "days": days,
-        "runs": [[r["idx"], r["day"] or "unknown"] for r in runs],
-        "total": sum(d["count"] for d in days),
-    }
-
-
-MAX_IDS_LIMIT = 5000
+    return query_timeline(
+        source="images",
+        where=where,
+        params=params,
+        order=_LIBRARY_ORDER,
+        date_expr="date(created_at, ?)",
+        tz=tz,
+    )
 
 
 @router.get("/ids")
