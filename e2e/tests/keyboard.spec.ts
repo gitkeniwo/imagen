@@ -33,7 +33,7 @@ test("Shift+F10 opens the menu, arrows cycle, → / ← enter and leave the tag 
   // Focus starts on the first item.
   await expect.poll(() => focusedItem(page)).toBe("View");
 
-  const order = ["View", "Add to input", "Favorite", "Download", "Tags", "Move to Bin"];
+  const order = ["View", "Add to input", "Favorite", "Download", "Copy image", "Tags", "Move to Bin"];
   for (const name of order.slice(1)) {
     await page.keyboard.press("ArrowDown");
     await expect.poll(() => focusedItem(page)).toBe(name);
