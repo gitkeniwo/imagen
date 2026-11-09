@@ -106,6 +106,36 @@ test("no horizontal scrolling on the main sections", async ({ page }) => {
   }
 });
 
+test("the tab capsule stays inside a zoomed-in viewport", async ({ page }) => {
+  // Page zoom narrows the CSS viewport while the phone layout stays active.
+  await page.setViewportSize({ width: 300, height: 812 });
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  await expect(nav).toBeVisible();
+
+  const boxes = await nav.evaluate((element) => {
+    const navBox = element.getBoundingClientRect();
+    return {
+      viewport: window.innerWidth,
+      nav: { left: navBox.left, right: navBox.right },
+      tabs: [...element.querySelectorAll("button")].map((button) => {
+        const box = button.getBoundingClientRect();
+        return { left: box.left, right: box.right };
+      }),
+    };
+  });
+
+  expect(boxes.nav.left).toBeGreaterThanOrEqual(0);
+  expect(boxes.nav.right).toBeLessThanOrEqual(boxes.viewport);
+  for (const tab of boxes.tabs) {
+    expect(tab.left).toBeGreaterThanOrEqual(0);
+    expect(tab.right).toBeLessThanOrEqual(boxes.viewport);
+  }
+  const labelsFit = await nav.locator(".phone-tab > span:not(.phone-badge)").evaluateAll((labels) =>
+    labels.every((label) => label.scrollWidth <= label.clientWidth + 1),
+  );
+  expect(labelsFit).toBe(true);
+});
+
 test("phone scrubber expands into a capsule and local ruler only while dragging", async ({ page }) => {
   const scrollbar = page.getByRole("scrollbar", { name: "Browse position" });
   const thumb = page.locator(".lib-scrubber.phone .lib-scrubber-thumb");
