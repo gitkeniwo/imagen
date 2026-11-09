@@ -253,6 +253,54 @@ test.describe("changes data", () => {
     await expect(item.getByRole("button", { name: PERFUME })).toBeVisible();
   });
 
+  test("from a series, Prompt shows that series' record, not the image's newest one", async ({ page }) => {
+    // poster-alps-4k.png is #3 of Perfume poster (generation 3). A newer
+    // Lookbook cover record outputs the same image.
+    const ALPS_PROMPT = "Same composition, swap background for the alpine landscape";
+    const LOOKBOOK_PROMPT = "Lookbook cover reuses the alpine poster";
+    const tree = await page.request.get("/api/series").then((r) => r.json());
+    const lookbook = tree.themes
+      .flatMap((theme: { series: { id: number; name: string }[] }) => theme.series)
+      .find((node: { name: string }) => node.name === "Lookbook cover").id;
+    const g3 = await page.request.get("/api/generations/3").then((r) => r.json());
+    expect(g3.prompt).toBe(ALPS_PROMPT);
+    const created = await page.request.post("/api/generations/manual", {
+      data: {
+        prompt: LOOKBOOK_PROMPT,
+        model: "gemini-3-pro-image",
+        status: "success",
+        outputImageId: g3.output_image_id,
+        seriesId: lookbook,
+      },
+    });
+    expect(created.ok()).toBe(true);
+    await openApp(page);
+
+    // Without a series context the viewer keeps showing the newest record.
+    await openViewerOn(page, "poster-alps-4k.png");
+    await expect(viewer(page).locator(".viewer-prompt-text")).toHaveText(LOOKBOOK_PROMPT);
+    await page.keyboard.press("Escape");
+    await expect(viewer(page)).toHaveCount(0);
+
+    // From Perfume poster: the strip says #3, and Prompt is #3's prompt.
+    const item = await openHistoryRecord(page, FINAL_POSTER);
+    await item.getByRole("button", { name: PERFUME }).click();
+    await card(page).getByRole("button", { name: "Open series" }).click();
+    await page.locator(".series-film-item").nth(2).click();
+    const strip = viewer(page).locator(".sv2-viewer-strip");
+    const prompt = viewer(page).locator(".viewer-prompt-text");
+    await expect(strip).toHaveText("Perfume poster · #3 of 4");
+    await expect(prompt).toHaveText(ALPS_PROMPT);
+    await expect(viewer(page).locator(".viewer-params")).toContainText("16:9");
+    // Paging away and back keeps it.
+    await page.keyboard.press("ArrowRight");
+    await expect(strip).toHaveText("Perfume poster · #4 of 4");
+    await expect(prompt).toHaveText(FINAL_POSTER);
+    await page.keyboard.press("ArrowLeft");
+    await expect(strip).toHaveText("Perfume poster · #3 of 4");
+    await expect(prompt).toHaveText(ALPS_PROMPT);
+  });
+
   test("queue cards carry the badge and the series menu", async ({ page }) => {
     const item = await openHistoryRecord(page, FINAL_POSTER);
     await item.getByRole("button", { name: PERFUME }).click();

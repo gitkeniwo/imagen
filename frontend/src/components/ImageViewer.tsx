@@ -57,10 +57,16 @@ export interface ViewerSeriesContext {
   images: ImageRow[];
   /** Image id → #N of the attempt that produced it. */
   seqByImage: Map<number, number>;
+  /**
+   * Image id → that attempt itself (the one the strip numbers). The Prompt
+   * block shows it, not the newest record of the image, which may belong to
+   * another series.
+   */
+  genByImage: Map<number, Generation>;
 }
 
 export async function loadSeriesViewerContext(seriesId: number): Promise<ViewerSeriesContext> {
-  const rows: { seq: number; outputImage?: ImageRow | null }[] = [];
+  const rows: (Generation & { seq: number })[] = [];
   let total = 0;
   for (let offset = 0; ; ) {
     const page = await seriesApi.timeline(seriesId, { limit: 200, offset });
@@ -72,13 +78,15 @@ export async function loadSeriesViewerContext(seriesId: number): Promise<ViewerS
   rows.sort((a, b) => a.seq - b.seq);
   const images: ImageRow[] = [];
   const seqByImage = new Map<number, number>();
+  const genByImage = new Map<number, Generation>();
   for (const row of rows) {
     const img = row.outputImage;
     if (!img || img.deleted_at || seqByImage.has(img.id)) continue;
     seqByImage.set(img.id, row.seq);
+    genByImage.set(img.id, row);
     images.push(img);
   }
-  return { seriesId, total, images, seqByImage };
+  return { seriesId, total, images, seqByImage, genByImage };
 }
 
 export default function ImageViewer({
@@ -335,17 +343,26 @@ export default function ImageViewer({
 
   // Fetch the record behind this image. Any image: manual records use an
   // upload as their output, so "uploaded" images can have a prompt too.
+  // Opened from a series, it is that series' attempt (the one the context
+  // strip numbers); elsewhere the image's newest record.
+  const seriesGenId = !inTrail ? seriesContext?.genByImage.get(current.id)?.id ?? null : null;
+  const loadGen = useCallback(
+    (imageId: number): Promise<Generation | null> =>
+      seriesGenId !== null ? api.getGeneration(seriesGenId) : api.generationByOutput(imageId),
+    [seriesGenId],
+  );
   useEffect(() => {
     let alive = true;
-    setGen(null);
-    api
-      .generationByOutput(current.id)
+    const known = seriesGenId !== null ? seriesContext?.genByImage.get(current.id) ?? null : null;
+    setGen(known);
+    if (known) return;
+    loadGen(current.id)
       .then((g) => alive && setGen(g))
       .catch(() => alive && setGen(null));
     return () => {
       alive = false;
     };
-  }, [current.id]);
+  }, [current.id, seriesGenId, loadGen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleStar = async () => {
     const prev = starred;
@@ -554,8 +571,7 @@ export default function ImageViewer({
       .join(" · ");
 
   const refreshGeneration = () => {
-    api
-      .generationByOutput(current.id)
+    loadGen(current.id)
       .then(setGen)
       .catch(() => setGen(null));
   };

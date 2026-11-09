@@ -745,6 +745,9 @@ export const api = {
   async generationByOutput(imageId: number): Promise<Generation | null> {
     return handle(await fetch(`/api/generations/by-output/${imageId}`));
   },
+  async getGeneration(id: number): Promise<Generation> {
+    return handle(await fetch(`/api/generations/${id}`, { cache: "no-store" }));
+  },
   // series-v2 B1a: every record that uses an image (output or input).
   async generationsByImage(imageId: number): Promise<{ generations: ImageUse[] }> {
     return handle(await fetch(`/api/generations/by-image/${imageId}`, { cache: "no-store" }));
