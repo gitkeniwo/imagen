@@ -23,6 +23,7 @@ import { CHUNK, useChunkedList } from "../useChunkedList";
 import { useVirtualGrid } from "../useVirtualGrid";
 import { useAnchoredRefresh } from "../useAnchoredRefresh";
 import { useTimeline } from "../useTimeline";
+import { useRowHeightCheck } from "../useRowHeightCheck";
 
 const FAV_COLUMNS_KEY = "imagen-fav-columns";
 const FAV_ANCHOR_KEY = "imagen-favorites-anchor:";
@@ -168,6 +169,12 @@ export default function Favorites({
     refreshKey,
     storageKey: `${FAV_ANCHOR_KEY}${layoutKey}`,
     onRefreshDone: () => setTimelineTick((n) => n + 1),
+  });
+  useRowHeightCheck({
+    windowRef: grid.windowRef,
+    expected: grid.itemHeight,
+    selector: ".hcard",
+    version: data.version,
   });
 
   useEffect(() => {

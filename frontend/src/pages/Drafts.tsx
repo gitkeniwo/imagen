@@ -29,6 +29,7 @@ import { useChunkedList } from "../useChunkedList";
 import { useVirtualGrid } from "../useVirtualGrid";
 import { useAnchoredRefresh } from "../useAnchoredRefresh";
 import { useTimeline } from "../useTimeline";
+import { useRowHeightCheck } from "../useRowHeightCheck";
 
 // Use a new key so the previous single-column-only view does not carry a
 // legacy saved value into the new two-column default.
@@ -148,6 +149,12 @@ export default function Drafts({
     refreshKey,
     storageKey: `${DRAFT_ANCHOR_KEY}${layoutKey}`,
     onRefreshDone: () => setTimelineTick((n) => n + 1),
+  });
+  useRowHeightCheck({
+    windowRef: grid.windowRef,
+    expected: grid.itemHeight,
+    selector: ".gcard",
+    version: data.version,
   });
 
   useEffect(() => {
@@ -467,50 +474,63 @@ export default function Drafts({
                 <div key={draft.id} className="draft-cell">
                   <GenerationCard
                     fixed
-                media={
-                  firstOutput
-                    ? { kind: "image", image: firstOutput, onOpen: () => onOpenViewer(firstOutput, liveOutputs) }
-                    : { kind: "empty" }
-                }
-                aspectRatio={draft.aspect_ratio}
-                extraBadges={
-                  liveOutputs.length > 1 && (
-                    <span className="badge imported" title={t("draft_outputs")}>
-                      {t("draft_outputs_n", { n: liveOutputs.length })}
-                    </span>
-                  )
-                }
-                overlay={
-                  <IconButton
-                    variant={firstOutput ? "overlay" : "ghost"}
-                    className={`draft-pin${draft.pinned ? " is-pinned" : ""}`}
-                    icon="pin"
-                    filled={!!draft.pinned}
-                    label={draft.pinned ? t("unpin_draft") : t("pin_draft")}
-                    aria-pressed={!!draft.pinned}
-                    onClick={() => togglePin(draft)}
-                  />
-                }
-                provider={providerOf(draft)}
-                meta={[draft.model.replace("-image", ""), draft.aspect_ratio, draft.resolution]}
-                prompt={draft.prompt}
-                promptLines={4}
-                inputs={draft.inputImages}
-                onOpenInput={(img) => onOpenViewer(img, draft.inputImages.filter((item) => !item.deleted_at))}
-                onImageContextMenu={(img, trigger, x, y) =>
-                  openDraftImageMenu(draft, img, trigger, x, y)
-                }
-                tags={draft.tags}
-                actions={[
-                  {
-                    icon: "queue",
-                    label: t("draft_queue_short"),
-                    title: t("queue_and_delete_hint"),
-                    primary: true,
-                    onClick: () => queueDraft(draft, true),
-                  },
-                ]}
-                menuItems={menuItems}
+                    media={
+                      firstOutput
+                        ? {
+                            kind: "image",
+                            image: firstOutput,
+                            onOpen: () => onOpenViewer(firstOutput, liveOutputs),
+                          }
+                        : { kind: "empty" }
+                    }
+                    aspectRatio={draft.aspect_ratio}
+                    extraBadges={
+                      liveOutputs.length > 1 && (
+                        <span className="badge imported" title={t("draft_outputs")}>
+                          {t("draft_outputs_n", { n: liveOutputs.length })}
+                        </span>
+                      )
+                    }
+                    overlay={
+                      <IconButton
+                        variant={firstOutput ? "overlay" : "ghost"}
+                        className={`draft-pin${draft.pinned ? " is-pinned" : ""}`}
+                        icon="pin"
+                        filled={!!draft.pinned}
+                        label={draft.pinned ? t("unpin_draft") : t("pin_draft")}
+                        aria-pressed={!!draft.pinned}
+                        onClick={() => togglePin(draft)}
+                      />
+                    }
+                    provider={providerOf(draft)}
+                    meta={[
+                      draft.model.replace("-image", ""),
+                      draft.aspect_ratio,
+                      draft.resolution,
+                    ]}
+                    prompt={draft.prompt}
+                    promptLines={4}
+                    inputs={draft.inputImages}
+                    onOpenInput={(img) =>
+                      onOpenViewer(
+                        img,
+                        draft.inputImages.filter((item) => !item.deleted_at),
+                      )
+                    }
+                    onImageContextMenu={(img, trigger, x, y) =>
+                      openDraftImageMenu(draft, img, trigger, x, y)
+                    }
+                    tags={draft.tags}
+                    actions={[
+                      {
+                        icon: "queue",
+                        label: t("draft_queue_short"),
+                        title: t("queue_and_delete_hint"),
+                        primary: true,
+                        onClick: () => queueDraft(draft, true),
+                      },
+                    ]}
+                    menuItems={menuItems}
                   />
                 </div>
               );

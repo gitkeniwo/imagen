@@ -108,7 +108,8 @@ export default function GenerationCard({
       ? aspectRatio.replace(":", " / ")
       : "1 / 1";
   // No result to show: skip the media block; badges move into the body.
-  const compactMedia = media.kind === "missing" || media.kind === "empty";
+  const compactMedia =
+    !fixed && (media.kind === "missing" || media.kind === "empty");
   const badges = (status || imported || extraBadges) && (
     <div className="gcard-badges">
       {status && <span className={`badge ${status}`}>{statusLabel}</span>}
@@ -147,8 +148,15 @@ export default function GenerationCard({
                   : undefined,
               )}
             />
-          ) : (
+          ) : media.kind === "pending" ? (
             <div className={`q-shimmer${media.active ? " active" : ""}`} />
+          ) : media.kind === "missing" ? (
+            <span className="gcard-media-note">
+              <Icon name="imageMissing" size="sm" />
+              {t("deleted_label")}
+            </span>
+          ) : (
+            <span className="gcard-media-empty" aria-hidden="true" />
           )}
           {badges}
           {overlay && <div className="gcard-overlay">{overlay}</div>}

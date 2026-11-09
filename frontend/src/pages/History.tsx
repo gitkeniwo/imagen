@@ -45,6 +45,7 @@ import { useVirtualGrid } from "../useVirtualGrid";
 import { useAnchoredRefresh } from "../useAnchoredRefresh";
 import { useTimeline } from "../useTimeline";
 import { dateOfDay } from "../timeline";
+import { useRowHeightCheck } from "../useRowHeightCheck";
 
 const HISTORY_COLUMNS_KEY = "imagen-history-columns";
 const HISTORY_ANCHOR_KEY = "imagen-history-anchor:";
@@ -229,6 +230,12 @@ export default function History({
     refreshKey,
     storageKey: `${HISTORY_ANCHOR_KEY}${layoutKey}:${layout}`,
     onRefreshDone: () => setTimelineTick((n) => n + 1),
+  });
+  useRowHeightCheck({
+    windowRef: grid.windowRef,
+    expected: grid.itemHeight,
+    selector: ".hcard",
+    version: data.version,
   });
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;

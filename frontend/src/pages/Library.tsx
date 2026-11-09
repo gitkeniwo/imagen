@@ -38,6 +38,7 @@ import { useVirtualGrid } from "../useVirtualGrid";
 import { monthYear, parseTime } from "../historyTime";
 import { useTimeline } from "../useTimeline";
 import { useAnchoredRefresh } from "../useAnchoredRefresh";
+import { useRowHeightCheck } from "../useRowHeightCheck";
 import { type SeriesTarget, useSeriesActions } from "../components/SeriesMenu";
 import Popover from "../components/ui/Popover";
 
@@ -213,6 +214,12 @@ export default function Library({
     refreshKey,
     storageKey: picker ? undefined : ANCHOR_KEY + layoutKey,
     onRefreshDone: () => setTimelineTick((n) => n + 1),
+  });
+  useRowHeightCheck({
+    windowRef: grid.windowRef,
+    expected: grid.itemHeight,
+    selector: ".lib-tile",
+    version: data.version,
   });
 
   useEffect(() => {

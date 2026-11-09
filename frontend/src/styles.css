@@ -2204,6 +2204,13 @@ body.manager-open { overflow: hidden; }
   flex-wrap: nowrap;
   overflow: hidden;
 }
+.gcard.fixed .gcard-inputs .card-tag {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .gcard-more {
   flex: none;
   color: var(--muted);
@@ -2213,7 +2220,6 @@ body.manager-open { overflow: hidden; }
 .manager-body .drafts-vgrid { margin-right: 70px; }
 .draft-pin.is-pinned { color: var(--accent); }
 .gcard-overlay .draft-pin.is-pinned { color: #fff; }
-.draft-empty-prompt { align-self: flex-start; font-style: italic; color: var(--muted); }
 .draft-editor-modal { width: 680px; max-height: 88vh; overflow-y: auto; }
 .draft-output-hint { margin: var(--space-0_5) 0 var(--space-2); }
 .draft-editor-toggles { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
@@ -2393,6 +2399,7 @@ body.manager-open { overflow: hidden; }
 }
 .gcard-media img { width: 100%; height: 100%; object-fit: contain; display: block; cursor: zoom-in; }
 .gcard-media-note { display: inline-flex; align-items: center; gap: var(--space-1_5); color: var(--muted-2); font-size: var(--fs-sm); }
+.gcard-media-empty { width: 100%; height: 100%; background: var(--panel-2); }
 .gcard-badges { position: absolute; top: var(--space-2); left: var(--space-2); display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .gcard-badges .badge { gap: var(--space-1); white-space: nowrap; }
 .gcard-media .gcard-badges .badge { box-shadow: var(--shadow); }
@@ -2414,14 +2421,7 @@ body.manager-open { overflow: hidden; }
 .gcard-error.aborted { background: var(--badge-pending-bg); color: var(--badge-pending-text); border-color: var(--badge-pending-border); }
 .gcard-error.note { background: var(--badge-note-bg); color: var(--badge-note-text); border-color: var(--badge-note-border); }
 .gcard-error-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gcard-error.open .gcard-error-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.gcard-error-toggle { flex: 0 0 auto; color: inherit; font-size: var(--fs-sm); text-decoration: underline; }
-.prompt-fold-text {
-  margin: 0; white-space: pre-wrap; line-height: 1.45; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: var(--prompt-lines, 3); -webkit-box-orient: vertical; overflow: hidden;
-}
-.prompt-fold-text.expanded { display: block; overflow: visible; }
-.prompt-fold-toggle { margin-top: var(--space-0_5); font-size: var(--fs-sm); }
+.gcard-error .fulltext-trigger { color: inherit; text-decoration: underline; }
 .gcard-inputs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
 .gcard-inputs img, .gcard-inputs .deleted-tile {
   width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-xs);
@@ -3856,16 +3856,6 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     justify-content: center;
   }
 
-  .phone-pager-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1_5);
-    padding-bottom: var(--space-1);
-    font-size: var(--fs-md);
-    color: var(--muted);
-  }
-  .phone-pg { display: inline-flex; align-items: center; gap: 2px; }
-  .phone-pg span { min-width: 54px; text-align: center; font-weight: 600; color: var(--accent-2); }
   .phone-position {
     display: inline-flex; align-items: baseline; gap: var(--space-1_5); min-width: 0; flex: 1;
     margin: 0; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent;
@@ -3875,23 +3865,6 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-position b { color: var(--accent-2); font-weight: 600; }
   .phone-position .icon { flex: none; color: var(--muted); }
   .phone-position:active { opacity: 0.7; }
-  .phone-pg-btn {
-    width: 32px;
-    height: 26px;
-    min-height: 0;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: var(--radius-md);
-    background: transparent;
-    box-shadow: none;
-    color: var(--accent-2);
-  }
-  .phone-pg-btn:hover:not(:disabled) { background: var(--panel-2); }
-  .phone-pg-btn:disabled { opacity: 0.35; }
-  .phone-pager-total { color: var(--muted); font-size: var(--fs-sm); }
   .phone-size {
     margin-left: auto;
     display: inline-flex;
