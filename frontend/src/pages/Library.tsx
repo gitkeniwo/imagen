@@ -185,6 +185,7 @@ export default function Library({
       if (!sticky) return 0;
       return sticky.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
     },
+    topInsetTarget: stickyRef,
   });
 
   const loadTags = () => {

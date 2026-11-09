@@ -1,4 +1,12 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   firstVisibleRowAtY as geometryFirstVisibleRowAtY,
   itemTop as geometryItemTop,
@@ -50,6 +58,8 @@ export interface VirtualGridOptions {
   sectionHeaderHeight?: number | ((windowEl: HTMLDivElement | null) => number);
   // Height hidden under sticky headers at the top of the scroller.
   topInset?: (scroller: HTMLElement) => number;
+  // Observe this element when its own height can change the sticky inset.
+  topInsetTarget?: RefObject<HTMLElement | null>;
 }
 
 function scrollParent(el: HTMLElement | null): HTMLElement {
@@ -78,6 +88,7 @@ export function useVirtualGrid({
   sections,
   sectionHeaderHeight,
   topInset,
+  topInsetTarget,
 }: VirtualGridOptions) {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const windowRef = useRef<HTMLDivElement | null>(null);
@@ -218,6 +229,14 @@ export function useVirtualGrid({
     };
   }, [measure, trackAnchor]);
 
+  useLayoutEffect(() => {
+    const target = topInsetTarget?.current;
+    if (!target) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [measure, topInsetTarget]);
+
   const setScrollTop = useCallback((top: number) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -306,11 +325,8 @@ export function useVirtualGrid({
   // worth of rows so the first paint has something to show.
   const measured = m.width > 0;
 
-  // A label or toolbar can change height without resizing the grid or scroller
-  // (for example Drafts' sticky header after a jump). Re-read the inset after
-  // every commit so visibleStart and visibleEnd follow that layout change.
-  useLayoutEffect(() => {
-    measure();
+  useEffect(() => {
+    if (!measured) measure();
   });
 
   return {
