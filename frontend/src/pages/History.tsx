@@ -206,7 +206,8 @@ export default function History({
       layout === "list"
         ? cssPx(element, "--hcard-list-h", 148)
         : Math.max(0, width - 2) * 0.75 +
-          cssPx(element, "--hcard-body-h", 176) +
+          cssPx(element, "--hcard-body-h", 192) +
+          cssPx(element, "--hcard-grid-gap", 12) +
           2,
     sections,
     sectionHeaderHeight:

@@ -2724,10 +2724,12 @@ button.settings-option:hover:not(:disabled) { border-color: var(--ui-accent-line
 /* Shared virtual-list geometry. Card heights are fixed; long text uses the
    full-text popover instead of growing a row. */
 .virtual-list {
-  --hcard-body-h: 176px;
+  --hcard-body-h: 192px;
   --hcard-list-h: 156px;
   --hlist-day-step: 38px;
+  --hcard-grid-gap: var(--space-3);
 }
+.favorites-vgrid { --hcard-body-h: 224px; }
 .history-vgrid {
   position: relative;
   contain: layout;
@@ -3984,10 +3986,11 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   .phone-island .history-toolbar-row .view-seg { flex: none; }
   .phone-island .history-toolbar .filter-row { margin-top: var(--space-2); }
   .phone-island .history-vgrid {
-    --hcard-body-h: 170px;
+    --hcard-body-h: 184px;
     --hcard-list-h: 150px;
     --hlist-day-step: 34px;
   }
+  .phone-island .favorites-vgrid { --hcard-body-h: 216px; }
 
   /* Favorites/drafts open as subpages: the head sits above the scroller, so the
      sticky toolbar pins at 0 (not 44px, which left a see-through gap) and the

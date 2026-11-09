@@ -1,14 +1,12 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { api, Generation, ImageRow, providerOf } from "../api";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { api, type Generation, type GenerationFilters, type ImageRow, providerOf } from "../api";
 import { useI18n } from "../i18n";
 import { useProviders } from "../useProviders";
 import AddHistoryModal from "../components/AddHistoryModal";
-import { pageSizedToColumns } from "../pageSize";
 import { useFitColumns } from "../useFitColumns";
 import SearchBox from "../components/SearchBox";
 import { useToast } from "../components/Toast";
 import { copyText } from "../clipboard";
-import Icon from "../components/ui/Icon";
 import HistoryItem from "../components/HistoryItem";
 import { downloadImage } from "../components/GenerationCard";
 import Segmented from "../components/ui/Segmented";
@@ -18,16 +16,33 @@ import {
   type ContextMenuQuickAction,
   useContextMenu,
 } from "../components/ui/ContextMenu";
+import type { ViewerPager } from "../components/ImageViewer";
+import PositionLine from "../components/PositionLine";
+import TimelineScrubber from "../components/LibraryScrubber";
+import { CHUNK, useChunkedList } from "../useChunkedList";
+import { useVirtualGrid } from "../useVirtualGrid";
+import { useAnchoredRefresh } from "../useAnchoredRefresh";
+import { useTimeline } from "../useTimeline";
 
-const COMPACT_PAGE_SIZE = 12;
-const FULL_PAGE_SIZE = 30;
 const FAV_COLUMNS_KEY = "imagen-fav-columns";
+const FAV_ANCHOR_KEY = "imagen-favorites-anchor:";
 const FAV_COLUMN_OPTIONS = [1, 2, 3];
 const FAV_COLUMN_OPTIONS_FULL = [2, 3, 4];
+const ENSURE_DELAY_MS = 100;
 
 function initialFavColumns() {
   const saved = Number(localStorage.getItem(FAV_COLUMNS_KEY));
   return FAV_COLUMN_OPTIONS_FULL.includes(saved) ? saved : 2;
+}
+
+function cssPx(
+  element: HTMLElement | null,
+  property: string,
+  fallback: number,
+) {
+  if (!element) return fallback;
+  const value = parseFloat(getComputedStyle(element).getPropertyValue(property));
+  return Number.isFinite(value) ? value : fallback;
 }
 
 // Prompt-centric "favorites" view: the saved-prompt collection. A favorite is a
@@ -50,7 +65,12 @@ export default function Favorites({
   onUseAsRef?: (img: ImageRow) => void;
   trayIds?: number[];
   onRemoveFromTray?: (img: ImageRow) => void;
-  onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
+  onOpenViewer: (
+    img: ImageRow,
+    list: ImageRow[],
+    pager?: ViewerPager,
+    onIndexChange?: (globalIndex: number, image?: ImageRow) => void,
+  ) => void;
   compact?: boolean;
   refreshKey?: number;
   onChanged?: () => void;
@@ -60,63 +80,123 @@ export default function Favorites({
   const { isReady } = useProviders();
   const toast = useToast();
   const { open: openContextMenu } = useContextMenu();
-  const [gens, setGens] = useState<Generation[]>([]);
   const [query, setQuery] = useState("");
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [columns, setColumns] = useState(initialFavColumns);
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
-  const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Fewer columns while cards would be too narrow for their buttons.
+  const [outputTotal, setOutputTotal] = useState(0);
+  const [timelineTick, setTimelineTick] = useState(0);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const notesDirty = useRef(new Set<number>());
+  const stickyRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const fitColumns = useFitColumns(rootRef, columns);
-  const pageSize = pageSizedToColumns(
-    compact ? COMPACT_PAGE_SIZE : FULL_PAGE_SIZE,
-    phone ? 1 : fitColumns,
+  const layoutKey = phone ? "phone" : compact ? "compact" : "full";
+
+  const filters = useMemo<GenerationFilters>(
+    () => ({ starred: true, q: query.trim() || undefined }),
+    [query],
   );
-
-  const load = () => {
-    setLoading(true);
-    setLoadError(null);
-    api
-      .listGenerations({
-        starred: true,
-        limit: pageSize,
-        offset: page * pageSize,
-        q: query || undefined,
-      })
-      .then((r) => {
-        setGens(r.generations);
-        setTotal(r.total);
-        // Seed editable note drafts from the output image's note.
-        const seed: Record<number, string> = {};
-        for (const g of r.generations) {
-          if (g.outputImage) seed[g.outputImage.id] = g.outputImage.note ?? "";
+  const filtersKey = JSON.stringify(filters);
+  const data = useChunkedList<Generation>({
+    key: filtersKey,
+    fetchChunk: async (offset, limit, signal) => {
+      const result = await api.listGenerations(
+        { ...filters, limit, offset },
+        signal,
+      );
+      setOutputTotal((current) =>
+        current === result.output_total ? current : result.output_total,
+      );
+      return { rows: result.generations, total: result.total };
+    },
+    fetchIds: async (offset, limit, signal) =>
+      (
+        await api.listGenerationIds(
+          { ...filters, offset, limit },
+          signal,
+        )
+      ).ids,
+    idOf: (generation) => generation.id,
+    onRows: (rows) => {
+      setNotes((current) => {
+        let next = current;
+        for (const generation of rows) {
+          const image = generation.outputImage;
+          if (!image || notesDirty.current.has(image.id)) continue;
+          const value = image.note ?? "";
+          if (next[image.id] === value) continue;
+          if (next === current) next = { ...current };
+          next[image.id] = value;
         }
-        setNotes(seed);
-        if (r.total > 0 && page * pageSize >= r.total) {
-          setPage(Math.max(0, Math.ceil(r.total / pageSize) - 1));
-        }
-      })
-      .catch((e) => setLoadError((e as Error).message))
-      .finally(() => setLoading(false));
-  };
+        return next;
+      });
+    },
+  });
+  const total = data.total;
+  const loading = !data.ready;
+  const loadError = data.error;
+  const {
+    timeline,
+    loading: timelineLoading,
+    error: timelineError,
+  } = useTimeline(
+    () => api.generationTimeline(filters),
+    filtersKey,
+    timelineTick,
+  );
+  const grid = useVirtualGrid({
+    count: total,
+    columns: phone ? 1 : fitColumns,
+    itemHeight: (width, element) =>
+      Math.max(0, width - 2) * 0.75 +
+      cssPx(element, "--hcard-body-h", 224) +
+      cssPx(element, "--hcard-grid-gap", 12) +
+      2,
+    topInset: (scroller) => {
+      const sticky = stickyRef.current;
+      if (!sticky) return 0;
+      return sticky.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top;
+    },
+  });
+  const { refresh, newCount, clearNew } = useAnchoredRefresh({
+    data,
+    grid,
+    idOf: (generation) => generation.id,
+    filtersKey,
+    refreshKey,
+    storageKey: `${FAV_ANCHOR_KEY}${layoutKey}`,
+    onRefreshDone: () => setTimelineTick((n) => n + 1),
+  });
 
-  useEffect(load, [page, pageSize, query, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!data.ready || total === 0) return;
+    const timer = window.setTimeout(
+      () => data.ensure(grid.startIndex, grid.endIndex),
+      ENSURE_DELAY_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [data.ready, data.ensure, grid.endIndex, grid.startIndex, total]);
 
   useEffect(() => {
     localStorage.setItem(FAV_COLUMNS_KEY, String(columns));
   }, [columns]);
 
+  useEffect(() => {
+    setJumpOpen(false);
+  }, [filtersKey]);
+
   const saveNote = async (img: ImageRow) => {
     const draft = (notes[img.id] ?? "").trim();
-    if (draft === (img.note ?? "")) return;
+    if (draft === (img.note ?? "")) {
+      notesDirty.current.delete(img.id);
+      return;
+    }
     try {
       await api.patchImage(img.id, { note: draft });
       img.note = draft;
+      notesDirty.current.delete(img.id);
       onChanged?.();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
@@ -126,7 +206,7 @@ export default function Favorites({
   const unfavorite = async (img: ImageRow) => {
     try {
       await api.patchImage(img.id, { starred: false });
-      load();
+      void refresh();
       onChanged?.();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
@@ -138,7 +218,7 @@ export default function Favorites({
     try {
       await api.patchImage(img.id, { starred: next });
       img.starred = next ? 1 : 0;
-      load();
+      void refresh();
       onChanged?.();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }));
@@ -224,73 +304,87 @@ export default function Favorites({
     });
   };
 
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const hasPages = total > pageSize;
-  const pageOutputs = gens
-    .map((g) => g.outputImage)
-    .filter((o): o is ImageRow => !!o);
+  const openFavoriteViewer = (
+    img: ImageRow,
+    generation: Generation,
+    index: number,
+  ) => {
+    img.generation_offset = index;
+    onOpenViewer(
+      img,
+      [img],
+      {
+        offset: generation.output_index ?? 0,
+        total: outputTotal,
+        batchSize: CHUNK,
+        fetch: async (offset, limit) => {
+          const result = await api.listGenerations({
+            ...filters,
+            limit,
+            offset,
+            uniqueOutputs: true,
+          });
+          const outputs: ImageRow[] = [];
+          for (const row of result.generations) {
+            const output = row.outputImage;
+            if (!output || output.deleted_at) continue;
+            output.generation_offset = row.generation_offset;
+            outputs.push(output);
+          }
+          return outputs;
+        },
+      },
+      (globalIndex, output) => {
+        const generationOffset = output?.generation_offset ?? globalIndex;
+        grid.scrollToIndex(generationOffset, "nearest");
+        data.ensure(generationOffset, generationOffset);
+      },
+    );
+  };
 
-  const pager = hasPages ? (
-    <div className="pager">
-      <button disabled={page === 0 || loading} onClick={() => setPage((p) => p - 1)}>
-        {t("prev_page")}
-      </button>
-      <span className="muted small">
-        {t("page_status", { page: page + 1, pages: pageCount, total })}
-      </span>
-      <button
-        disabled={page >= pageCount - 1 || loading}
-        onClick={() => setPage((p) => p + 1)}
-      >
-        {t("next_page")}
-      </button>
-    </div>
-  ) : null;
+  const jumpToIndex = (next: number) => {
+    if (total === 0) return;
+    const index = Math.max(0, Math.min(total - 1, next));
+    grid.scrollToIndex(index, "start");
+    data.ensure(index, Math.min(total - 1, index + Math.max(1, grid.cols)));
+    clearNew();
+  };
 
-  const phonePager = (
-    <div className="phone-pager-row">
-      <div className="phone-pg">
-        {hasPages && (
-          <button
-            type="button"
-            className="phone-pg-btn"
-            aria-label={t("prev_page")}
-            disabled={page === 0 || loading}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            <Icon name="prev" size="sm" />
-          </button>
-        )}
-        <span>
-          {hasPages
-            ? t("phone_page_status", { page: page + 1, pages: pageCount })
-            : t("phone_total_images", { n: total })}
-        </span>
-        {hasPages && (
-          <button
-            type="button"
-            className="phone-pg-btn"
-            aria-label={t("next_page")}
-            disabled={page >= pageCount - 1 || loading}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            <Icon name="next" size="sm" />
-          </button>
-        )}
-      </div>
-      {hasPages && <span className="phone-pager-total">{t("phone_total_images", { n: total })}</span>}
-    </div>
+  const positionLine = (
+    <PositionLine
+      total={total}
+      index={grid.visibleStart}
+      endIndex={grid.visibleEnd}
+      atTop={grid.atTop}
+      timeline={timeline}
+      timelineLoading={timelineLoading}
+      timelineError={timelineError}
+      phone={phone}
+      unit="records"
+      buttonClass="list-position"
+      newCount={newCount}
+      jumpOpen={jumpOpen}
+      onJumpOpenChange={setJumpOpen}
+      onJump={jumpToIndex}
+      onBackToTop={() => {
+        clearNew();
+        grid.scrollToTop(true);
+      }}
+      onNewClick={() => {
+        clearNew();
+        grid.scrollToTop(true);
+      }}
+    />
   );
 
   return (
     <div ref={rootRef}>
-      <div className="history-toolbar">
+      <div className="history-toolbar" ref={stickyRef}>
         <div className="history-toolbar-row">
           <SearchBox
             value={query}
             onChange={(q) => {
               setQuery(q);
-              setPage(0);
             }}
             placeholder={t("search_placeholder_history")}
           />
@@ -302,7 +396,6 @@ export default function Favorites({
                   value={columns}
                   onChange={(n) => {
                     setColumns(n);
-                    setPage(0);
                   }}
                   options={(compact ? FAV_COLUMN_OPTIONS : FAV_COLUMN_OPTIONS_FULL).map((n) => ({
                     value: n,
@@ -313,21 +406,30 @@ export default function Favorites({
             </ViewPopover>
           )}
         </div>
+        {positionLine}
       </div>
-      {phone ? phonePager : pager}
 
       {loading ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
           <span className="spinner" /> {t("loading")}
         </div>
       ) : loadError ? (
-        <div className={`panel history-panel${compact ? " compact" : ""}`}>
+        total === 0 ? (
+          <div className={`panel history-panel${compact ? " compact" : ""}`}>
+            <div className="load-error">
+              <span className="small">{t("load_error", { msg: loadError })}</span>
+              <button onClick={data.reset}>{t("retry")}</button>
+            </div>
+          </div>
+        ) : (
           <div className="load-error">
             <span className="small">{t("load_error", { msg: loadError })}</span>
-            <button onClick={load}>{t("retry")}</button>
+            <button onClick={() => data.ensure(grid.startIndex, grid.endIndex)}>
+              {t("retry")}
+            </button>
           </div>
-        </div>
-      ) : gens.length === 0 ? (
+        )
+      ) : total === 0 ? (
         <div className={`panel muted history-panel${compact ? " compact" : ""}`}>
           {query ? (
             <div className="empty-state">
@@ -335,7 +437,6 @@ export default function Favorites({
               <button
                 onClick={() => {
                   setQuery("");
-                  setPage(0);
                 }}
               >
                 {t("clear_filters")}
@@ -345,51 +446,119 @@ export default function Favorites({
             t("favorites_empty")
           )}
         </div>
-      ) : (
-        <div
-          className={`history-list hlist grid${compact ? " compact" : ""}`}
-          style={{ "--history-columns": fitColumns } as CSSProperties}
-        >
-          {gens.map((g) => {
-            const outImg = g.outputImage ?? null;
-            return (
-              <HistoryItem
-                key={g.id}
-                g={g}
-                layout="grid"
-                output={outImg}
-                missing={false}
-                onOpen={() => outImg && onOpenViewer(outImg, pageOutputs)}
-                onToggleStar={outImg ? () => unfavorite(outImg) : undefined}
-                onOpenInput={(im) => onOpenViewer(im, g.inputs ?? [])}
-                tags={outImg?.tags ?? []}
-                onReuse={() => onReuse(g)}
-                onRerun={onRerun && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
-                onUseAsRef={onUseAsRef && outImg ? () => onUseAsRef(outImg) : undefined}
-                onImageContextMenu={(img, trigger, x, y, isOutput, onView) =>
-                  openFavoriteMenu(g, img, isOutput, trigger, x, y, onView)
-                }
-                onEdit={() => setEditingGen(g)}
-                onDuplicate={() => setDuplicatingGen(g)}
-                header={
-                  outImg && (
-                    <input
-                      className="fav-note"
-                      value={notes[outImg.id] ?? ""}
-                      placeholder={t("note_placeholder")}
-                      aria-label={t("note_placeholder")}
-                      onChange={(e) => setNotes((n) => ({ ...n, [outImg.id]: e.target.value }))}
-                      onBlur={() => saveNote(outImg)}
-                    />
-                  )
-                }
-              />
-            );
-          })}
-        </div>
-      )}
+      ) : null}
 
-      {!phone && pager}
+      <div
+        className="history-vgrid favorites-vgrid virtual-list"
+        ref={grid.gridRef}
+        style={{ height: grid.totalHeight }}
+      >
+        <div
+          ref={grid.windowRef}
+          className={`history-list hlist grid${compact ? " compact" : ""}`}
+          style={
+            {
+              "--history-columns": grid.cols,
+              gridTemplateColumns: `repeat(${grid.cols}, minmax(0, 1fr))`,
+              gridAutoRows:
+                grid.itemHeight > 0 ? `${grid.itemHeight}px` : undefined,
+              transform: `translateY(${grid.offsetY}px)`,
+            } as CSSProperties
+          }
+        >
+          {Array.from(
+            { length: Math.max(0, grid.endIndex - grid.startIndex + 1) },
+            (_, offset) => {
+              const index = grid.startIndex + offset;
+              const generation = data.get(index);
+              if (!generation) {
+                return (
+                  <div key={index} className="lib-skeleton" aria-hidden="true" />
+                );
+              }
+              const outImg =
+                generation.outputImage && !generation.outputImage.deleted_at
+                  ? generation.outputImage
+                  : null;
+              return (
+                <div key={generation.id} className="history-cell">
+                  <HistoryItem
+                    g={generation}
+                    layout="grid"
+                    output={outImg}
+                    missing={false}
+                    onOpen={() =>
+                      outImg &&
+                      openFavoriteViewer(outImg, generation, index)
+                    }
+                    onToggleStar={
+                      outImg ? () => unfavorite(outImg) : undefined
+                    }
+                    onOpenInput={(img) =>
+                      onOpenViewer(img, generation.inputs ?? [])
+                    }
+                    tags={outImg?.tags ?? []}
+                    onReuse={() => onReuse(generation)}
+                    onRerun={
+                      onRerun && isReady(providerOf(generation))
+                        ? () => onRerun(generation)
+                        : undefined
+                    }
+                    onUseAsRef={
+                      onUseAsRef && outImg
+                        ? () => onUseAsRef(outImg)
+                        : undefined
+                    }
+                    onImageContextMenu={(img, trigger, x, y, isOutput, onView) =>
+                      openFavoriteMenu(
+                        generation,
+                        img,
+                        isOutput,
+                        trigger,
+                        x,
+                        y,
+                        onView,
+                      )
+                    }
+                    onEdit={() => setEditingGen(generation)}
+                    onDuplicate={() => setDuplicatingGen(generation)}
+                    header={
+                      outImg && (
+                        <input
+                          className="fav-note"
+                          value={notes[outImg.id] ?? outImg.note ?? ""}
+                          placeholder={t("note_placeholder")}
+                          aria-label={t("note_placeholder")}
+                          onChange={(event) => {
+                            notesDirty.current.add(outImg.id);
+                            setNotes((current) => ({
+                              ...current,
+                              [outImg.id]: event.target.value,
+                            }));
+                          }}
+                          onBlur={() => void saveNote(outImg)}
+                        />
+                      )
+                    }
+                  />
+                </div>
+              );
+            },
+          )}
+        </div>
+      </div>
+
+      <TimelineScrubber
+        mode={phone ? "phone" : compact ? "compact" : "full"}
+        total={total}
+        index={grid.visibleStart}
+        step={Math.max(1, grid.visibleEnd - grid.visibleStart + 1)}
+        timeline={timeline}
+        scrollerRef={grid.scrollerRef}
+        headerRef={stickyRef}
+        onSeek={(index) => grid.scrollToIndex(index, "start")}
+        onLongPress={phone ? () => setJumpOpen(true) : undefined}
+      />
 
       {editingGen && (
         <AddHistoryModal
@@ -397,7 +566,7 @@ export default function Favorites({
           onClose={() => setEditingGen(null)}
           onSaved={() => {
             setEditingGen(null);
-            load();
+            void refresh();
           }}
         />
       )}
@@ -407,7 +576,7 @@ export default function Favorites({
           onClose={() => setDuplicatingGen(null)}
           onSaved={() => {
             setDuplicatingGen(null);
-            load();
+            void refresh();
           }}
         />
       )}
