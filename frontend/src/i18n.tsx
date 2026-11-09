@@ -856,6 +856,10 @@ const zh: Dict = {
   provider_error_last_provider: "至少保留一个生成服务开启。",
   provider_error_key_from_env: "密钥由 IMAGEN_GEMINI_API_KEY 提供，不能在应用内修改。",
   provider_error_key_env_only: "Docker 服务器模式不能保存密钥，请使用 IMAGEN_GEMINI_API_KEY。",
+
+  // series-v2 B1b
+  series_archived_here: "已归档 — 新的尝试仍会归入这里。",
+  series_edit_move_hint: "修改这条记录会移到新系列，原系列中的编号随之空出。",
 };
 
 const en: Dict = {
@@ -1741,6 +1745,11 @@ const en: Dict = {
     "The key is provided by IMAGEN_GEMINI_API_KEY and cannot be changed in the app.",
   provider_error_key_env_only:
     "Docker server mode cannot save a key; use IMAGEN_GEMINI_API_KEY.",
+
+  // series-v2 B1b
+  series_archived_here: "Archived — new tries still go here.",
+  series_edit_move_hint:
+    "Changing it moves this record. Its number in the old series is freed.",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };
