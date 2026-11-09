@@ -447,22 +447,29 @@ test("Favorites keeps an edited note and anchors after unfavoriting", async ({ p
   await scrollList(page, "history-vgrid", 0.35);
   await page.waitForTimeout(150);
 
-  const visible = await page.locator(".history-vgrid article").evaluateAll((nodes) => {
-    const scroller = document.querySelector(".side-scroll")!;
-    const viewport = scroller.getBoundingClientRect();
-    return nodes
-      .map((node, index) => ({
-        index,
-        rect: node.getBoundingClientRect(),
-      }))
-      .filter(
-        (item) =>
-          item.rect.top < viewport.bottom &&
-          item.rect.bottom > viewport.top,
-      )
-      .map((item) => item.index);
-  });
-  expect(visible.length).toBeGreaterThan(1);
+  let visible: number[] = [];
+  await expect
+    .poll(async () => {
+      visible = await page
+        .locator(".history-vgrid article")
+        .evaluateAll((nodes) => {
+          const scroller = document.querySelector(".side-scroll")!;
+          const viewport = scroller.getBoundingClientRect();
+          return nodes
+            .map((node, index) => ({
+              index,
+              rect: node.getBoundingClientRect(),
+            }))
+            .filter(
+              (item) =>
+                item.rect.top < viewport.bottom &&
+                item.rect.bottom > viewport.top,
+            )
+            .map((item) => item.index);
+        });
+      return visible.length;
+    })
+    .toBeGreaterThan(1);
   const articles = page.locator(".history-vgrid article");
   const note = articles.nth(visible[0]).locator(".fav-note");
   const totalBefore = Number(

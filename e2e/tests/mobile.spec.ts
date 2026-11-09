@@ -380,6 +380,8 @@ async function expectJumpControls(page: Page, panel: Locator) {
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).tap();
   await expect(dialog).toHaveCount(0);
+  // Let the closed sheet's touch sequence finish before starting a new press.
+  await page.waitForTimeout(250);
 
   const scrollbar = panel.getByRole("scrollbar", { name: "Browse position" });
   await expect(scrollbar).toBeVisible();
