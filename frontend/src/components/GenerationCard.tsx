@@ -121,6 +121,10 @@ export default function GenerationCard({
       {extraBadges}
     </div>
   );
+  const shownInputs = fixed ? inputs.slice(0, 3) : inputs;
+  const hiddenInputs = inputs.length - shownInputs.length;
+  const shownTags = fixed ? (tags ?? []).slice(0, 2) : tags ?? [];
+  const hiddenTags = (tags?.length ?? 0) - shownTags.length;
 
   return (
     <article
@@ -172,10 +176,12 @@ export default function GenerationCard({
         </div>
         {substatus && <div className="q-substatus">{substatus}</div>}
         {error && <ErrorLine kind={error.kind} message={error.message} />}
-        {prompt && <PromptClamp text={prompt} lines={promptLines ?? 3} />}
-        {(inputs.length > 0 || (tags && tags.length > 0)) && (
+        {prompt !== undefined && (
+          <PromptClamp text={prompt} lines={promptLines ?? 3} />
+        )}
+        {(shownInputs.length > 0 || shownTags.length > 0) && (
           <div className="gcard-inputs">
-            {inputs.map((im) =>
+            {shownInputs.map((im) =>
               im.deleted_at ? (
                 <span key={im.id} className="deleted-tile" title={t("deleted_label")}>
                   <Icon name="imageMissing" />
@@ -199,11 +205,17 @@ export default function GenerationCard({
                 />
               ),
             )}
-            {tags?.map((tg) => (
+            {hiddenInputs > 0 && (
+              <span className="gcard-more">+{hiddenInputs}</span>
+            )}
+            {shownTags.map((tg) => (
               <span key={tg.id} className="card-tag">
                 {tg.name}
               </span>
             ))}
+            {hiddenTags > 0 && (
+              <span className="gcard-more">+{hiddenTags}</span>
+            )}
           </div>
         )}
         <div className="gcard-actions">

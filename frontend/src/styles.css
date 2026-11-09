@@ -2158,13 +2158,59 @@ body.manager-open { overflow: hidden; }
 /* ===== persistent task drafts ===== */
 .draft-toolbar {
   display: flex; align-items: center; gap: var(--space-2_5); margin-bottom: var(--space-3); flex-wrap: wrap;
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
 }
 .draft-toolbar > :first-child { flex: 1; min-width: 0; }
 .draft-new-button { flex: 0 0 auto; white-space: nowrap; }
 .draft-columns { flex: 0 0 auto; }
 .draft-list {
-  display: grid; grid-template-columns: repeat(var(--draft-columns, 1), minmax(0, 1fr)); gap: var(--space-3); align-items: start;
+  display: grid; grid-template-columns: repeat(var(--draft-columns, 1), minmax(0, 1fr)); gap: var(--space-3); align-items: stretch;
 }
+.drafts-vgrid {
+  --gcard-body-h: 200px;
+  position: relative;
+  contain: layout;
+  margin-right: 16px;
+}
+.drafts-vgrid > .draft-list {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+.draft-cell {
+  min-width: 0;
+  height: 100%;
+}
+.drafts-vgrid .gcard.fixed {
+  height: 100%;
+}
+.gcard.fixed .gcard-media {
+  aspect-ratio: 4 / 3 !important;
+}
+.gcard.fixed .gcard-body {
+  height: var(--gcard-body-h);
+  overflow: hidden;
+}
+.gcard.fixed .gcard-meta,
+.gcard.fixed .hcard-prompt,
+.gcard.fixed .gcard-inputs,
+.gcard.fixed .gcard-actions {
+  flex: none;
+}
+.gcard.fixed .gcard-inputs {
+  height: 32px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.gcard-more {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.manager-body .drafts-vgrid { margin-right: 70px; }
 .draft-pin.is-pinned { color: var(--accent); }
 .gcard-overlay .draft-pin.is-pinned { color: #fff; }
 .draft-empty-prompt { align-self: flex-start; font-style: italic; color: var(--muted); }
@@ -4005,6 +4051,10 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   }
   .phone-island .draft-toolbar .searchbox input { font-size: 15px; }
   .phone-island .draft-toolbar .draft-new-button { width: 40px; height: 40px; flex: none; }
+  .phone-island .drafts-vgrid {
+    --gcard-body-h: 190px;
+    margin-right: 5px;
+  }
 
   /* Cards: one per row, thumbnail on the left, like the queue rows. */
   .phone-island .hlist,
