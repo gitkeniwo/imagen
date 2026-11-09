@@ -121,7 +121,9 @@ export function ComposerParams({
 
       {setSeriesId && (
         <>
-          <span className="param-label" title={t("series_row_hint")}>{t("series_series")}</span>
+          <span className="param-label param-label-series" title={t("series_row_hint")}>
+            {t("series_series")}
+          </span>
           <SeriesField value={seriesId ?? null} onChange={setSeriesId} />
         </>
       )}

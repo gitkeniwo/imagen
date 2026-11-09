@@ -4945,6 +4945,9 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
 .series-row-n-inline { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 
 /* ===== series-v2 B1b ===== */
+.param-label-series {
+  align-self: start; display: flex; align-items: center; min-height: 28px;
+}
 .series-pill.archived,
 .series-pill.archived.on {
   border-style: dashed; border-color: var(--badge-blocked-border);

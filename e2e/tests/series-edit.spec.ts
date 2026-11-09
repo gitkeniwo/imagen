@@ -193,6 +193,14 @@ test("series cards and list rows preview the latest prompt", async ({ page }) =>
   const peek = page.locator(".series-prompt-peek");
   await expect(peek).toBeVisible({ timeout: 8_000 });
   await expect(peek).toContainText(latest.prompt.slice(0, 40));
+  const header = await peek.locator(".series-prompt-peek-latest").innerText();
+  expect(header).toMatch(/^Latest · \d+ (try|tries) · /);
+  expect(header.match(/\b\d{2}:\d{2}\b/g) ?? []).toHaveLength(1);
+  const params = peek.locator(".series-prompt-peek-params");
+  await expect(params).not.toContainText("-image");
+  await expect(params).toContainText(
+    latest.model.replace("-image", "").replace("-preview", ""),
+  );
   await page.mouse.move(2, 2);
   await expect(peek).toHaveCount(0);
 
@@ -265,6 +273,13 @@ test("an archived bound series is marked in the field, tab and Generate hint", a
   await expect(archivedTab).toBeVisible();
   await expect(archivedTab.locator(".ws-tab-series.archived .icon")).toBeVisible();
   await expect(composer.locator(".series-next-hint.archived")).toBeVisible();
+
+  await page.setViewportSize({ width: 820, height: 800 });
+  const fieldBox = (await composer.locator(".series-field").boundingBox())!;
+  const pillBox = (await composer.locator(".series-pill").boundingBox())!;
+  const labelBox = (await composer.locator(".param-label-series").boundingBox())!;
+  expect(fieldBox.height).toBeGreaterThan(pillBox.height + 8);
+  expect(Math.abs(labelBox.y + labelBox.height / 2 - (pillBox.y + pillBox.height / 2))).toBeLessThan(6);
 
   const prompt = "E2E archived series still generates";
   await composer.getByRole("textbox", { name: "Prompt" }).fill(prompt);

@@ -14,7 +14,7 @@ import {
   seriesApi,
 } from "../api";
 import { useI18n } from "../i18n";
-import { cardTime, clockTime, parseTime } from "../historyTime";
+import { cardTime, clockTime, dayKey, parseTime } from "../historyTime";
 import { useSeries } from "../seriesStore";
 import { useRemote } from "../remote";
 import { pressable } from "../a11y";
@@ -457,6 +457,12 @@ export default function Series({
     ? promptCache.get(promptPeek.series.id)
     : undefined;
   const peekWhen = peekGen ? parseTime(peekGen.created_at) : null;
+  const peekTries = Math.max(1, peekGen?.attempts ?? 1);
+  const peekStamp = peekWhen
+    ? dayKey(peekWhen) === dayKey(now)
+      ? clockTime(peekWhen, lang)
+      : `${cardTime(peekWhen, now, lang)} ${clockTime(peekWhen, lang)}`
+    : "";
   let peekLeft = 0;
   let peekTop = 0;
   if (promptPeek) {
@@ -701,9 +707,8 @@ export default function Series({
             <div className="series-prompt-peek-head">
               <span className="series-prompt-peek-latest">
                 {t("series_latest")}
-                {peekWhen
-                  ? ` · ${cardTime(peekWhen, new Date(), lang)} ${clockTime(peekWhen, lang)}`
-                  : ""}
+                {` · ${t("series_tries_n", { n: peekTries })}`}
+                {peekStamp ? ` · ${peekStamp}` : ""}
               </span>
               <IconButton
                 icon="copy"
@@ -720,7 +725,7 @@ export default function Series({
             </p>
             <div className="series-prompt-peek-params">
               {[
-                peekGen.model,
+                peekGen.model.replace("-image", "").replace("-preview", ""),
                 peekGen.resolution,
                 peekGen.aspect_ratio,
                 peekGen.inputs?.length
