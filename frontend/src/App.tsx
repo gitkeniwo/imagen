@@ -298,11 +298,18 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [isDesktopHost]);
 
-  // Shell deep link: the menubar popover asks for a specific Settings section.
+  // Shell deep link: ⌘, (app menu › 设置…) opens the modal generically, while
+  // the menubar popover asks for a specific Settings section.
   useEffect(() => {
     const onOpenSettings = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
       if (typeof detail !== "string") return;
+      if (detail === "settings") {
+        // Generic ⌘,: open at the section the UI last requested (Library by
+        // default) instead of forcing one.
+        setShowSettings(true);
+        return;
+      }
       const providerMatch = /^providers:(vertex|gemini)$/.test(detail);
       if (
         detail !== "library" &&

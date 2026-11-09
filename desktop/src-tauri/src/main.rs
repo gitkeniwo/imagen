@@ -22,6 +22,10 @@ use tauri::{
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 
+/// App menu › 设置… (⌘,). The accelerator is the main page's entry into the
+/// Settings modal; the page listens for `imagen:open-settings`.
+pub const SETTINGS_MENU_ID: &str = "open-settings";
+
 /// Bring Imagen to the front, as a regular app again. Every entry point shares
 /// this: ⌘D, the popover, the tray menu, Reopen, single-instance, and the
 /// "Remote access settings…" action.
@@ -39,6 +43,35 @@ pub fn show_main(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     activate_app();
     popover::hide(app);
+}
+
+/// Show the main window and ask the app page to open Settings. `section` is a
+/// Settings section id; `"settings"` is the generic ⌘, request that opens the
+/// modal at whatever section the page last used.
+pub fn open_settings(app: &AppHandle, section: &str) {
+    show_main(app);
+    let port = backend::port(app);
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    // Only the app page (served by the library backend) listens for this; the
+    // startup and error pages would ignore it, and show_main already brought
+    // them forward.
+    let on_app = window
+        .url()
+        .map(|url| {
+            url.scheme() == "http"
+                && url.host_str() == Some("127.0.0.1")
+                && url.port() == Some(port)
+        })
+        .unwrap_or(false);
+    if !on_app {
+        return;
+    }
+    let detail = serde_json::Value::String(section.to_string());
+    let _ = window.eval(format!(
+        "window.dispatchEvent(new CustomEvent('imagen:open-settings',{{detail:{detail}}}))"
+    ));
 }
 
 /// Monitor containing a point in *physical* pixels (the space tray rects and
@@ -131,6 +164,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         Some("CmdOrCtrl+Shift+L"),
     )?;
+    // Standard macOS placement (right under About) and the conventional ⌘,.
+    let settings = MenuItem::with_id(app, SETTINGS_MENU_ID, "设置…", true, Some("CmdOrCtrl+,"))?;
 
     // Filled from ui.json once the backend state exists (library::refresh_recent_menu).
     let recent = Submenu::with_id(app, library::RECENT_MENU_ID, "打开最近的图库", false)?;
@@ -141,6 +176,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         &[
             &PredefinedMenuItem::about(app, None, Some(about))?,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
             &PredefinedMenuItem::separator(app)?,
             &change,
             &recent,
@@ -271,6 +308,18 @@ fn main() {
         // WKWebView, and Imagen adds the library-location command.
         .menu(build_menu)
         .on_menu_event(|app, event| {
+            if event.id() == SETTINGS_MENU_ID {
+                // From the popover the same ⌘, means "Remote access settings",
+                // matching the shortcut hint next to that row. Everywhere else
+                // it opens the Settings modal where the page left it.
+                let section = if popover::is_visible(app) {
+                    "remote"
+                } else {
+                    "settings"
+                };
+                open_settings(app, section);
+                return;
+            }
             if tray::handle_menu_event(app, &event) {
                 return;
             }

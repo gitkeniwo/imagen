@@ -214,25 +214,7 @@ pub fn menubar_open_main(app: AppHandle) {
 
 #[tauri::command]
 pub fn menubar_open_settings(app: AppHandle) {
-    crate::show_main(&app);
-    let port = backend::port(&app);
-    if let Some(window) = app.get_webview_window("main") {
-        // Only the app page listens for this; the startup and error pages would
-        // ignore it, and the popover already brought them forward.
-        let on_app = window
-            .url()
-            .map(|url| {
-                url.scheme() == "http"
-                    && url.host_str() == Some("127.0.0.1")
-                    && url.port() == Some(port)
-            })
-            .unwrap_or(false);
-        if on_app {
-            let _ = window.eval(
-                "window.dispatchEvent(new CustomEvent('imagen:open-settings',{detail:'remote'}))",
-            );
-        }
-    }
+    crate::open_settings(&app, "remote");
 }
 
 #[tauri::command]
