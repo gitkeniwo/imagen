@@ -155,7 +155,8 @@ test("history editor assigns and clears a series", async ({ page }) => {
     })
     .toBe(series.id);
 
-  await expect(item).toBeVisible();
+  await page.getByPlaceholder("Search prompt…").fill(prompt);
+  await expect(item).toBeVisible({ timeout: 15_000 });
   await item.getByRole("button", { name: "Edit note & tags" }).click();
   await expect(dialog).toBeVisible();
   await dialog.locator(".series-pill").click();
