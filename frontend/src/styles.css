@@ -3340,6 +3340,7 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
     bottom: calc(16px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
     z-index: 60;
+    width: min(388px, calc(100vw - var(--space-4)));
     display: flex;
     gap: 2px;
     padding: 4px;
@@ -3357,7 +3358,9 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   }
   .phone-tab {
     position: relative;
-    width: 74px;
+    flex: 1 1 74px;
+    width: auto;
+    min-width: 0;
     height: 50px;
     display: flex;
     flex-direction: column;
@@ -3375,6 +3378,13 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
   }
   .phone-tab:hover:not(:disabled) { background: transparent; color: var(--text); }
   .phone-tab .icon { width: 20px; height: 20px; }
+  .phone-tab > span:not(.phone-badge) {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .phone-tab.on { background: var(--seg-on-bg); color: var(--text); box-shadow: var(--seg-on-shadow); }
   .phone-tab.on .icon { color: var(--ui-accent); }
   .phone-tab.on:hover:not(:disabled) { background: var(--seg-on-bg); }
