@@ -287,6 +287,11 @@ test("History virtualizes, jumps by #, and returns to the top", async ({ page })
   await sidebarTab(page, "History");
 
   await expect(page.locator(".history-vgrid .hcard").first()).toBeVisible();
+  expect(
+    await page
+      .locator(".history-vgrid")
+      .evaluate((node) => getComputedStyle(node).overflowAnchor),
+  ).toBe("none");
   expect(await page.locator(".history-vgrid .hcard").count()).toBeLessThan(80);
 
   const scrolled = await scrollList(page, "history-vgrid", 0.55);
