@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .. import providers, storage, tagging
 from ..db import get_conn
 from ..models import DraftCreate, DraftUpdate
+from ..timeline import query_timeline
 from .series import require_leaf
 
 router = APIRouter(prefix="/api/drafts", tags=["drafts"])
@@ -102,13 +103,10 @@ def _get(conn, draft_id: int) -> dict:
     return _hydrate(conn, [dict(row)])[0]
 
 
-@router.get("")
-def list_drafts(
-    limit: int = Query(40, ge=1, le=200),
-    offset: int = Query(0, ge=0),
-    q: str | None = None,
-    pinned: bool | None = None,
-):
+def _drafts_where(
+    q: str | None,
+    pinned: bool | None,
+) -> tuple[list[str], list[object]]:
     clauses: list[str] = []
     params: list[object] = []
     if q and q.strip():
@@ -117,7 +115,22 @@ def list_drafts(
     if pinned is not None:
         clauses.append("pinned = ?")
         params.append(1 if pinned else 0)
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return clauses, params
+
+
+def _where_sql(clauses: list[str]) -> str:
+    return f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+
+@router.get("")
+def list_drafts(
+    limit: int = Query(40, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    q: str | None = None,
+    pinned: bool | None = None,
+):
+    clauses, params = _drafts_where(q, pinned)
+    where = _where_sql(clauses)
     with get_conn() as conn:
         rows = conn.execute(
             f"""SELECT * FROM drafts {where}
@@ -129,6 +142,37 @@ def list_drafts(
         ).fetchone()["c"]
         drafts = _hydrate(conn, [dict(row) for row in rows])
     return {"drafts": drafts, "total": total}
+
+
+@router.get("/timeline")
+def drafts_timeline(
+    q: str | None = None,
+    tz: int = Query(0, ge=-1440, le=1440),
+):
+    """Pinned drafts first, then per-day counts for the updated_at order."""
+    pinned_clauses, pinned_params = _drafts_where(q, True)
+    with get_conn() as conn:
+        pinned = conn.execute(
+            f"SELECT COUNT(*) c FROM drafts {_where_sql(pinned_clauses)}",
+            pinned_params,
+        ).fetchone()["c"]
+    clauses, params = _drafts_where(q, False)
+    result = query_timeline(
+        source="drafts",
+        where=_where_sql(clauses),
+        params=params,
+        order="pinned DESC, updated_at DESC, id DESC",
+        date_expr="date(updated_at, ?)",
+        tz=tz,
+    )
+    if pinned:
+        for day in result["days"]:
+            day["first_index"] += pinned
+        for run in result["runs"]:
+            run[0] += pinned
+    result["pinned"] = pinned
+    result["total"] += pinned
+    return result
 
 
 @router.get("/{draft_id}")

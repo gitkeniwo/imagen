@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from .. import providers, storage, tagging
 from ..db import GENERATION_SORT_AT, canonical_timestamp, get_conn, now_timestamp
 from ..models import ManualGenerationRequest, MarkerPatch
+from ..timeline import MAX_IDS_LIMIT, query_timeline
 
 router = APIRouter(prefix="/api/generations", tags=["generations"])
 
@@ -27,6 +28,82 @@ _RESULT_FILTERS = {
 # time order; unparsable values and NULLs sort last (db.GENERATION_SORT_AT).
 _SORT_AT = GENERATION_SORT_AT
 _ORDER = f"{_SORT_AT} DESC, id DESC"
+
+
+def _generations_where(
+    *,
+    tag: int | None,
+    q: str | None,
+    starred: bool | None,
+    kind: str | None,
+    status: str | None,
+    model: str | None,
+    provider: str | None,
+    with_output: bool,
+    series: str | None,
+) -> tuple[list[str], list[object]]:
+    """Filters shared by History's list, timeline and ids endpoints.
+
+    Legacy notes stay hidden everywhere. Every filter here must be applied by
+    all three callers, or an offset from one endpoint points at another row.
+    """
+    clauses: list[str] = ["status != 'note'"]
+    params: list[object] = []
+    if tag is not None:
+        clauses.append(
+            "output_image_id IN "
+            "(SELECT image_id FROM image_tags WHERE tag_id = ?)"
+        )
+        params.append(tag)
+    if starred:
+        clauses.append(
+            "output_image_id IN "
+            "(SELECT id FROM images WHERE starred = 1 AND deleted_at IS NULL)"
+        )
+    if kind == "vertex":
+        clauses.append("source = ?")
+        params.append("vertex")
+    elif kind == "manual":
+        clauses.append("source = ? AND status != ?")
+        params.extend(["manual", "note"])
+    if q and q.strip():
+        clauses.append("prompt LIKE ?")
+        params.append(f"%{q.strip()}%")
+    if status:
+        if status not in _RESULT_FILTERS:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        wanted = _RESULT_FILTERS[status]
+        clauses.append(f"status IN ({','.join('?' * len(wanted))})")
+        params.extend(wanted)
+    if model:
+        # Old rows may still carry a preview id that maps to this model.
+        wanted = providers.normalize_model(model)
+        aliases = [wanted, *(a for a, m in providers.MODEL_ALIASES.items() if m == wanted)]
+        clauses.append(f"model IN ({','.join('?' * len(aliases))})")
+        params.extend(aliases)
+    if provider:
+        clauses.append("provider = ?")
+        params.append(provider)
+    if series:
+        # "none" = not in any series; otherwise one series id.
+        if series == "none":
+            clauses.append("series_id IS NULL")
+        else:
+            try:
+                clauses.append("series_id = ?")
+                params.append(int(series))
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid series: {series}")
+    if with_output:
+        # Only retain records with a live output image. This deliberately
+        # excludes running, blocked, cancelled, failed, and deleted-output
+        # records while remaining compatible with all other filters.
+        clauses.append(_LIVE_OUTPUT_CLAUSE)
+    return clauses, params
+
+
+def _where_sql(clauses: list[str]) -> str:
+    return f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
 
 def _now() -> str:
@@ -248,66 +325,31 @@ def list_generations(
     unique_outputs: bool = False,
     series: str | None = None,
 ):
-    # Filter by the output image's tag (i.e. generations archived into that tag),
-    # by a substring of the prompt, by whether the output is starred (the
-    # "favorites" / saved-prompt view), and/or by record kind:
-    # 'vertex' (real generation via this app), 'manual' (a logged result from
-    # elsewhere. Legacy notes are preserved for rollback but no longer shown.
-    base_clauses, params = ["status != 'note'"], []
-    if tag is not None:
-        base_clauses.append(
-            "output_image_id IN "
-            "(SELECT image_id FROM image_tags WHERE tag_id = ?)"
-        )
-        params.append(tag)
-    if starred:
-        base_clauses.append(
-            "output_image_id IN "
-            "(SELECT id FROM images WHERE starred = 1 AND deleted_at IS NULL)"
-        )
-    if kind == "vertex":
-        base_clauses.append("source = ?")
-        params.append("vertex")
-    elif kind == "manual":
-        base_clauses.append("source = ? AND status != ?")
-        params.extend(["manual", "note"])
-    if q and q.strip():
-        base_clauses.append("prompt LIKE ?")
-        params.append(f"%{q.strip()}%")
-    if status:
-        if status not in _RESULT_FILTERS:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
-        wanted = _RESULT_FILTERS[status]
-        base_clauses.append(f"status IN ({','.join('?' * len(wanted))})")
-        params.extend(wanted)
-    if model:
-        # Old rows may still carry a preview id that maps to this model.
-        wanted = providers.normalize_model(model)
-        aliases = [wanted, *(a for a, m in providers.MODEL_ALIASES.items() if m == wanted)]
-        base_clauses.append(f"model IN ({','.join('?' * len(aliases))})")
-        params.extend(aliases)
-    if provider:
-        base_clauses.append("provider = ?")
-        params.append(provider)
-    if series:
-        # "none" = not in any series; otherwise one series id.
-        if series == "none":
-            base_clauses.append("series_id IS NULL")
-        else:
-            try:
-                base_clauses.append("series_id = ?")
-                params.append(int(series))
-            except ValueError:
-                raise HTTPException(status_code=400, detail=f"Invalid series: {series}")
-    clauses = [*base_clauses]
-    if with_output or unique_outputs:
-        # Only retain records with a live output image. This deliberately
-        # excludes running, blocked, cancelled, failed, and deleted-output
-        # records while remaining compatible with all other filters.
-        clauses.append(_LIVE_OUTPUT_CLAUSE)
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    base_where = f"WHERE {' AND '.join(base_clauses)}"
-    output_where = f"WHERE {' AND '.join([*base_clauses, _LIVE_OUTPUT_CLAUSE])}"
+    base_clauses, base_params = _generations_where(
+        tag=tag,
+        q=q,
+        starred=starred,
+        kind=kind,
+        status=status,
+        model=model,
+        provider=provider,
+        with_output=False,
+        series=series,
+    )
+    clauses, params = _generations_where(
+        tag=tag,
+        q=q,
+        starred=starred,
+        kind=kind,
+        status=status,
+        model=model,
+        provider=provider,
+        with_output=with_output or unique_outputs,
+        series=series,
+    )
+    where = _where_sql(clauses)
+    base_where = _where_sql(base_clauses)
+    output_where = _where_sql([*base_clauses, _LIVE_OUTPUT_CLAUSE])
     # The viewer navigates images, not generation records. Several records may
     # deliberately point at one output image (manual reuse or SHA-256 dedup),
     # so rank each live output by the newest matching generation that uses it
@@ -410,6 +452,78 @@ def list_generations(
         "output_total": output_total,
         "output_offset": output_offset,
     }
+
+
+@router.get("/timeline")
+def generations_timeline(
+    tag: int | None = None,
+    q: str | None = None,
+    starred: bool | None = None,
+    kind: str | None = None,
+    status: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    with_output: bool = False,
+    series: str | None = None,
+    tz: int = Query(0, ge=-1440, le=1440),
+):
+    clauses, params = _generations_where(
+        tag=tag,
+        q=q,
+        starred=starred,
+        kind=kind,
+        status=status,
+        model=model,
+        provider=provider,
+        with_output=with_output,
+        series=series,
+    )
+    return query_timeline(
+        source="generations",
+        where=_where_sql(clauses),
+        params=params,
+        order=_ORDER,
+        date_expr=f"date({_SORT_AT}, ?)",
+        tz=tz,
+    )
+
+
+@router.get("/ids")
+def list_generation_ids(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(MAX_IDS_LIMIT, ge=1, le=MAX_IDS_LIMIT),
+    tag: int | None = None,
+    q: str | None = None,
+    starred: bool | None = None,
+    kind: str | None = None,
+    status: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    with_output: bool = False,
+    series: str | None = None,
+):
+    """Ids only, same filters and order as the History list."""
+    clauses, params = _generations_where(
+        tag=tag,
+        q=q,
+        starred=starred,
+        kind=kind,
+        status=status,
+        model=model,
+        provider=provider,
+        with_output=with_output,
+        series=series,
+    )
+    where = _where_sql(clauses)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT id FROM generations {where} ORDER BY {_ORDER} LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        ).fetchall()
+        total = conn.execute(
+            f"SELECT COUNT(*) c FROM generations {where}", params
+        ).fetchone()["c"]
+    return {"ids": [row["id"] for row in rows], "total": total}
 
 
 @router.get("/by-output/{image_id}")

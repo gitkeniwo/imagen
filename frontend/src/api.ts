@@ -490,11 +490,49 @@ export interface ImageTimeline {
   total: number;
 }
 
+export interface GenerationFilters {
+  tag?: number;
+  q?: string;
+  starred?: boolean;
+  kind?: "vertex" | "manual";
+  // Outcome: "error" also matches cancelled requests.
+  status?: HistoryResult;
+  model?: string;
+  provider?: ProviderId;
+  withOutput?: boolean;
+  // A series id, or "none" for records outside every series.
+  series?: number | "none";
+}
+
+export interface DraftFilters {
+  q?: string;
+}
+
 function libraryFilterQuery(params: LibraryFilters): URLSearchParams {
   const q = new URLSearchParams();
   if (params.source) q.set("source", params.source);
   if (params.tag) q.set("tag", String(params.tag));
   if (params.starred) q.set("starred", "true");
+  if (params.q && params.q.trim()) q.set("q", params.q.trim());
+  return q;
+}
+
+function generationFilterQuery(params: GenerationFilters): URLSearchParams {
+  const q = new URLSearchParams();
+  if (params.tag) q.set("tag", String(params.tag));
+  if (params.q && params.q.trim()) q.set("q", params.q.trim());
+  if (params.starred) q.set("starred", "true");
+  if (params.kind) q.set("kind", params.kind);
+  if (params.status) q.set("status", params.status);
+  if (params.model) q.set("model", params.model);
+  if (params.provider) q.set("provider", params.provider);
+  if (params.withOutput) q.set("with_output", "true");
+  if (params.series !== undefined) q.set("series", String(params.series));
+  return q;
+}
+
+function draftFilterQuery(params: DraftFilters): URLSearchParams {
+  const q = new URLSearchParams();
   if (params.q && params.q.trim()) q.set("q", params.q.trim());
   return q;
 }
@@ -633,14 +671,18 @@ export const api = {
     return handle(await fetch("/api/stats"));
   },
   async listDrafts(
-    params: { limit?: number; offset?: number; q?: string; pinned?: boolean } = {},
+    params: DraftFilters & { limit?: number; offset?: number; pinned?: boolean } = {},
   ): Promise<{ drafts: Draft[]; total: number }> {
-    const q = new URLSearchParams();
+    const q = draftFilterQuery(params);
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
-    if (params.q && params.q.trim()) q.set("q", params.q.trim());
     if (params.pinned !== undefined) q.set("pinned", String(params.pinned));
     return handle(await fetch(`/api/drafts?${q.toString()}`));
+  },
+  async draftsTimeline(params: DraftFilters): Promise<ImageTimeline> {
+    const q = draftFilterQuery(params);
+    q.set("tz", String(-new Date().getTimezoneOffset()));
+    return handle(await fetch(`/api/drafts/timeline?${q.toString()}`));
   },
   async createDraft(body: DraftBody): Promise<Draft> {
     return handle(
@@ -664,21 +706,10 @@ export const api = {
     return handle(await fetch(`/api/drafts/${id}`, { method: "DELETE" }));
   },
   async listGenerations(
-    params: {
+    params: GenerationFilters & {
       limit?: number;
       offset?: number;
-      tag?: number;
-      q?: string;
-      starred?: boolean;
-      kind?: "vertex" | "manual";
-      // Outcome: "error" also matches cancelled requests.
-      status?: HistoryResult;
-      model?: string;
-      provider?: ProviderId;
-      withOutput?: boolean;
       uniqueOutputs?: boolean;
-      // A series id, or "none" for records outside every series.
-      series?: number | "none";
     } = {},
   ): Promise<{
     generations: Generation[];
@@ -686,20 +717,25 @@ export const api = {
     output_total: number;
     output_offset: number;
   }> {
-    const q = new URLSearchParams();
+    const q = generationFilterQuery(params);
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
-    if (params.tag) q.set("tag", String(params.tag));
-    if (params.q && params.q.trim()) q.set("q", params.q.trim());
-    if (params.starred) q.set("starred", "true");
-    if (params.kind) q.set("kind", params.kind);
-    if (params.status) q.set("status", params.status);
-    if (params.model) q.set("model", params.model);
-    if (params.provider) q.set("provider", params.provider);
-    if (params.withOutput) q.set("with_output", "true");
     if (params.uniqueOutputs) q.set("unique_outputs", "true");
-    if (params.series !== undefined) q.set("series", String(params.series));
     return handle(await fetch(`/api/generations?${q.toString()}`));
+  },
+  async generationTimeline(params: GenerationFilters): Promise<ImageTimeline> {
+    const q = generationFilterQuery(params);
+    q.set("tz", String(-new Date().getTimezoneOffset()));
+    return handle(await fetch(`/api/generations/timeline?${q.toString()}`));
+  },
+  async listGenerationIds(
+    params: GenerationFilters & { offset?: number; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<{ ids: number[]; total: number }> {
+    const q = generationFilterQuery(params);
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    return handle(await fetch(`/api/generations/ids?${q.toString()}`, { signal }));
   },
   async derivedGenerations(imageId: number, offset = 0, limit = 24): Promise<DerivedPage> {
     return handle(await fetch(`/api/images/${imageId}/derived?offset=${offset}&limit=${limit}`));
