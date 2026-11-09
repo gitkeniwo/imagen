@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   headersBefore,
+  firstVisibleRowAtY,
   itemTop,
   rowAtY,
   rowTop,
@@ -63,4 +64,19 @@ test("no sections keeps the original deterministic grid geometry", () => {
   assert.equal(totalGridHeight(plain, 10), 5 * 110 - 10);
   assert.equal(rowTop(plain, 3), 330);
   assert.equal(itemTop(plain, 7), 330);
+});
+
+test("inter-row gaps belong to the next row", () => {
+  const plain = {
+    ...geometry,
+    sections: [],
+    sectionRows: [],
+    headerHeight: 0,
+  };
+  assert.equal(firstVisibleRowAtY(plain, 99), 0);
+  assert.equal(firstVisibleRowAtY(plain, 100), 1);
+  assert.equal(firstVisibleRowAtY(plain, 105), 1);
+  assert.equal(firstVisibleRowAtY(geometry, 139), 0);
+  assert.equal(firstVisibleRowAtY(geometry, 140), 1);
+  assert.equal(firstVisibleRowAtY(geometry, 145), 1);
 });

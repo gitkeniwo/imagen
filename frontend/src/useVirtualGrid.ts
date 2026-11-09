@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  firstVisibleRowAtY as geometryFirstVisibleRowAtY,
   itemTop as geometryItemTop,
   rowAtY as geometryRowAtY,
   rowTop as geometryRowTop,
@@ -287,7 +288,9 @@ export function useVirtualGrid({
 
   // Visible and rendered rows. Overscan is about one screen each way.
   const firstVisibleRow =
-    rowHeight > 0 ? geometryRowAtY(geometry, Math.max(0, m.viewTop)) : 0;
+    rowHeight > 0
+      ? geometryFirstVisibleRowAtY(geometry, Math.max(0, m.viewTop))
+      : 0;
   const lastVisibleRow =
     rowHeight > 0
       ? Math.max(
@@ -303,8 +306,11 @@ export function useVirtualGrid({
   // worth of rows so the first paint has something to show.
   const measured = m.width > 0;
 
-  useEffect(() => {
-    if (!measured) measure();
+  // A label or toolbar can change height without resizing the grid or scroller
+  // (for example Drafts' sticky header after a jump). Re-read the inset after
+  // every commit so visibleStart and visibleEnd follow that layout change.
+  useLayoutEffect(() => {
+    measure();
   });
 
   return {
