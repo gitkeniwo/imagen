@@ -142,13 +142,10 @@ export default function ImageViewer({
   const [copied, setCopied] = useState(false);
   const [editingGen, setEditingGen] = useState<Generation | null>(null);
   const [duplicatingGen, setDuplicatingGen] = useState<Generation | null>(null);
-  // While zoomed, ←/→ pan nothing and switch nothing; the arrows hide.
+  // While zoomed the on-screen arrows and edge zones hide (a click there would
+  // pan), but ←/→ still page; ZoomStage resets the next image to fit.
   const [zoomed, setZoomed] = useState(false);
-  const zoomedRef = useRef(false);
-  const onZoomedChange = useCallback((z: boolean) => {
-    zoomedRef.current = z;
-    setZoomed(z);
-  }, []);
+  const onZoomedChange = useCallback((z: boolean) => setZoomed(z), []);
   const [panelHidden, setPanelHidden] = useState(false);
   const [controlsHidden, setControlsHidden] = useState(false);
   const togglePanel = useCallback(() => {
@@ -408,7 +405,6 @@ export default function ImageViewer({
       if (el?.closest("input, textarea, select, [contenteditable='true']")) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "i" || e.key === "I") togglePanel();
-      else if (zoomedRef.current) return;
       else if (e.key === "ArrowLeft") void goTo(-1);
       else if (e.key === "ArrowRight") void goTo(1);
     };

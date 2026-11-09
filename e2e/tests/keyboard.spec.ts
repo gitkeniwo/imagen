@@ -85,3 +85,22 @@ test("in the viewer, ← / → / i with the menu open leave the image and panel 
   await page.keyboard.press("ArrowRight");
   await expect(counter).not.toHaveText(position);
 });
+
+test("zoomed: ← / → still page, and the next image opens at Fit", async ({ page }) => {
+  await openViewerOn(page, "landscape-alps.jpg");
+  const v = viewer(page);
+  const fit = v.getByRole("button", { name: "Fit", exact: true });
+  const before = await viewerTitle(page).innerText();
+  await expect(fit).toHaveAttribute("aria-pressed", "true");
+
+  await v.locator(".zoom-layer img").dblclick();
+  await expect(fit).toHaveAttribute("aria-pressed", "false");
+  // The on-screen arrows hide while zoomed (they would pan, not page).
+  await expect(v.locator(".viewer-nav.next")).toBeHidden();
+
+  await page.keyboard.press("ArrowRight");
+  await expect(viewerTitle(page)).not.toHaveText(before);
+  // Paging from a zoomed image resets the new one to Fit.
+  await expect(fit).toHaveAttribute("aria-pressed", "true");
+  await expect(v.locator(".viewer-nav.next")).toBeVisible();
+});
