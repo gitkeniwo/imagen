@@ -144,6 +144,10 @@ function JumpPanel({
   const drag = useRef<{ x: number; left: number; moved: boolean; captured: boolean } | null>(null);
   const dragEndedAt = useRef(0);
   const stripFreeTimer = useRef<number | null>(null);
+  // Unrounded strip offset owned by the wheel handler; it outlives a snap so
+  // the sub-cell remainder is never lost. Every other scroll writer below
+  // resets it.
+  const stripWheelPos = useRef(0);
   const [cellW, setCellW] = useState(0);
   const [leftmost, setLeftmost] = useState(0);
   const [stripAtStart, setStripAtStart] = useState(true);
@@ -418,46 +422,59 @@ function JumpPanel({
     stripAligned.current = true;
     const el = stripRef.current;
     if (el) el.scrollLeft = off * cellW;
+    stripWheelPos.current = off * cellW;
     setLeftmost(off);
     setStripAtStart(off === 0);
     setStripAtEnd(off >= maxMonths);
   }, [cellW, maxMonths, monthIndex, months.length, view, visible]);
 
-  // Wheel handling:
-  //  * Sideways trackpad / shift-wheel events are left to the browser, which
-  //    scrolls natively (momentum included). Mandatory snapping is disabled
-  //    for the duration of the burst, otherwise Chromium/WebKit can pull each
-  //    tiny 8px delta straight back to the current month and a fast swipe
-  //    never leaves it.
-  //  * A mostly vertical wheel is also turned into horizontal movement.
-  //  * In both cases snapping is restored and the strip is aligned once,
-  //    150 ms after the last event.
+  // Wheel handling: a sideways trackpad gesture and a mostly vertical wheel
+  // both move the strip sideways. Deltas are applied here instead of being
+  // left to the browser, because with mandatory snapping Chromium/WebKit pull
+  // each tiny 8px delta straight back to the current month before the next one
+  // arrives, so a gesture that pauses (or a slow wheel) never leaves it.
+  //  * Snapping is off (`.free`) for the whole burst, so the movement stays
+  //    continuous, and the strip is aligned to a whole month once 250 ms pass
+  //    without a delta.
+  //  * `stripWheelPos` keeps the unrounded position between bursts. Snapping
+  //    back to a month therefore keeps the sub-cell remainder: a sparse stream
+  //    of small deltas still adds up instead of being snapped away after every
+  //    quiet gap.
   useEffect(() => {
     if (mobile) return; // phones use native touch scrolling
     const el = stripRef.current;
     if (!el || !cellW) return;
+    // Rebase on (re)mount and whenever the cell geometry changes.
+    stripWheelPos.current = el.scrollLeft;
+    const maxScroll = () => Math.max(0, el.scrollWidth - el.clientWidth);
+    const settle = (pos: number) =>
+      Math.max(0, Math.min(maxScroll(), Math.round(pos / cellW) * cellW));
     const finish = () => {
       stripFreeTimer.current = null;
+      const target = settle(stripWheelPos.current);
       el.classList.remove("free");
-      const target = Math.max(0, Math.min(maxMonths, Math.round(el.scrollLeft / cellW)));
-      el.scrollTo({ left: target * cellW, behavior: "smooth" });
+      el.scrollTo({ left: target, behavior: "smooth" });
     };
     const onWheel = (event: WheelEvent) => {
       if (event.ctrlKey) return; // pinch zoom, not a scroll
-      const sideways = Math.abs(event.deltaX) >= Math.abs(event.deltaY);
-      if (!sideways) event.preventDefault();
+      event.preventDefault();
       const unit =
         event.deltaMode === 1
           ? 16
           : event.deltaMode === 2
             ? el.clientWidth
             : 1;
-      el.classList.add("free");
-      void el.offsetWidth; // apply scroll-snap-type: none before moving
-      // Sideways is the browser's own scroll; vertical is converted here.
-      if (!sideways) el.scrollLeft += (event.deltaX + event.deltaY) * unit;
+      const dx = (event.deltaX + event.deltaY) * unit;
+      // `stripWheelPos` survives the snap, so the sub-cell remainder of the
+      // previous burst keeps adding up instead of being discarded.
+      stripWheelPos.current = Math.max(0, Math.min(maxScroll(), stripWheelPos.current + dx));
+      if (!el.classList.contains("free")) {
+        el.classList.add("free");
+        void el.offsetWidth; // apply scroll-snap-type: none before moving
+      }
+      el.scrollLeft = stripWheelPos.current;
       if (stripFreeTimer.current !== null) window.clearTimeout(stripFreeTimer.current);
-      stripFreeTimer.current = window.setTimeout(finish, 150);
+      stripFreeTimer.current = window.setTimeout(finish, 250);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => {
@@ -509,6 +526,7 @@ function JumpPanel({
     const el = stripRef.current;
     if (!el || !cellW) return;
     const off = Math.max(0, Math.min(maxMonths, index));
+    stripWheelPos.current = off * cellW;
     el.scrollTo({ left: off * cellW, behavior: smooth ? "smooth" : "auto" });
   };
 
@@ -767,6 +785,12 @@ function JumpPanel({
             captured: false,
           };
           dragEndedAt.current = 0;
+          // A drag takes over from a pending wheel burst.
+          if (stripFreeTimer.current !== null) {
+            window.clearTimeout(stripFreeTimer.current);
+            stripFreeTimer.current = null;
+          }
+          stripWheelPos.current = el.scrollLeft;
         }}
         onPointerMove={(event) => {
           const current = drag.current;
@@ -799,6 +823,7 @@ function JumpPanel({
           dragEndedAt.current = Date.now();
           el.classList.remove("free");
           const off = Math.max(0, Math.min(maxMonths, Math.round(el.scrollLeft / cellW)));
+          stripWheelPos.current = off * cellW;
           el.scrollTo({ left: off * cellW, behavior: "smooth" });
         }}
         onPointerCancel={() => {
@@ -807,6 +832,7 @@ function JumpPanel({
           if (el) {
             el.classList.remove("free");
             const off = Math.max(0, Math.min(maxMonths, Math.round(el.scrollLeft / cellW)));
+            stripWheelPos.current = off * cellW;
             el.scrollTo({ left: off * cellW, behavior: "smooth" });
           }
         }}

@@ -193,7 +193,7 @@ async function expectLeftmostYear(page: import("@playwright/test").Page) {
   else await expect(cell.locator(".jump-strip-year")).toHaveText(year);
 }
 
-test("a sideways trackpad wheel scrolls natively and snaps to a whole month", async ({ page }) => {
+test("a sideways trackpad wheel crosses several months and snaps to a whole month", async ({ page }) => {
   await openWithTimeline(page);
   await page.locator(".lib-position").click();
   const strip = page.locator(".jump-strip");
@@ -232,9 +232,13 @@ test("small sideways trackpad deltas cross more than two months", async ({ page 
 
   await strip.hover();
   for (let i = 0; i < 20; i++) {
-    // A real trackpad sends many small deltaX events with a little deltaY.
+    // A real trackpad sends many small deltaX events with a little deltaY, and
+    // a slow one can leave a quiet gap of a few hundred ms between them. The
+    // 180 ms pause makes that deterministic here: the strip must carry the
+    // sub-cell remainder across the gap instead of snapping it away, or the
+    // whole gesture stays on the current month.
     await page.mouse.wheel(8, i % 2 ? 0.5 : -0.5);
-    await page.waitForTimeout(12);
+    await page.waitForTimeout(180);
   }
   const resting = await stripRest(page);
   expect(resting).toBeGreaterThan(2 * cellW);
