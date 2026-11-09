@@ -22,7 +22,7 @@ const EDGE = 8;
 const SUBMENU_GAP = 4;
 const FIXED_Z = 220;
 
-export interface ContextMenuShortcut {
+export interface ContextMenuQuickAction {
   id?: string;
   label: string;
   icon: IconName;
@@ -89,7 +89,7 @@ export interface ContextMenuConfig {
   sourceLabel?: string;
   title?: string;
   subtitle?: string;
-  shortcuts?: ContextMenuShortcut[];
+  quickActions?: ContextMenuQuickAction[];
   sections: ContextMenuSection[];
   ariaLabel?: string;
 }
@@ -359,16 +359,18 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
   const displaySections = useMemo(() => {
     if (!menu) return [];
     const sections = menu.sections.map((section) => [...section]);
-    const shortcuts = menu.shortcuts ?? [];
-    if (shortcuts.length > 0 && shortcuts.length < 2) {
-      const shortcutItems: ContextMenuItem[] = shortcuts.map((shortcut) => ({
-        id: shortcut.id ?? shortcut.label,
-        label: shortcut.label,
-        icon: shortcut.icon,
-        onSelect: shortcut.onSelect,
+    const quickActions = menu.quickActions ?? [];
+    // A single quick action is not a row. Fold it into the first section:
+    // one oversized button above the list reads as a mistake, not a shortcut.
+    if (quickActions.length > 0 && quickActions.length < 2) {
+      const quickActionItems: ContextMenuItem[] = quickActions.map((action) => ({
+        id: action.id ?? action.label,
+        label: action.label,
+        icon: action.icon,
+        onSelect: action.onSelect,
       }));
-      if (sections.length) sections[0] = [...shortcutItems, ...sections[0]];
-      else sections.push(shortcutItems);
+      if (sections.length) sections[0] = [...quickActionItems, ...sections[0]];
+      else sections.push(quickActionItems);
     }
     return sections.filter((section) => section.length > 0);
   }, [menu]);
@@ -410,8 +412,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
   const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     const inTextInput = target.matches("input, textarea, [contenteditable='true']");
-    // Menu shortcuts are local to the menu. Keep every key away from
-    // page-level shortcuts, including while typing in the new-tag field.
+    // The menu owns its keys: keep them away from page-level keyboard
+    // shortcuts, including while typing in the new-tag field.
     event.stopPropagation();
     if (event.key === "Escape") {
       event.preventDefault();
@@ -471,8 +473,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
     menu.subtitle ??
     (image ? `${image.width}×${image.height} · ${format} · ${source}` : "");
   const previews = menu.images.slice(0, 3);
-  const shortcuts = menu.shortcuts ?? [];
-  const showShortcuts = shortcuts.length >= 2;
+  const quickActions = menu.quickActions ?? [];
+  const showQuickActions = quickActions.length >= 2;
 
   return (
     <ContextMenuContext.Provider value={{ open, close }}>
@@ -512,28 +514,28 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            {showShortcuts && (
-              <div className="context-shortcuts" role="group">
-                {shortcuts.slice(0, 4).map((shortcut, index) => (
+            {showQuickActions && (
+              <div className="context-quick-actions" role="group">
+                {quickActions.slice(0, 4).map((action, index) => (
                   <button
-                    key={shortcut.id ?? `${shortcut.label}-${index}`}
+                    key={action.id ?? `${action.label}-${index}`}
                     type="button"
                     role="menuitem"
                     tabIndex={-1}
                     data-context-focus
-                    className={`context-shortcut${shortcut.selected ? " is-selected" : ""}`}
-                    aria-label={shortcut.ariaLabel ?? shortcut.label}
+                    className={`context-quick-action${action.selected ? " is-selected" : ""}`}
+                    aria-label={action.ariaLabel ?? action.label}
                     onClick={() => {
                       close(false);
-                      run(shortcut.onSelect);
+                      run(action.onSelect);
                     }}
                   >
                     <Icon
-                      name={shortcut.icon}
+                      name={action.icon}
                       size="md"
-                      filled={shortcut.filled}
+                      filled={action.filled}
                     />
-                    <span>{shortcut.label}</span>
+                    <span>{action.label}</span>
                   </button>
                 ))}
               </div>
@@ -541,7 +543,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 
             {displaySections.map((section, sectionIndex) => (
               <Fragment key={sectionIndex}>
-                {(showShortcuts || sectionIndex > 0) && (
+                {(showQuickActions || sectionIndex > 0) && (
                   <div className="context-menu-separator" role="separator" />
                 )}
                 {section.map((item) => {

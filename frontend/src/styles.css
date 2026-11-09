@@ -667,13 +667,13 @@ body.resizing-sidebar .side-panel {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.context-shortcuts {
+.context-quick-actions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 2px;
   padding: 2px;
 }
-.context-shortcut {
+.context-quick-action {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -690,26 +690,26 @@ body.resizing-sidebar .side-panel {
   font: inherit;
   font-size: var(--fs-xs);
 }
-.context-shortcut:hover:not(:disabled), .context-shortcut:focus-visible {
+.context-quick-action:hover:not(:disabled), .context-quick-action:focus-visible {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
 }
-.context-shortcut .icon {
+.context-quick-action .icon {
   width: 18px;
   height: 18px;
   color: var(--muted);
 }
-.context-shortcut > span {
+.context-quick-action > span {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.context-shortcut.is-selected {
+.context-quick-action.is-selected {
   background: var(--panel-2);
 }
-.context-shortcut.is-selected .icon {
+.context-quick-action.is-selected .icon {
   color: var(--warning);
 }
 .context-menu-separator {

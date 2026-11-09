@@ -21,7 +21,7 @@ import { generationRuntime } from "../generationMetrics";
 import { displayName } from "../displayName";
 import {
   type ContextMenuSection,
-  type ContextMenuShortcut,
+  type ContextMenuQuickAction,
   useContextMenu,
 } from "./ui/ContextMenu";
 
@@ -325,7 +325,7 @@ const QueueItem = memo(function QueueItem({
 
   const openQueueImageMenu = (trigger: HTMLElement, x: number, y: number) => {
     if (!output) return;
-    const shortcuts: ContextMenuShortcut[] = [
+    const quickActions: ContextMenuQuickAction[] = [
       {
         icon: "view",
         label: t("open_viewer"),
@@ -333,7 +333,7 @@ const QueueItem = memo(function QueueItem({
       },
       {
         icon: trayIds.includes(output.id) ? "removeFromRefs" : "addToRefs",
-        label: trayIds.includes(output.id) ? t("shortcut_remove_ref") : t("shortcut_input"),
+        label: trayIds.includes(output.id) ? t("quick_action_remove_ref") : t("quick_action_input"),
         ariaLabel: trayIds.includes(output.id) ? t("remove_ref") : t("add_to_input"),
         onSelect: () => {
           if (trayIds.includes(output.id) && onRemoveFromTray) {
@@ -382,7 +382,7 @@ const QueueItem = memo(function QueueItem({
       trigger,
       images: [output],
       prompt: task.prompt,
-      shortcuts,
+      quickActions,
       sections: recordActions.length ? [recordActions] : [],
       ariaLabel: t("image_menu"),
     });

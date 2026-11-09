@@ -23,7 +23,7 @@ import Sheet from "../components/ui/Sheet";
 import { Button, IconButton } from "../components/ui/Button";
 import {
   type ContextMenuSection,
-  type ContextMenuShortcut,
+  type ContextMenuQuickAction,
   type ContextMenuTagSubmenu,
   useContextMenu,
 } from "../components/ui/ContextMenu";
@@ -818,7 +818,7 @@ export default function Library({
       createPlaceholder: t("new_tag_placeholder"),
       onCreate: (name) => createImageTag(img, name),
     };
-    const shortcutItems: ContextMenuShortcut[] = [
+    const quickActionItems: ContextMenuQuickAction[] = [
       {
         icon: "view",
         label: t("open_viewer"),
@@ -834,7 +834,7 @@ export default function Library({
           }
         : {
             icon: inTray(img) ? "removeFromRefs" : "addToRefs",
-            label: inTray(img) ? t("shortcut_remove_ref") : t("shortcut_input"),
+            label: inTray(img) ? t("quick_action_remove_ref") : t("quick_action_input"),
             ariaLabel: inTray(img) ? t("remove_ref") : t("add_to_input"),
             onSelect: () => toggleTray(img),
           },
@@ -890,7 +890,7 @@ export default function Library({
         img.source === "generated"
           ? () => api.generationByOutput(img.id).then((generation) => generation?.prompt)
           : undefined,
-      shortcuts: shortcutItems,
+      quickActions: quickActionItems,
       sections,
       ariaLabel: t("image_menu"),
     });

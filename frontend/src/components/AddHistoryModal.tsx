@@ -123,7 +123,7 @@ export default function AddHistoryModal({
       y,
       trigger,
       images: [img],
-      shortcuts: [
+      quickActions: [
         { icon: "view", label: t("open_viewer"), onSelect: () => setViewing(img) },
         {
           icon: "removeFromRefs",

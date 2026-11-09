@@ -138,7 +138,7 @@ export async function rightClick(target: Locator) {
   await target.click({ button: "right" });
 }
 
-/** Accessible names of the open panel's items (shortcuts first), in order. */
+/** Accessible names of the open panel's items (quick actions first), in order. */
 export async function menuLabels(page: Page): Promise<string[]> {
   const panel = contextMenu(page);
   await expect(panel).toBeVisible();

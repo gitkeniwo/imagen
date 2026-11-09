@@ -96,7 +96,7 @@ export default function DraftEditorModal({
       y,
       trigger,
       images: [img],
-      shortcuts: [
+      quickActions: [
         { icon: "view", label: t("open_viewer"), onSelect: () => setViewing(img) },
         {
           icon: "favorite",

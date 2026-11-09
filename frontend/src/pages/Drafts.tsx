@@ -14,7 +14,7 @@ import { IconButton } from "../components/ui/Button";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
 import Segmented from "../components/ui/Segmented";
 import {
-  type ContextMenuShortcut,
+  type ContextMenuQuickAction,
   useContextMenu,
 } from "../components/ui/ContextMenu";
 
@@ -196,7 +196,7 @@ export default function Drafts({
   ) => {
     const isOutput = draft.outputImages.some((item) => item.id === img.id);
     const inTray = trayIds.includes(img.id);
-    const shortcuts: ContextMenuShortcut[] = [
+    const quickActions: ContextMenuQuickAction[] = [
       {
         icon: "view",
         label: t("open_viewer"),
@@ -212,7 +212,7 @@ export default function Drafts({
         ? [
             {
               icon: inTray ? ("removeFromRefs" as const) : ("addToRefs" as const),
-              label: inTray ? t("shortcut_remove_ref") : t("shortcut_input"),
+              label: inTray ? t("quick_action_remove_ref") : t("quick_action_input"),
               ariaLabel: inTray ? t("remove_ref") : t("add_to_input"),
               onSelect: () => {
                 if (inTray && onRemoveFromTray) onRemoveFromTray(img);
@@ -241,7 +241,7 @@ export default function Drafts({
       trigger,
       images: [img],
       prompt: draft.prompt,
-      shortcuts,
+      quickActions,
       sections: [],
       ariaLabel: t("image_menu"),
     });

@@ -21,7 +21,7 @@ import { FilterPopover, PopoverSection, ViewPopover } from "../components/ui/Too
 import type { ViewerPager } from "../components/ImageViewer";
 import {
   type ContextMenuSection,
-  type ContextMenuShortcut,
+  type ContextMenuQuickAction,
   useContextMenu,
 } from "../components/ui/ContextMenu";
 import { downloadImage } from "../components/GenerationCard";
@@ -279,7 +279,7 @@ export default function History({
   ) => {
     const canToggleRef = !!onUseAsRef;
     const inTray = trayIds.includes(img.id);
-    const shortcuts: ContextMenuShortcut[] = [
+    const quickActions: ContextMenuQuickAction[] = [
       {
         icon: "view",
         label: t("open_viewer"),
@@ -289,7 +289,7 @@ export default function History({
         ? [
             {
               icon: inTray ? ("removeFromRefs" as const) : ("addToRefs" as const),
-              label: inTray ? t("shortcut_remove_ref") : t("shortcut_input"),
+              label: inTray ? t("quick_action_remove_ref") : t("quick_action_input"),
               ariaLabel: inTray ? t("remove_ref") : t("add_to_input"),
               onSelect: () => toggleTray(img),
             },
@@ -342,7 +342,7 @@ export default function History({
       images: [img],
       prompt: isOutput ? generation.prompt : undefined,
       sourceLabel: generation.source === "manual" ? t("imported_badge") : undefined,
-      shortcuts,
+      quickActions,
       sections: [recordActions, seriesSection].filter((section) => section.length > 0),
       ariaLabel: t("image_menu"),
     });

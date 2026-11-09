@@ -83,7 +83,7 @@ export default function Bin({
       y,
       trigger,
       images: [img],
-      shortcuts: [
+      quickActions: [
         { icon: "view", label: t("open_viewer"), onSelect: () => onOpenViewer(img, images) },
         { icon: "download", label: t("download"), onSelect: () => downloadImage(img) },
       ],

@@ -20,7 +20,7 @@ import {
   openContextMenuFromEvent,
   openContextMenuFromKeyboard,
   type ContextMenuSection,
-  type ContextMenuShortcut,
+  type ContextMenuQuickAction,
   type ContextMenuTagSubmenu,
   useContextMenu,
 } from "./ui/ContextMenu";
@@ -605,10 +605,10 @@ export default function ImageViewer({
     const isCurrent = img.id === current.id;
     const imageStarred = isCurrent ? starred : !!img.starred;
     const inTray = isRef(img.id);
-    const shortcuts: ContextMenuShortcut[] = [
+    const quickActions: ContextMenuQuickAction[] = [
       {
         icon: inTray ? "removeFromRefs" : "addToRefs",
-        label: inTray ? t("shortcut_remove_ref") : t("shortcut_input"),
+        label: inTray ? t("quick_action_remove_ref") : t("quick_action_input"),
         ariaLabel: inTray ? t("remove_ref") : t("add_to_input"),
         onSelect: () => toggleRef(img),
       },
@@ -664,7 +664,7 @@ export default function ImageViewer({
       prompt: isInput ? undefined : gen?.prompt,
       sourceLabel:
         !isInput && gen?.source === "manual" ? t("imported_badge") : undefined,
-      shortcuts,
+      quickActions,
       sections: [records, [
         {
           icon: "delete",

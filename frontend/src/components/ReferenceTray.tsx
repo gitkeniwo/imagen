@@ -14,7 +14,7 @@ import { useToast } from "./Toast";
 import { pressable } from "../a11y";
 import {
   type ContextMenuSection,
-  type ContextMenuShortcut,
+  type ContextMenuQuickAction,
   useContextMenu,
 } from "./ui/ContextMenu";
 
@@ -80,7 +80,7 @@ export default function ReferenceTray({
     x: number,
     y: number,
   ) => {
-    const shortcuts: ContextMenuShortcut[] = [
+    const quickActions: ContextMenuQuickAction[] = [
       ...(onOpen
         ? [
             {
@@ -126,7 +126,7 @@ export default function ReferenceTray({
       y,
       trigger,
       images: [img],
-      shortcuts,
+      quickActions,
       sections,
       ariaLabel: t("image_menu"),
     });
