@@ -53,6 +53,9 @@ DMG build (or `desktop/build.sh` app), with a test library:
 - [ ] Right-click an image (library tile, viewer): **no system image menu**
       (Copy Image / Download Image), only Imagen's menu.
 - [ ] Context menu › **Download** saves the file (check `~/Downloads`).
+- [ ] Context menu › **Copy image** (library and viewer): paste into
+      Preview/Notes — it is the full-resolution original, not the thumbnail,
+      and a JPEG/WebP keeps its format.
 - [ ] Menu bar icon: the **popover** opens under the icon and shows status.
 - [ ] **⌘W** hides the window and the app keeps running in the background
       (no Dock icon); reopening from the menu bar brings it back.

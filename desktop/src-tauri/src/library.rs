@@ -1246,6 +1246,11 @@ fn is_fixed_action(url: &Url, action: &str) -> bool {
 }
 
 pub fn handle_action_url(app: &AppHandle, url: &Url) {
+    if let Some(image_id) = crate::clipboard::copy_image_id(url) {
+        backend::log_line(app, &format!("imagen action: copy-image {image_id}"));
+        crate::clipboard::copy_image_from_action(app, image_id);
+        return;
+    }
     if is_fixed_action(url, CHANGE_LIBRARY_ACTION) {
         backend::log_line(app, "imagen action: change-library");
         request_change_library(app);

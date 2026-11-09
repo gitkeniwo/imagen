@@ -23,7 +23,7 @@ test("library thumbnail menu matches the image", async ({ page }) => {
   await rightClick((await shownLibTile(page, "poster-alps-4k.png")));
   await expect.poll(() => menuTitle(page)).toBe("Same composition, swap background for the alpine landscape");
   const labels = await menuLabels(page);
-  expect(labels).toEqual(["View", "Add to input", "Unfavorite", "Download", "Tags", "Add to series", "Move to Bin"]);
+  expect(labels).toEqual(["View", "Add to input", "Unfavorite", "Download", "Copy image", "Tags", "Add to series", "Move to Bin"]);
   await expect(contextMenu(page)).toContainText("2400×1350 · PNG · Generated");
   await page.keyboard.press("Escape");
   await expect(contextMenu(page)).toHaveCount(0);
@@ -35,6 +35,7 @@ test("library thumbnail menu matches the image", async ({ page }) => {
     "Add to input",
     "Favorite",
     "Download",
+    "Copy image",
     "Tags",
     "Add to series",
     "Move to Bin",
@@ -80,14 +81,14 @@ test("viewer main image and input image menus", async ({ page }) => {
   const v = viewer(page);
   await rightClick(v.getByRole("img", { name: "poster-alps-4k.png" }));
   await expect.poll(() => menuTitle(page)).toBe("Same composition, swap background for the alpine landscape");
-  expect(await menuLabels(page)).toEqual(expect.arrayContaining(["Add to input", "Download", "Tags", "Move to Bin"]));
+  expect(await menuLabels(page)).toEqual(expect.arrayContaining(["Add to input", "Download", "Copy image", "Tags", "Move to Bin"]));
   await page.keyboard.press("Escape");
   await expect(contextMenu(page)).toHaveCount(0);
   await expect(v).toBeVisible();
 
   await rightClick(v.getByRole("button", { name: "landscape-alps.jpg · Open this input in the viewer" }));
   expect(await menuTitle(page)).toBe("landscape-alps.jpg");
-  expect(await menuLabels(page)).toEqual(expect.arrayContaining(["Add to input", "Download"]));
+  expect(await menuLabels(page)).toEqual(expect.arrayContaining(["Add to input", "Download", "Copy image"]));
   await expect(contextMenu(page)).toContainText("1920×1080 · JPEG · Uploaded");
 });
 

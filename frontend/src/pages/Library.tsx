@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { api, downloadName, ImageRow, Tag, batchDownloadUrl, imgFileUrl, seriesApi } from "../api";
+import { copyImageToClipboard } from "../clipboard";
 import { useI18n } from "../i18n";
 import SearchBox from "../components/SearchBox";
 import TagFilterRow from "../components/TagFilterRow";
@@ -409,6 +410,11 @@ export default function Library({
     a.href = imgFileUrl(img);
     a.download = downloadName(img);
     a.click();
+  };
+
+  const copyImage = async (img: ImageRow) => {
+    const ok = await copyImageToClipboard(img);
+    toast(ok ? t("copied") : t("copy_image_failed"), ok ? "info" : "error");
   };
 
   const remove = async (img: ImageRow) => {
@@ -849,6 +855,11 @@ export default function Library({
     const seriesTarget = img.source === "generated" ? await seriesTargetFor([img.id]) : null;
     const sections: ContextMenuSection[] = [
       [
+        {
+          icon: "copy",
+          label: t("copy_image"),
+          onSelect: () => copyImage(img),
+        },
         {
           icon: "tag",
           label: t("tags_label"),

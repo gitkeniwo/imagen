@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, DerivedGeneration, Generation, ImageRow, imgFileUrl, imgThumbUrl, Tag } from "../api";
 import { useI18n } from "../i18n";
-import { copyText } from "../clipboard";
+import { copyImageToClipboard, copyText } from "../clipboard";
 import TagPicker from "./TagPicker";
 import { useToast } from "./Toast";
 import { useConfirm } from "./ConfirmDialog";
@@ -627,6 +627,14 @@ export default function ImageViewer({
       },
     ];
     const records: ContextMenuSection = [];
+    records.push({
+      icon: "copy",
+      label: t("copy_image"),
+      onSelect: async () => {
+        const ok = await copyImageToClipboard(img);
+        toast(ok ? t("copied") : t("copy_image_failed"), ok ? "info" : "error");
+      },
+    });
     if (!isInput && gen?.prompt) {
       records.push({
         icon: "copy",

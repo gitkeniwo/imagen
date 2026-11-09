@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod backend;
+mod clipboard;
 mod download;
 mod library;
 mod popover;
@@ -431,6 +432,19 @@ fn main() {
                         quit::debug_show_hud(&dev);
                     }
                 });
+                // Exercise the copy-image action without a right-click.
+                if let Ok(raw) = std::env::var("IMAGEN_DEV_COPY_IMAGE") {
+                    if let Ok(image_id) = raw.trim().parse::<i64>() {
+                        let action = format!("imagen-action://copy-image/{image_id}");
+                        if let Ok(url) = tauri::Url::parse(&action) {
+                            let copy = handle.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_secs(6));
+                                library::handle_action_url(&copy, &url);
+                            });
+                        }
+                    }
+                }
             }
 
             if has_library {
