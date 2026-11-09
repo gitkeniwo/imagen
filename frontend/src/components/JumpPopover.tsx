@@ -25,6 +25,7 @@ import {
   shiftMonths,
   startOfWeek,
   type JumpInput,
+  type ListUnit,
   type Timeline,
   type TimelineDay,
   type TimelineMonth,
@@ -40,6 +41,7 @@ interface JumpProps {
   error: string | null;
   total: number;
   currentIndex: number;
+  unit?: ListUnit;
   onJump: (index: number) => void;
 }
 
@@ -50,6 +52,7 @@ interface PanelProps {
   error: string | null;
   total: number;
   currentIndex: number;
+  unit: ListUnit;
   onJump: (index: number) => void;
   onClose: () => void;
   onTypingChange?: (typing: boolean) => void;
@@ -96,6 +99,7 @@ function JumpPanel({
   error,
   total,
   currentIndex,
+  unit,
   onJump,
   onClose,
   onTypingChange,
@@ -189,6 +193,10 @@ function JumpPanel({
   const hoverDayObj = hoverDay ? timeline?.byDay.get(hoverDay) ?? null : null;
   const statusDay = hoverDayObj ?? cursorDayObj ?? selectedDayObj;
   const fmt = (n: number) => fmtNumber(n, lang);
+  const unitText = (n: number) => t(`unit_${unit}`, { n });
+  const itemsText = (n: number) => t(`jump_${unit}_n`, { n });
+  const itemNumber =
+    unit === "images" ? t("jump_image_number") : t(`jump_${unit}_number`);
   const typing = query.trim().length > 0;
 
   // Keep the keyboard cursor on a day that exists in the month being viewed.
@@ -212,6 +220,9 @@ function JumpPanel({
     const none = { index: null as number | null, count: 0 };
     if (!timeline || timeline.days.length === 0) {
       return [
+        ...(timeline?.pinned
+          ? [{ key: "pinned", label: t("pinned"), index: 0, count: timeline.pinned }]
+          : []),
         { key: "newest", label: t("jump_newest"), ...none },
         { key: "today", label: t("jump_today"), ...none },
         { key: "week", label: t("jump_this_week"), ...none },
@@ -229,7 +240,22 @@ function JumpPanel({
     const monthAgo = nearestDay(timeline, dayKeyOf(shiftMonths(now, -1)), "nearest");
     const yearAgo = nearestDay(timeline, dayKeyOf(shiftMonths(now, -12)), "nearest");
     return [
-      { key: "newest", label: t("jump_newest"), index: 0, count: 0 },
+      ...(timeline.pinned > 0
+        ? [
+            {
+              key: "pinned",
+              label: t("pinned"),
+              index: 0,
+              count: timeline.pinned,
+            },
+          ]
+        : []),
+      {
+        key: "newest",
+        label: t("jump_newest"),
+        index: Math.min(total - 1, timeline.pinned),
+        count: 0,
+      },
       {
         key: "today",
         label: t("jump_today"),
@@ -343,7 +369,11 @@ function JumpPanel({
           key: `year-${year.year}`,
           icon: "arrowRight",
           title: String(year.year),
-          subtitle: t("jump_result_sub", { n: fmt(year.count), index: `#${fmt(first + 1)}` }),
+          subtitle: t("jump_result_unit", {
+            n: fmt(year.count),
+            unit: unitText(year.count),
+            index: `#${fmt(first + 1)}`,
+          }),
           run: () => jumpTo(first),
         });
       }
@@ -355,7 +385,7 @@ function JumpPanel({
         key: `index-${parsed.index}`,
         icon: "hash",
         title: `#${fmt(parsed.index + 1)}`,
-        subtitle: t("jump_image_number"),
+        subtitle: itemNumber,
         run: () => jumpTo(parsed.index),
       });
     } else if (parsed.kind === "month") {
@@ -368,8 +398,12 @@ function JumpPanel({
         title: formatMonthLong(parsed.year, parsed.month, lang),
         subtitle:
           count > 0
-            ? t("jump_result_sub", { n: fmt(count), index: `#${fmt((m?.firstIndex ?? 0) + 1)}` })
-            : t("jump_images_n", { n: "0" }),
+            ? t("jump_result_unit", {
+                n: fmt(count),
+                unit: unitText(count),
+                index: `#${fmt((m?.firstIndex ?? 0) + 1)}`,
+              })
+            : itemsText(0),
         run: () => showInput(parsed),
       });
     } else {
@@ -379,8 +413,9 @@ function JumpPanel({
         icon: "calendar",
         title: formatDayLong(parsed.day, lang),
         subtitle: exact
-          ? t("jump_result_sub", {
+          ? t("jump_result_unit", {
               n: fmt(exact.count),
+              unit: unitText(exact.count),
               index: `#${fmt(exact.first_index + 1)}`,
             })
           : t("jump_day_empty"),
@@ -623,6 +658,7 @@ function JumpPanel({
     const text = t("jump_day_summary", {
       date,
       n: fmt(day.count),
+      unit: unitText(day.count),
       index: `#${fmt(day.first_index + 1)}`,
     });
     const at = text.indexOf(date);
@@ -651,7 +687,7 @@ function JumpPanel({
       </div>
     );
   }
-  if (!timeline || timeline.days.length === 0) {
+  if (!timeline || (timeline.days.length === 0 && timeline.pinned === 0)) {
     return (
       <div className={`jump-panel ${mobile ? "jump-mobile" : "jump-desktop"}`}>
         <p className="jump-loading small muted">{t("jump_no_dates")}</p>
@@ -908,7 +944,7 @@ function JumpPanel({
     <div className="jump-calendar">
       <div className="jump-calendar-head">
         <b>{monthHeading}</b>
-        <span>{t("jump_images_n", { n: fmt(monthObj?.count ?? 0) })}</span>
+        <span>{itemsText(monthObj?.count ?? 0)}</span>
       </div>
       <div className="jump-weekdays" aria-hidden="true">
         {weekdays.map((name, i) => (
@@ -948,8 +984,8 @@ function JumpPanel({
                 .join(" ")}
               disabled={!d}
               aria-current={selectedDay === day ? "date" : undefined}
-              aria-label={`${formatDayLong(day, lang)} · ${t("jump_day_count", { n: fmt(count) })}`}
-              title={t("jump_day_count", { n: fmt(count) })}
+              aria-label={`${formatDayLong(day, lang)} · ${itemsText(count)}`}
+              title={itemsText(count)}
               onClick={() => d && jumpTo(d.first_index)}
               onMouseEnter={() => setHoverDay(day)}
               onMouseLeave={() => setHoverDay((current) => (current === day ? null : current))}
@@ -1059,6 +1095,7 @@ export default function JumpPopover({
   error,
   total,
   currentIndex,
+  unit = "images",
   onJump,
 }: JumpProps) {
   const { t } = useI18n();
@@ -1076,6 +1113,7 @@ export default function JumpPopover({
       error={error}
       total={total}
       currentIndex={currentIndex}
+      unit={unit}
       onJump={onJump}
       onClose={onClose}
       onTypingChange={setTyping}

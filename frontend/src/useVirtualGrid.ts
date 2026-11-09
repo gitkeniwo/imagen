@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Row virtualization for a grid of square tiles inside an existing scroll
- * container (the sidebar, the fullscreen manager body, the phone island …).
+ * Row virtualization for a grid of fixed-height items inside an existing
+ * scroll container (the sidebar, the fullscreen manager body, the phone
+ * island …).
  *
  * The grid's own element is a placeholder whose height is the exact height of
  * every row (`rows × rowHeight − gap`), so the scrollbar length never changes
@@ -11,8 +12,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
  * depends on the viewport, not on `count`.
  *
  * Geometry is deterministic: `tileWidth = (width − gap·(cols − 1)) / cols`
- * and `rowHeight = tileWidth + gap`. The gap is read from the window's
- * computed `column-gap`, so the CSS stays the single source of truth.
+ * and `rowHeight = itemHeight(tileWidth) + gap`. The gap is read from the
+ * window's computed `column-gap`; item and section heights can be read from
+ * CSS by the caller, so CSS stays the single source of truth.
  */
 
 export type ScrollAlign = "start" | "nearest" | "center";
@@ -29,6 +31,14 @@ export interface VirtualGridOptions {
   // like CSS `auto-fill`: floor((width + gap) / (minTile + gap)).
   columns?: number;
   minTile?: number;
+  // Height of one item (not including the row gap). The default is a square
+  // tile. Pages read fixed card heights from CSS here so the first render's
+  // scrollbar length is already exact.
+  itemHeight?: (tileWidth: number, windowEl: HTMLDivElement | null) => number;
+  // Item indexes where a full-width section heading starts. Used by History's
+  // list view; grid views pass none.
+  sections?: number[];
+  sectionHeaderHeight?: number | ((windowEl: HTMLDivElement | null) => number);
   // Height hidden under sticky headers at the top of the scroller.
   topInset?: (scroller: HTMLElement) => number;
 }
@@ -51,7 +61,15 @@ interface Metrics {
   viewTop: number;
 }
 
-export function useVirtualGrid({ count, columns, minTile = 170, topInset }: VirtualGridOptions) {
+export function useVirtualGrid({
+  count,
+  columns,
+  minTile = 170,
+  itemHeight,
+  sections,
+  sectionHeaderHeight,
+  topInset,
+}: VirtualGridOptions) {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const windowRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLElement | null>(null);
@@ -61,13 +79,71 @@ export function useVirtualGrid({ count, columns, minTile = 170, topInset }: Virt
 
   const cols = Math.max(1, columns ?? Math.floor((m.width + m.gap) / (minTile + m.gap)));
   const tileWidth = m.width > 0 ? (m.width - m.gap * (cols - 1)) / cols : 0;
-  const rowHeight = tileWidth > 0 ? tileWidth + m.gap : 0;
+  const rawItemHeight =
+    tileWidth > 0
+      ? itemHeight?.(tileWidth, windowRef.current) ?? tileWidth
+      : 0;
+  const itemPx = Math.max(0, rawItemHeight);
+  const rowHeight = itemPx > 0 ? itemPx + m.gap : 0;
   const rows = Math.ceil(count / cols);
-  const totalHeight = rows > 0 ? Math.max(0, rows * rowHeight - m.gap) : 0;
+  const rawHeaderHeight =
+    typeof sectionHeaderHeight === "function"
+      ? sectionHeaderHeight(windowRef.current)
+      : sectionHeaderHeight ?? 0;
+  const headerHeight = Math.max(0, rawHeaderHeight);
+  const sectionRows = useMemo(
+    () =>
+      [...new Set((sections ?? []).map((index) => Math.floor(index / cols)))]
+        .filter((row) => row >= 0 && row < rows)
+        .sort((a, b) => a - b),
+    [cols, rows, sections],
+  );
+  const sectionRowSet = useMemo(() => new Set(sectionRows), [sectionRows]);
+  const totalHeight =
+    rows > 0
+      ? Math.max(0, rows * rowHeight - m.gap + sectionRows.length * headerHeight)
+      : 0;
+
+  const headersBefore = useCallback(
+    (row: number) => {
+      let lo = 0;
+      let hi = sectionRows.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sectionRows[mid] < row) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    },
+    [sectionRows],
+  );
+  const windowTop = useCallback(
+    (row: number) => row * rowHeight + headersBefore(row) * headerHeight,
+    [headerHeight, headersBefore, rowHeight],
+  );
+  const rowAtY = useCallback(
+    (y: number) => {
+      if (rows <= 0) return 0;
+      let lo = 0;
+      let hi = rows - 1;
+      let best = 0;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (windowTop(mid) <= y) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return best;
+    },
+    [rows, windowTop],
+  );
 
   // Geometry used by imperative helpers between renders.
-  const geo = useRef({ cols, rowHeight, count });
-  geo.current = { cols, rowHeight, count };
+  const geo = useRef({ cols, rowHeight, itemPx, headerHeight, count });
+  geo.current = { cols, rowHeight, itemPx, headerHeight, count };
 
   const inset = () => {
     const scroller = scrollerRef.current;
@@ -112,13 +188,14 @@ export function useVirtualGrid({ count, columns, minTile = 170, topInset }: Virt
   const anchorRef = useRef<GridAnchor | null>(null);
   const readAnchor = useCallback((): GridAnchor | null => {
     const scroller = scrollerRef.current;
-    const { cols: c, rowHeight: rh, count: n } = geo.current;
-    if (!scroller || rh <= 0 || n === 0) return null;
+    const { cols: c, itemPx: ih, headerHeight: hh, count: n } = geo.current;
+    if (!scroller || ih <= 0 || n === 0) return null;
     const viewTop = scroller.scrollTop - gridTop() + inset();
-    const row = Math.max(0, Math.floor(Math.max(0, viewTop) / rh));
+    const row = Math.max(0, rowAtY(Math.max(0, viewTop)));
     const index = Math.min(n - 1, row * c);
-    return { index, offset: row * rh - viewTop };
-  }, [gridTop]);
+    const itemTop = windowTop(row) + (sectionRowSet.has(row) ? hh : 0);
+    return { index, offset: itemTop - viewTop };
+  }, [gridTop, rowAtY, sectionRowSet, windowTop]);
 
   // Keeps the remembered tile while it is still in the top row: a density
   // change only knows the row, and re-reading the row's first tile after
@@ -177,37 +254,39 @@ export function useVirtualGrid({ count, columns, minTile = 170, topInset }: Virt
   /** Puts the row of `anchor.index` back at `anchor.offset` below the inset. */
   const restoreAnchor = useCallback(
     (anchor: GridAnchor) => {
-      const { cols: c, rowHeight: rh } = geo.current;
-      if (rh <= 0) return;
+      const { cols: c, itemPx: ih, headerHeight: hh } = geo.current;
+      if (ih <= 0) return;
       const row = Math.floor(anchor.index / c);
-      setScrollTop(gridTop() + row * rh - anchor.offset - inset());
+      const itemTop = windowTop(row) + (sectionRowSet.has(row) ? hh : 0);
+      setScrollTop(gridTop() + itemTop - anchor.offset - inset());
     },
-    [gridTop, setScrollTop],
+    [gridTop, sectionRowSet, setScrollTop, windowTop],
   );
 
   // Columns or tile size changed (density buttons, window or sidebar resize):
   // keep the first visible tile in place instead of keeping the pixel offset.
-  const prevGeo = useRef({ cols, rowHeight });
+  const prevGeo = useRef({ cols, itemPx });
   useLayoutEffect(() => {
     const prev = prevGeo.current;
-    prevGeo.current = { cols, rowHeight };
-    if (prev.rowHeight <= 0 || (prev.cols === cols && Math.abs(prev.rowHeight - rowHeight) < 0.5)) return;
+    prevGeo.current = { cols, itemPx };
+    if (prev.itemPx <= 0 || (prev.cols === cols && Math.abs(prev.itemPx - itemPx) < 0.5)) return;
     const anchor = anchorRef.current;
     if (!anchor || anchor.index === 0) return;
-    // Scale the in-row offset to the new tile size.
-    restoreAnchor({ index: anchor.index, offset: (anchor.offset * rowHeight) / prev.rowHeight });
+    // Scale the in-row offset to the new card height.
+    restoreAnchor({ index: anchor.index, offset: (anchor.offset * itemPx) / prev.itemPx });
     trackAnchor();
-  }, [cols, rowHeight, trackAnchor, restoreAnchor]);
+  }, [cols, itemPx, trackAnchor, restoreAnchor]);
 
   /** Scrolls so that tile `index` is visible. */
   const scrollToIndex = useCallback(
     (index: number, align: ScrollAlign = "start", smooth = false) => {
       const scroller = scrollerRef.current;
-      const { cols: c, rowHeight: rh, count: n } = geo.current;
-      if (!scroller || rh <= 0 || n === 0) return;
+      const { cols: c, itemPx: ih, count: n } = geo.current;
+      if (!scroller || ih <= 0 || n === 0) return;
       const i = Math.min(n - 1, Math.max(0, index));
-      const top = gridTop() + Math.floor(i / c) * rh;
-      const tile = rh; // tile + gap: leaves a gap of air below the row
+      const row = Math.floor(i / c);
+      const top = gridTop() + windowTop(row);
+      const tile = ih + m.gap;
       const visTop = scroller.scrollTop + inset();
       const visBottom = scroller.scrollTop + scroller.clientHeight;
       let next: number | null = null;
@@ -218,7 +297,7 @@ export function useVirtualGrid({ count, columns, minTile = 170, topInset }: Virt
       if (next === null) return;
       scroller.scrollTo({ top: Math.max(0, next), behavior: smooth ? "smooth" : "auto" });
     },
-    [gridTop],
+    [gridTop, m.gap, windowTop],
   );
 
   const scrollToTop = useCallback(
@@ -232,10 +311,10 @@ export function useVirtualGrid({ count, columns, minTile = 170, topInset }: Virt
   );
 
   // Visible and rendered rows. Overscan is about one screen each way.
-  const firstVisibleRow = rowHeight > 0 ? Math.max(0, Math.floor(Math.max(0, m.viewTop) / rowHeight)) : 0;
+  const firstVisibleRow = rowHeight > 0 ? rowAtY(Math.max(0, m.viewTop)) : 0;
   const lastVisibleRow =
     rowHeight > 0
-      ? Math.max(firstVisibleRow, Math.min(rows - 1, Math.floor((m.viewTop + m.viewport - 1) / rowHeight)))
+      ? Math.max(firstVisibleRow, rowAtY(m.viewTop + m.viewport - 1))
       : 0;
   const overscan = rowHeight > 0 ? Math.max(2, Math.ceil(m.viewport / rowHeight)) : 2;
   const startRow = rows === 0 ? 0 : Math.min(rows - 1, Math.max(0, firstVisibleRow - overscan));
@@ -257,13 +336,15 @@ export function useVirtualGrid({ count, columns, minTile = 170, topInset }: Virt
     cols,
     gap: m.gap,
     tileWidth,
+    itemHeight: itemPx,
     rowHeight,
     totalHeight,
+    sectionRows,
     atTop: m.viewTop < rowHeight,
     // Rendered tile range [startIndex, endIndex] (inclusive, may be empty).
     startIndex: startRow * cols,
     endIndex: Math.min(count - 1, (endRow + 1) * cols - 1),
-    offsetY: startRow * rowHeight,
+    offsetY: windowTop(startRow),
     // On-screen tile range, for the position label and the anchor.
     visibleStart: Math.min(Math.max(0, count - 1), firstVisibleRow * cols),
     visibleEnd: Math.min(count - 1, (lastVisibleRow + 1) * cols - 1),

@@ -9,7 +9,7 @@ import Icon from "./ui/Icon";
 import { PopoverSection, ViewPopover } from "./ui/ToolbarPopover";
 import { useToast } from "./Toast";
 import { MarkerSwatches, downloadImage, markerHex } from "./GenerationCard";
-import { FullTextButton, PromptClamp } from "./HistoryItem";
+import { FullTextButton, PromptClamp } from "./FullText";
 import Menu from "./ui/Menu";
 import { IconButton } from "./ui/Button";
 import { type IconName } from "./ui/Icon";

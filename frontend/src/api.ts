@@ -482,6 +482,8 @@ export interface LibraryFilters {
 }
 
 export interface ImageTimeline {
+  // Drafts: records pinned above the calendar section.
+  pinned?: number;
   days: { day: string; count: number; first_index: number }[];
   // [start_index, day] wherever the day changes, in list order (first at 0).
   runs: [number, string][];

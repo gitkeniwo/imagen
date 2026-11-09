@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import { ImageRow, MARKER_COLORS, MarkerColor, ProviderId, TagRef, downloadName, imgFileUrl, imgThumbUrl } from "../api";
 import { useI18n } from "../i18n";
 import { pressable } from "../a11y";
@@ -7,57 +7,19 @@ import { Button, IconButton } from "./ui/Button";
 import Menu, { type MenuItem } from "./ui/Menu";
 import ProviderBadge from "./ProviderBadge";
 import { displayName } from "../displayName";
+import { FullTextButton, PromptClamp } from "./FullText";
 
 export const markerHex = (color: MarkerColor | null | undefined) =>
   MARKER_COLORS.find((item) => item.id === color)?.hex ?? MARKER_COLORS[0].hex;
 
-// The one prompt-folding implementation: clamps to `lines` and only offers the
-// toggle when the text actually overflows (measured, so width changes count).
-export function PromptFold({ text, lines = 3 }: { text: string; lines?: number }) {
-  const { t } = useI18n();
-  const ref = useRef<HTMLParagraphElement>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [overflows, setOverflows] = useState(false);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || expanded) return;
-    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [text, lines, expanded]);
-
-  return (
-    <div className="prompt-fold">
-      <p
-        ref={ref}
-        className={`prompt-fold-text${expanded ? " expanded" : ""}`}
-        style={{ "--prompt-lines": lines } as CSSProperties}
-      >
-        {text}
-      </p>
-      {(overflows || expanded) && (
-        <button type="button" className="link-btn prompt-fold-toggle" onClick={() => setExpanded((v) => !v)}>
-          {expanded ? t("show_less") : t("show_more")}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// One-line failure reason; "Details" reveals the full message.
+// One-line failure reason; "Details" opens the shared full-text popover.
 function ErrorLine({ kind, message }: { kind: string; message: string }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   return (
-    <div className={`gcard-error ${kind}${open ? " open" : ""}`}>
+    <div className={`gcard-error ${kind}`}>
       <Icon name="warning" size="sm" />
-      <span className="gcard-error-text" title={open ? undefined : message}>{message}</span>
-      <button type="button" className="link-btn gcard-error-toggle" onClick={() => setOpen((v) => !v)}>
-        {open ? t("hide_details") : t("details")}
-      </button>
+      <span className="gcard-error-text" title={message}>{message}</span>
+      <FullTextButton label={t("details")} title={t(`status_${kind}`)} text={message} />
     </div>
   );
 }
@@ -106,6 +68,7 @@ export default function GenerationCard({
   extra,
   menuItems,
   menuFooter,
+  fixed = false,
 }: {
   media: CardMedia;
   aspectRatio?: string | null;
@@ -134,6 +97,8 @@ export default function GenerationCard({
   extra?: ReactNode;
   menuItems: MenuItem[];
   menuFooter?: (close: () => void) => ReactNode;
+  // Fixed-height card for a virtual list: media and body never expand.
+  fixed?: boolean;
 }) {
   const { t } = useI18n();
   const ratio =
@@ -159,7 +124,7 @@ export default function GenerationCard({
 
   return (
     <article
-      className={`gcard${markerColor ? " marked" : ""}`}
+      className={`gcard${markerColor ? " marked" : ""}${fixed ? " fixed" : ""}`}
       style={markerColor ? ({ "--marker-color": markerHex(markerColor) } as CSSProperties) : undefined}
     >
       {!compactMedia && (
@@ -207,7 +172,7 @@ export default function GenerationCard({
         </div>
         {substatus && <div className="q-substatus">{substatus}</div>}
         {error && <ErrorLine kind={error.kind} message={error.message} />}
-        {prompt && <PromptFold text={prompt} lines={promptLines} />}
+        {prompt && <PromptClamp text={prompt} lines={promptLines ?? 3} />}
         {(inputs.length > 0 || (tags && tags.length > 0)) && (
           <div className="gcard-inputs">
             {inputs.map((im) =>
