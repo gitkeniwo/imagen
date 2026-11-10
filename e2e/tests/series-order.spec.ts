@@ -65,6 +65,11 @@ async function order(page: Page, sid: number): Promise<number[]> {
   return ((await res.json()).items as { id: number }[]).map((it) => it.id);
 }
 
+/** Moves are optimistic; wait until the backend order reflects the action. */
+async function expectOrder(page: Page, sid: number, expected: number[]) {
+  await expect.poll(() => order(page, sid)).toEqual(expected);
+}
+
 const groups = (page: Page) => page.locator(".series-versions > .series-vg");
 const group = (page: Page, k: number) => page.locator(`.series-vg[data-version="${k}"]`);
 const pills = (page: Page) =>
@@ -118,7 +123,7 @@ test("drag one version, split a version, drag a selection", async ({ page }) => 
   await expect(grip).toHaveCSS("opacity", "1");
   await drag(page, grip, group(page, 1), "below");
   await expect(toast(page, "Moved 1 attempt · numbers updated")).toBeVisible();
-  expect(await order(page, sid)).toEqual([b1, a1, a2, a3, a4, a5]);
+  await expectOrder(page, sid, [b1, a1, a2, a3, a4, a5]);
   await expect(groups(page)).toHaveCount(2);
   await expect(group(page, 2).locator(".series-group-tag")).toHaveText("merged v1 + v3");
   await expect(group(page, 1).locator(".series-was")).toHaveText("was #4");
@@ -127,7 +132,7 @@ test("drag one version, split a version, drag a selection", async ({ page }) => 
   // Dropping between two attempts of an expanded version splits it.
   await group(page, 2).getByRole("button", { name: "5 attempts" }).click();
   await drag(page, group(page, 1).locator(".series-grip"), row(page, 3), "above");
-  expect(await order(page, sid)).toEqual([a1, a2, b1, a3, a4, a5]);
+  await expectOrder(page, sid, [a1, a2, b1, a3, a4, a5]);
   expect(await pills(page)).toEqual([3, 2, 1]);
   await expect(page.locator(".series-group-tag", { hasText: "split from v2" }).first()).toBeVisible();
 
@@ -141,7 +146,7 @@ test("drag one version, split a version, drag a selection", async ({ page }) => 
   // The grip of a version holding a selected attempt drags the selection.
   await drag(page, group(page, 3).locator(".series-grip"), group(page, 2), "below");
   await expect(toast(page, "Moved 2 attempts · numbers updated")).toBeVisible();
-  expect(await order(page, sid)).toEqual([a1, a2, a5, b1, a3, a4]);
+  await expectOrder(page, sid, [a1, a2, a5, b1, a3, a4]);
   expect(await pills(page)).toEqual([3, 2, 1]);
   await page.locator(".series-select-bar").getByRole("button", { name: "Cancel" }).click();
   await expect(page.locator(".series-select-bar")).toHaveCount(0);
@@ -157,15 +162,15 @@ test("move up / down jump whole versions; before… / after… use the picker", 
   // Inside a version: one slot.
   await group(page, 1).getByRole("button", { name: "3 attempts" }).click();
   await rowMenu(page, 2, "Move up");
-  expect(await order(page, sid)).toEqual([a1, a3, a2, b1, b2, b3]);
+  await expectOrder(page, sid, [a1, a3, a2, b1, b2, b3]);
   // At the version's edge: past the whole neighbour, which stays whole.
   await rowMenu(page, 3, "Move up");
-  expect(await order(page, sid)).toEqual([a1, a3, b1, b2, b3, a2]);
+  await expectOrder(page, sid, [a1, a3, b1, b2, b3, a2]);
   expect(await pills(page)).toEqual([3, 2, 1]);
   await expect(group(page, 2).locator(".series-vg-head")).toContainText("3 tries");
   // And back down: the lone A jumps the whole B version again and merges.
   await groupMenu(page, 3, "Move down");
-  expect(await order(page, sid)).toEqual([a1, a3, a2, b1, b2, b3]);
+  await expectOrder(page, sid, [a1, a3, a2, b1, b2, b3]);
   expect(await pills(page)).toEqual([2, 1]);
   // Ends are disabled.
   await group(page, 2).locator(".series-vg-head").getByRole("button", { name: "More", exact: true }).click();
@@ -178,7 +183,7 @@ test("move up / down jump whole versions; before… / after… use the picker", 
   await expect(picker.locator(".series-mp-version")).toHaveCount(2);
   await expect(picker.locator(".series-mp-version", { hasText: "v2" })).toBeDisabled();
   await picker.locator(".series-mp-version", { hasText: "v1" }).click();
-  expect(await order(page, sid)).toEqual([b1, b2, b3, a1, a3, a2]);
+  await expectOrder(page, sid, [b1, b2, b3, a1, a3, a2]);
 
   // Move after…: search "#5", then a single attempt as the target.
   await groupMenu(page, 1, "Move after…");
@@ -186,7 +191,7 @@ test("move up / down jump whole versions; before… / after… use the picker", 
   await after.getByRole("searchbox").fill("#5");
   await expect(after.locator(".series-mp-version")).toHaveCount(1);
   await after.locator(".series-mp-attempt", { hasText: "#5" }).click();
-  expect(await order(page, sid)).toEqual([a1, a3, b1, b2, b3, a2]);
+  await expectOrder(page, sid, [a1, a3, b1, b2, b3, a2]);
 });
 
 test("⌥↑ / ⌥↓ move the selection", async ({ page, browserName }) => {
@@ -212,7 +217,7 @@ test("reset to time order applies at once; Undo restores the custom order", asyn
   await openApp(page);
   await openSeries(page, "Reset test");
   await groupMenu(page, 1, "Move up");
-  expect(await order(page, sid)).toEqual([b1, a1]);
+  await expectOrder(page, sid, [b1, a1]);
   await expect(page.locator(".series-order-chip")).toBeVisible();
 
   await page.getByRole("button", { name: "Reset to time order" }).click();
@@ -241,7 +246,7 @@ test("a failed move rolls back; History stays in time order", async ({ page }) =
   await expect(toast(page, "disk full")).toBeVisible();
   expect(await pills(page)).toEqual([2, 1]);
   await expect(group(page, 2).locator(".series-vg-num")).toHaveText("#2");
-  expect(await order(page, sid)).toEqual([a1, b1]);
+  await expectOrder(page, sid, [a1, b1]);
   await page.unroute("**/api/series/*/reorder");
 
   // A real move, then History: still newest first by time.
