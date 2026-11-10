@@ -1,4 +1,12 @@
-import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   type ImageRow,
   imgThumbUrl,
@@ -11,6 +19,7 @@ import { copyText } from "../clipboard";
 import { useI18n } from "../i18n";
 import { cardTime, clockTime, dayKey, parseTime } from "../historyTime";
 import { type DiffSegment, diffWords, splitTrailingSpace } from "../promptDiff";
+import type { GroupTag } from "../seriesOrder";
 import { useProviders } from "../useProviders";
 import { useToast } from "./Toast";
 import { IconButton } from "./ui/Button";
@@ -251,25 +260,97 @@ function errorCode(a: SeriesVersionAttempt): string | null {
   return m ? m[1] : null;
 }
 
+/** series-v2 B4: what a version group needs for custom order. */
+export interface GroupReorder {
+  /** Every attempt of the version in series order (the filter may hide some). */
+  ids: number[];
+  selecting: boolean;
+  selected: Set<number>;
+  /** Toggle these ids (shift = range, handled by the detail). */
+  onToggle: (ids: number[], e: ReactMouseEvent) => void;
+  /** ⌘/Ctrl-click on a thumb: starts selecting with it. */
+  onModClick: (id: number, e: ReactMouseEvent) => void;
+  /** Pointer-down on the header grip; undefined = no dragging (phone). */
+  onGrip?: (e: ReactPointerEvent) => void;
+  /** Lifted (being dragged) or waiting for the server. */
+  dim: Set<number>;
+  /** "was #N" for records just renumbered. */
+  was: Map<number, number>;
+  tag: GroupTag | null;
+}
+
+function Check({ state, label, onClick }: { state: boolean | "mixed"; label: string; onClick: (e: ReactMouseEvent) => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={state}
+      aria-label={label}
+      className={`series-check${state === true ? " on" : state === "mixed" ? " mixed" : ""}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(e);
+      }}
+    >
+      {state === true && <Icon name="check" size="sm" />}
+      {state === "mixed" && <Icon name="remove" size="sm" />}
+    </button>
+  );
+}
+
 function StripTile({
   a,
   onOpen,
   reasonText,
+  reorder,
 }: {
   a: SeriesVersionAttempt;
   onOpen: (img: ImageRow) => void;
   reasonText: string;
+  reorder?: GroupReorder;
 }) {
   const { t } = useI18n();
   const out = a.outputImage && !a.outputImage.deleted_at ? a.outputImage : null;
-  const num = <span className="series-vg-num">#{a.seq}</span>;
+  const was = reorder?.was.get(a.id);
+  const num = (
+    <>
+      <span className="series-vg-num">#{a.seq}</span>
+      {was !== undefined && <span className="series-was on-thumb">{t("sv4_was_n", { n: was })}</span>}
+    </>
+  );
+  const selecting = !!reorder?.selecting;
+  const selected = !!reorder?.selected.has(a.id);
+  const extra = `${selected ? " selected" : ""}${reorder?.dim.has(a.id) ? " drag-source" : ""}${was !== undefined ? " renumbered" : ""}`;
+  if (selecting) {
+    // Selection mode: every tile toggles, failed ones included.
+    const cls = out ? "series-vg-thumb" : `series-vg-thumb fail ${a.status === "blocked" ? "blocked" : a.status === "success" ? "deleted" : a.status === "running" ? "running" : "error"}`;
+    return (
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={selected}
+        aria-label={t("sv4_select_attempt", { n: a.seq })}
+        className={`${cls} selectable${extra}`}
+        onClick={(e) => reorder!.onToggle([a.id], e)}
+      >
+        {out ? <img src={imgThumbUrl(out)} alt="" loading="lazy" draggable={false} /> : <Icon name="imageMissing" size="sm" />}
+        <span className={`series-check tile${selected ? " on" : ""}`} aria-hidden="true">
+          {selected && <Icon name="check" size="sm" />}
+        </span>
+        {num}
+      </button>
+    );
+  }
   if (out) {
     return (
       <button
         type="button"
-        className="series-vg-thumb"
+        className={`series-vg-thumb${extra}`}
         title={t("open_viewer")}
-        onClick={() => onOpen(out)}
+        onClick={(e) => {
+          if (reorder && (e.metaKey || e.ctrlKey)) reorder.onModClick(a.id, e);
+          else onOpen(out);
+        }}
       >
         <img src={imgThumbUrl(out)} alt="" loading="lazy" draggable={false} />
         {num}
@@ -278,7 +359,7 @@ function StripTile({
   }
   if (a.status === "running") {
     return (
-      <div className="series-vg-thumb fail running">
+      <div className={`series-vg-thumb fail running${extra}`}>
         <span className="spinner" />
         {num}
       </div>
@@ -286,7 +367,7 @@ function StripTile({
   }
   if (a.status === "success") {
     return (
-      <div className="series-vg-thumb fail deleted" title={t("series_output_deleted")}>
+      <div className={`series-vg-thumb fail deleted${extra}`} title={t("series_output_deleted")}>
         <Icon name="imageMissing" size="sm" />
         {num}
       </div>
@@ -294,7 +375,7 @@ function StripTile({
   }
   const blocked = a.status === "blocked";
   return (
-    <div className={`series-vg-thumb fail ${blocked ? "blocked" : "error"}`} title={reasonText}>
+    <div className={`series-vg-thumb fail ${blocked ? "blocked" : "error"}${extra}`} title={reasonText}>
       <Icon name={blocked ? "shield" : "warning"} size="sm" />
       <span className="series-vg-fail-label">
         {blocked ? t("status_blocked") : a.status === "aborted" ? t("status_aborted") : errorCode(a) ?? t("status_error")}
@@ -312,6 +393,7 @@ export function VersionGroup({
   reasonOf,
   menu,
   renderAttempts,
+  reorder,
 }: {
   v: SeriesVersion;
   compact: boolean;
@@ -322,6 +404,8 @@ export function VersionGroup({
   menu: MenuItem[];
   /** The expanded rows (Attempts-view rows, newest first). */
   renderAttempts: () => ReactNode;
+  /** series-v2 B4: grip, selection, drag state and renumber hints. */
+  reorder?: GroupReorder;
 }) {
   const { t, lang } = useI18n();
   const modelShort = useModelShort();
@@ -370,9 +454,38 @@ export function VersionGroup({
     ? t("sv2_a_of_n_shown", { a: v.attempts_total, n: v.counts.all })
     : t("series_tries_n", { n: v.counts.all });
 
+  const ids = reorder?.ids.length ? reorder.ids : attempts.map((a) => a.id);
+  const nSelected = reorder ? ids.filter((id) => reorder.selected.has(id)).length : 0;
+  const checkState: boolean | "mixed" = nSelected === 0 ? false : nSelected === ids.length ? true : "mixed";
+  const tag = reorder?.tag ?? null;
+  const lifted = !!reorder && ids.length > 0 && ids.every((id) => reorder.dim.has(id));
+
   return (
-    <li className={`series-vg${compact ? " compact" : ""}`} data-version={v.version}>
+    <li
+      className={`series-vg${compact ? " compact" : ""}${lifted ? " drag-source" : ""}${tag ? " flash" : ""}${checkState === true ? " selected" : ""}`}
+      data-version={v.version}
+      data-drop-ids={ids.join(",")}
+    >
       <div className="series-vg-head">
+        {reorder?.onGrip && (
+          <span
+            className="series-grip"
+            role="button"
+            tabIndex={-1}
+            aria-label={t("sv4_drag_handle")}
+            title={t("sv4_drag_handle")}
+            onPointerDown={reorder.onGrip}
+          >
+            <Icon name="grip" size="sm" />
+          </span>
+        )}
+        {reorder?.selecting && (
+          <Check
+            state={checkState}
+            label={t("sv4_select_version", { k: v.version })}
+            onClick={(e) => reorder.onToggle(checkState === true ? ids : ids.filter((id) => !reorder.selected.has(id)), e)}
+          />
+        )}
         <span className="series-vg-pill">{t("sv2_version_n", { k: v.version })}</span>
         <strong>{tries}</strong>
         {!filtered && <span>· {t("sv2_ok_n", { n: ok })}</span>}
@@ -384,7 +497,17 @@ export function VersionGroup({
           </span>
         )}
         {!filtered && !compact && range && <span>{range}</span>}
+        {reorder?.selecting && nSelected > 0 && (
+          <span>· {nSelected === ids.length ? t("sv4_whole_version") : t("sv4_n_of_m_selected", { a: nSelected, n: ids.length })}</span>
+        )}
         <span className="spacer" />
+        {tag && (
+          <span className="series-group-tag">
+            {tag.kind === "merged"
+              ? t("sv4_merged", { list: tag.from.map((k) => `v${k}`).join(" + ") })
+              : t("sv4_split", { k: tag.from })}
+          </span>
+        )}
         {v.base_version === null && <span className="series-vg-first">{t("sv2_first_version")}</span>}
         {menu.length > 0 && (
           <Menu
@@ -415,7 +538,7 @@ export function VersionGroup({
       {attempts.length > 0 && (
         <div className="series-vg-strip">
           {attempts.map((a) => (
-            <StripTile key={a.id} a={a} onOpen={onOpen} reasonText={reasonOf(a)} />
+            <StripTile key={a.id} a={a} onOpen={onOpen} reasonText={reasonOf(a)} reorder={reorder} />
           ))}
         </div>
       )}
@@ -436,10 +559,10 @@ export function VersionGroup({
 }
 
 /** A version whose attempts the filter hides completely. */
-export function HiddenVersionRow({ v }: { v: SeriesVersion }) {
+export function HiddenVersionRow({ v, ids }: { v: SeriesVersion; ids?: number[] }) {
   const { t } = useI18n();
   return (
-    <li className="series-vg-hidden" data-version={v.version}>
+    <li className="series-vg-hidden" data-version={v.version} data-drop-ids={ids?.join(",") || undefined}>
       <Icon name="view" size="sm" />
       <span>{t("sv2_version_hidden", { k: v.version, n: v.counts.all })}</span>
     </li>

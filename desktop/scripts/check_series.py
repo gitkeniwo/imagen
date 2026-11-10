@@ -476,6 +476,16 @@ if fresh:
     check(shape(vs) == [[v_ids[0], v_ids[1], v_ids[4]], [v_ids[3]], [v_ids[5]], [v_ids[2]]],
           "moving an attempt out splits a version")
 
+    # series-v2 B4: the whole order, small, for the reorder UI.
+    om = ok(c.get(f"/api/series/{vs}/order"), "order map")
+    check([it["id"] for it in om["items"]] == [g for grp in shape(vs) for g in grp]
+          and [it["seq"] for it in om["items"]] == list(range(1, len(om["items"]) + 1))
+          and [it["version"] for it in om["items"]] == [1, 1, 1, 2, 3, 4],
+          "order map: series order, #N and vK like the versions endpoint")
+    check(om["items"][0]["k"] == om["items"][1]["k"] and len(om["keys"]) == len({it["k"] for it in om["items"]})
+          and om["order_custom"] is True, "order map: key indexes and order_custom")
+    ok(c.get("/api/series/999999/order"), "order map of an unknown series", 404)
+
     big = ok(c.post("/api/series", json={"name": "Big version"}), "create big series")["id"]
     with db.get_conn() as conn:
         for i in range(205):

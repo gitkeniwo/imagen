@@ -727,6 +727,59 @@ def reorder_restore(series_id: int, body: SeriesRestore):
         return _order_result(conn, series_id, before)
 
 
+@router.get("/{series_id}/order")
+def series_order_map(series_id: int):
+    """The whole series order, small (series-v2 B4): every record's #N, vK,
+    status and configuration key (an index into ``keys``), oldest first.
+    The reorder UI needs version boundaries beyond the loaded pages: up /
+    down jump over whole neighbouring versions, the position picker lists
+    every version, and a drop on a filter-hidden version moves past all of it.
+    """
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"""SELECT id, prompt, model, aspect_ratio, resolution, status, created_at,
+                           output_image_id,
+                           ROW_NUMBER() OVER (ORDER BY {series_order.ORDER_SQL}) AS seq
+                    FROM generations WHERE series_id = ? AND status != 'note'
+                    ORDER BY {series_order.ORDER_SQL}""",
+                (series_id,),
+            ).fetchall()
+        ]
+        inputs: dict[int, list[int]] = {}
+        for ir in conn.execute(
+            """SELECT gi.generation_id, gi.image_id FROM generation_inputs gi
+               JOIN generations g ON g.id = gi.generation_id
+               WHERE g.series_id = ? ORDER BY gi.generation_id, gi.position""",
+            (series_id,),
+        ).fetchall():
+            inputs.setdefault(ir["generation_id"], []).append(ir["image_id"])
+        keys: list[str] = []
+        key_index: dict[str, int] = {}
+        items = []
+        for v in series_order.group_versions(rows, inputs):
+            k = key_index.setdefault(v["key"], len(keys))
+            if k == len(keys):
+                keys.append(v["key"])
+            for r in v["rows"]:
+                items.append({
+                    "id": r["id"],
+                    "seq": r["seq"],
+                    "version": v["version"],
+                    "k": k,
+                    "status": r["status"],
+                    "created_at": r["created_at"],
+                    "output_image_id": r["output_image_id"],
+                })
+        return {
+            "items": items,
+            "keys": keys,
+            "order_custom": series_order.order_custom(conn, series_id),
+        }
+
+
 # --- versions (series-v2 B2) --------------------------------------------------
 
 VERSION_PAGE = 15
