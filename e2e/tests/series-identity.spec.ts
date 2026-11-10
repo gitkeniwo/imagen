@@ -228,13 +228,18 @@ test.describe("read-only", () => {
     await card(page).getByRole("button", { name: "Open series" }).click();
     await expect(page.locator(".series-detail h2")).toHaveText("Perfume poster");
     // Another library: a different key, and series ids that mean nothing here.
-    await page.route("**/api/settings/library", async (route) => {
-      const res = await route.fetch();
-      const body = await res.json();
-      await route.fulfill({ response: res, json: { ...body, key: "another-library" } });
-    });
+    // Read it before installing the route: a route.fetch() in flight when
+    // reload() aborts the old document leaves its response disposed.
+    const library = await page.request.get("/api/settings/library").then((res) => res.json());
+    await page.route("**/api/settings/library", (route) =>
+      route.fulfill({ json: { ...library, key: "another-library" } }),
+    );
     await page.route("**/api/series?*", (route) => route.fulfill({ json: { themes: [], unthemed: [] } }));
-    await page.reload();
+    await Promise.all([
+      page.waitForResponse((res) => res.url().includes("/api/settings/library")),
+      page.waitForResponse((res) => res.url().includes("/api/series?archived=all")),
+      page.reload(),
+    ]);
     await page.getByRole("tab", { name: "Series" }).click();
     await expect(page.locator(".series-detail")).toHaveCount(0);
   });
