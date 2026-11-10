@@ -54,6 +54,24 @@ test("new tag from the tag submenu lands on the image", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^e2e-alpine/ }).first()).toBeVisible();
 });
 
+test("clicking the active tag clears the filter, expanded or collapsed", async ({ page }) => {
+  const row = page.locator(".tag-filter-row");
+  const chip = row.locator(".tag-chip").filter({ hasText: /^产品/ }).first();
+
+  await chip.click();
+  await expect(chip).toHaveClass(/\bon\b/);
+  await chip.click();
+  await expect(chip).not.toHaveClass(/\bon\b/);
+  await expect(row.locator(".tag-chip.on")).toHaveText("All");
+
+  await chip.click();
+  await page.getByRole("button", { name: "Hide tags" }).click();
+  await expect(row.getByText(/tags hidden/)).toBeVisible();
+  await expect(chip).toHaveClass(/\bon\b/);
+  await chip.click();
+  await expect(row.locator(".tag-chip.on")).toHaveText("All");
+});
+
 test("batch remove-tag lists only tags the selected images carry", async ({ page }) => {
   // The long-named upload has no tags; product-mug.webp carries only 产品.
   await page.getByRole("button", { name: "Select", exact: true }).click();

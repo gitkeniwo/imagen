@@ -76,7 +76,8 @@ export default function TagFilterRow({
       <button
         className={`tag-chip${value === tag.id ? " on" : ""}`}
         style={tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined}
-        onClick={onClick ?? (() => onChange(tag.id))}
+        aria-pressed={value === tag.id}
+        onClick={onClick ?? (() => onChange(value === tag.id ? null : tag.id))}
       >
         {tag.name}
         <span className="tag-count">{tag.count}</span>
@@ -95,7 +96,11 @@ export default function TagFilterRow({
 
   const active = tags.find((tag) => tag.id === value);
   const allChip = (
-    <button className={`tag-chip${value === null ? " on" : ""}`} onClick={() => onChange(null)}>
+    <button
+      className={`tag-chip${value === null ? " on" : ""}`}
+      aria-pressed={value === null}
+      onClick={() => onChange(null)}
+    >
       {t("tags_all")}
     </button>
   );
