@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   type HistoryResult,
   type ImageRow,
@@ -6,6 +16,8 @@ import {
   providerOf,
   type SeriesDetail as SeriesDetailRow,
   type SeriesGeneration,
+  type SeriesOrder,
+  type SeriesReorderResult,
   type SeriesVersion,
   type SeriesVersionAttempt,
   seriesApi,
@@ -17,12 +29,25 @@ import { generationRuntime } from "../generationMetrics";
 import { changedParams, compactEqual, diffWords, type ParamKey, samePrompt, splitTrailingSpace } from "../promptDiff";
 import { useProviders } from "../useProviders";
 import { useSeries } from "../seriesStore";
+import {
+  currentRuns,
+  type GroupTag,
+  groupTags,
+  type PlannedMove,
+  placeAt,
+  regroupVersions,
+  runsOf,
+  stepMove,
+  withOrder,
+} from "../seriesOrder";
 import { useConfirm } from "./ConfirmDialog";
 import { useToast } from "./Toast";
 import { Switch } from "./ComposerControls";
 import { SeriesDot, successRate } from "./SeriesBits";
 import { MoveToThemeDialog, SeriesEditDialog } from "./SeriesDialogs";
+import SeriesMovePicker from "./SeriesMovePicker";
 import { HiddenVersionRow, VersionGroup, VersionSkeleton } from "./SeriesVersionGroup";
+import { type DropHit, useReorderDrag } from "./useReorderDrag";
 import { Button, IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
 import Menu, { type MenuItem } from "./ui/Menu";
@@ -35,6 +60,10 @@ const VERSION_PAGE = 15;
 const MAX_ROWS = 200;
 const MAX_VERSIONS = 100;
 const DETAIL_VIEW_KEY = "imagen-series-detail-view";
+// series-v2 B4: how long renumber hints stay, and the Undo windows.
+const HINT_MS = 2500;
+const MOVE_UNDO_MS = 6000;
+const RESET_UNDO_MS = 10_000;
 type DetailView = "changes" | "attempts";
 
 function initialDetailView(): DetailView {
@@ -183,6 +212,19 @@ export default function SeriesDetail({
   const [dialog, setDialog] = useState<"rename" | "move" | null>(null);
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
   const compact = useNarrow(rootEl, COMPACT_BELOW) || phone;
+  // series-v2 B4: the whole order (version boundaries beyond loaded pages),
+  // selection mode, records waiting for the server and renumber hints.
+  const [order, setOrder] = useState<SeriesOrder | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const selAnchor = useRef<number | null>(null);
+  const [pending, setPending] = useState<Set<number>>(() => new Set());
+  const [hints, setHints] = useState<{ was: Map<number, number>; tags: Map<number, GroupTag> }>(() => ({
+    was: new Map(),
+    tags: new Map(),
+  }));
+  const hintTimer = useRef(0);
+  const [picker, setPicker] = useState<{ ids: number[]; side: "before" | "after"; rect: DOMRect | null } | null>(null);
 
   useEffect(() => {
     try {
@@ -211,15 +253,17 @@ export default function SeriesDetail({
         const versionLimit = keep
           ? Math.min(MAX_VERSIONS, Math.max(VERSION_PAGE, loaded.current.versions))
           : VERSION_PAGE;
-        const [d, tl, vs] = await Promise.all([
+        const [d, tl, vs, om] = await Promise.all([
           seriesApi.get(id),
           // The Changes view only needs the filter counts from here.
           seriesApi.timeline(id, { status, limit: view === "attempts" ? rowLimit : 1 }),
           // The Attempts view only needs the version count from here.
           seriesApi.versions(id, { status, limit: view === "changes" ? versionLimit : 1 }),
+          seriesApi.order(id),
         ]);
         if (token !== loadToken.current) return;
         setDetail(d);
+        setOrder(om);
         setCounts(tl.counts);
         setTotal(tl.total);
         setVersionTotal(vs.total);
@@ -264,6 +308,13 @@ export default function SeriesDetail({
     }
   }, [id, status, view, versionCursor, rows.length, total, loading, loadingMore, toast, t]);
 
+  // Selection belongs to one series.
+  useEffect(() => {
+    setSelecting(false);
+    setSelected(new Set());
+    setPicker(null);
+  }, [id]);
+
   // A new series, filter or view starts from the top.
   useEffect(() => {
     setRows([]);
@@ -301,6 +352,203 @@ export default function SeriesDetail({
 
   const hasMore = view === "changes" ? versionCursor !== null : rows.length < total;
   useNearEnd(endEl, hasMore && !loading && !loadingMore && !error, () => void loadMore());
+
+  // --- series-v2 B4: custom order ------------------------------------------
+
+  const runs = useMemo(() => (order ? currentRuns(order) : []), [order]);
+  const versionIds = useMemo(() => new Map(runs.map((r) => [r.version, r.ids])), [runs]);
+  const orderIds = useMemo(() => (order ? order.items.map((it) => it.id) : []), [order]);
+  const orderCustom = order?.order_custom ?? false;
+
+  const showHints = (changed: SeriesReorderResult["changed"], tags: Map<number, GroupTag>) => {
+    const was = new Map<number, number>();
+    for (const c of changed) if (c.old_seq !== null) was.set(c.id, c.old_seq);
+    window.clearTimeout(hintTimer.current);
+    setHints({ was, tags });
+    hintTimer.current = window.setTimeout(() => setHints({ was: new Map(), tags: new Map() }), HINT_MS);
+  };
+  useEffect(() => () => window.clearTimeout(hintTimer.current), []);
+
+  /** Order changed on the server: this view, and everyone showing #N. */
+  const afterOrderChange = async () => {
+    await load(true);
+    void store.reload([]);
+  };
+
+  const restore = async (ids: number[], announce: boolean) => {
+    try {
+      await seriesApi.reorderRestore(id, ids);
+      if (announce) toast(t("sv4_restored_toast"), "info");
+      await afterOrderChange();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    }
+  };
+
+  /** Optimistic: the list changes first, the server follows; a failure
+   *  puts everything back. */
+  const commitMove = async (move: PlannedMove) => {
+    if (!order) return;
+    const prev = { order, versions, rows };
+    const kOf = new Map(order.items.map((it) => [it.id, it.k]));
+    const before = currentRuns(order);
+    const after = runsOf(move.order, (x) => kOf.get(x) ?? -1);
+    const seqOf = new Map(move.order.map((x, i) => [x, i + 1]));
+    if (view === "changes") {
+      const next = regroupVersions(order, move.order, versions, status, samePrompt);
+      if (next) setVersions(next);
+      else setPending(new Set(move.ids));
+    } else {
+      setRows((rs) => rs.map((r) => ({ ...r, seq: seqOf.get(r.id) ?? r.seq })).sort((a, b) => b.seq - a.seq));
+    }
+    setOrder(withOrder(order, move.order));
+    try {
+      const res = await seriesApi.reorder(id, { generationIds: move.ids, ...move.placement });
+      showHints(res.changed, groupTags(before, after, move.ids));
+      const previous = prev.order.items.map((it) => it.id);
+      toast(t("sv4_moved_toast", { n: move.ids.length }), "info", {
+        durationMs: MOVE_UNDO_MS,
+        action: { label: t("undo"), onClick: () => void restore(previous, false) },
+      });
+      await afterOrderChange();
+    } catch (e) {
+      setOrder(prev.order);
+      setVersions(prev.versions);
+      setRows(prev.rows);
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    } finally {
+      setPending(new Set());
+    }
+  };
+
+  /** Back to time order at once; Undo (10 s) restores the custom order. */
+  const resetOrder = async () => {
+    try {
+      const res = await seriesApi.reorderReset(id);
+      const previous = res.previous_order ?? [];
+      showHints(res.changed, new Map());
+      toast(t("sv4_reset_toast"), "info", {
+        durationMs: RESET_UNDO_MS,
+        action: { label: t("undo"), onClick: () => void restore(previous, true) },
+      });
+      await afterOrderChange();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    }
+  };
+
+  /** Where a record is on screen (the picker opens next to it). */
+  const rectOf = (gid: number): DOMRect | null => {
+    let best: DOMRect | null = null;
+    for (const el of rootEl?.querySelectorAll<HTMLElement>("[data-drop-ids]") ?? []) {
+      if (!(el.dataset.dropIds ?? "").split(",").includes(String(gid))) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height && (!best || r.height < best.height)) best = r;
+    }
+    return best;
+  };
+
+  /** Move up / down / before… / after… for these records. "Up" is up on
+   *  screen: the detail lists newest first, so it is later in the order. */
+  const moveItems = (ids: number[]): MenuItem[] => {
+    if (!order || !ids.length || !ids.every((x) => order.items.some((it) => it.id === x))) return [];
+    const up = stepMove(order, ids, "later");
+    const down = stepMove(order, ids, "earlier");
+    return [
+      { label: t("sv4_move_up"), icon: "moveUp", hint: compact ? undefined : "⌥↑", disabled: !up, onSelect: () => up && void commitMove(up) },
+      { label: t("sv4_move_down"), icon: "moveDown", hint: compact ? undefined : "⌥↓", disabled: !down, onSelect: () => down && void commitMove(down) },
+      { label: t("sv4_move_before"), icon: "reorder", onSelect: () => setPicker({ ids, side: "before", rect: rectOf(ids[0]) }) },
+      { label: t("sv4_move_after"), icon: "reorder", onSelect: () => setPicker({ ids, side: "after", rect: rectOf(ids[0]) }) },
+    ];
+  };
+
+  const toggleIds = (ids: number[], e: ReactMouseEvent) => {
+    const all = orderIds;
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (e.shiftKey && ids.length === 1 && selAnchor.current !== null) {
+        // Shift: a range in series order.
+        const a = all.indexOf(selAnchor.current);
+        const b = all.indexOf(ids[0]);
+        if (a >= 0 && b >= 0) {
+          for (const x of all.slice(Math.min(a, b), Math.max(a, b) + 1)) next.add(x);
+          return next;
+        }
+      }
+      const on = ids.every((x) => cur.has(x));
+      for (const x of ids) {
+        if (on) next.delete(x);
+        else next.add(x);
+      }
+      return next;
+    });
+    if (ids.length === 1) selAnchor.current = ids[0];
+  };
+  const startSelecting = (gid: number, e: ReactMouseEvent) => {
+    setSelecting(true);
+    toggleIds([gid], e);
+  };
+  const exitSelecting = () => {
+    setSelecting(false);
+    setSelected(new Set());
+    selAnchor.current = null;
+  };
+
+  // Thumbnails for the lifted stack.
+  const thumbOf = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const v of versions) for (const a of v.attempts) if (a.outputImage && !a.outputImage.deleted_at) m.set(a.id, imgThumbUrl(a.outputImage));
+    for (const r of rows) if (r.outputImage && !r.outputImage.deleted_at) m.set(r.id, imgThumbUrl(r.outputImage));
+    return m;
+  }, [versions, rows]);
+
+  const dropMove = (ids: number[], hit: DropHit) =>
+    placeAt(orderIds, ids, hit.anchor, hit.above ? "after" : "before");
+  const { drag, start: startDrag } = useReorderDrag({
+    root: rootEl,
+    enabled: !phone && !!order,
+    canDrop: (ids, hit) => !!dropMove(ids, hit),
+    onDrop: (ids, hit) => {
+      const m = dropMove(ids, hit);
+      if (m) void commitMove(m);
+    },
+  });
+  /** Drag these, or the whole selection when they are part of it. */
+  const gripFor = (ids: number[]) =>
+    phone
+      ? undefined
+      : (e: ReactPointerEvent) => {
+          const source = selecting && ids.some((x) => selected.has(x)) ? orderIds.filter((x) => selected.has(x)) : ids;
+          startDrag(e, { ids: source, thumbs: source.map((x) => thumbOf.get(x)).filter((u): u is string => !!u).slice(0, 2) });
+        };
+  const dim = drag ? drag.ids : pending;
+
+  // Keyboard: ⌥↑ / ⌥↓ move the selection (or the focused row / version);
+  // Esc leaves selection mode.
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyHandler.current = (e: KeyboardEvent) => {
+    if (!rootEl?.isConnected || picker || document.querySelector(".menu, .modal, .sheet")) return;
+    if (e.key === "Escape" && selecting) {
+      exitSelecting();
+      return;
+    }
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || !order) return;
+    let ids = orderIds.filter((x) => selected.has(x));
+    if (!ids.length) {
+      const el = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-drop-ids]");
+      if (!el || !rootEl.contains(el)) return;
+      ids = (el.dataset.dropIds ?? "").split(",").map(Number).filter((n) => n > 0);
+    }
+    if (!ids.length) return;
+    e.preventDefault();
+    const m = stepMove(order, ids, e.key === "ArrowUp" ? "later" : "earlier");
+    if (m) void commitMove(m);
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandler.current(e);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const setBest = async (imageId: number | null) => {
     try {
@@ -407,6 +655,12 @@ export default function SeriesDetail({
           { label: t("series_move_to_theme"), icon: "moveToTheme" as const, onSelect: () => setDialog("move") },
         ]
       : []),
+    ...(detail.records > 0 && !selecting
+      ? [{ label: t("sv4_select"), icon: "selectMode" as const, onSelect: () => setSelecting(true) }]
+      : []),
+    ...(compact && orderCustom
+      ? [{ label: t("sv4_reset_order"), icon: "restore" as const, onSelect: () => void resetOrder() }]
+      : []),
     detail.archived
       ? { label: t("series_unarchive"), icon: "unarchive", onSelect: () => void archive(false) }
       : { label: t("series_archive"), icon: "archive", onSelect: () => void archive(true) },
@@ -441,6 +695,15 @@ export default function SeriesDetail({
         reasonText={reason(g.raw_finish, providerOf(g)) || g.error_message || t("no_output")}
         timeText={when.short}
         fullTimeText={when.full}
+        reorder={{
+          selecting,
+          selected: selected.has(g.id),
+          onToggle: (e) => toggleIds([g.id], e),
+          onGrip: gripFor([g.id]),
+          dim: dim.has(g.id),
+          was: hints.was.get(g.id),
+          moveItems: moveItems([g.id]),
+        }}
       />
     );
   };
@@ -451,6 +714,7 @@ export default function SeriesDetail({
     if (!latest) return [];
     const g = attemptRow(v, latest, id);
     return [
+      ...moveItems(versionIds.get(v.version) ?? []),
       { label: t("reuse"), icon: "reuse", onSelect: () => onReuse(g) },
       ...(onRerun && g.source !== "manual" && isReady(providerOf(g))
         ? [{ label: t("rerun_short"), icon: "rerun" as const, onSelect: () => onRerun(g) }]
@@ -588,7 +852,21 @@ export default function SeriesDetail({
             },
           ]}
         />
-        {!compact && <span className="series-order">{t("series_newest_first")}</span>}
+        {orderCustom ? (
+          <span className="series-order custom">
+            <span className="series-order-chip" title={t("series_newest_first")}>
+              <Icon name="reorder" size="sm" />
+              {t("sv4_custom_order")}
+            </span>
+            {!compact && (
+              <button type="button" className="series-order-reset" onClick={() => void resetOrder()}>
+                {t("sv4_reset_order")}
+              </button>
+            )}
+          </span>
+        ) : (
+          !compact && <span className="series-order">{t("series_newest_first")}</span>
+        )}
       </div>
 
       <div className="series-timeline-bar" ref={barRef}>
@@ -615,6 +893,31 @@ export default function SeriesDetail({
         )}
       </div>
 
+      {selecting && (
+        <div className={`series-select-bar${compact ? " compact" : ""}`} role="toolbar" aria-label={t("sv4_select")}>
+          <strong>{t("sv4_selected_n", { n: selected.size })}</strong>
+          <span className="spacer" />
+          <Menu
+            items={moveItems(orderIds.filter((x) => selected.has(x)))}
+            renderTrigger={({ open, toggle }) => (
+              <button
+                type="button"
+                className="series-select-btn"
+                aria-expanded={open}
+                disabled={selected.size === 0}
+                onClick={toggle}
+              >
+                <Icon name="reorder" size="sm" />
+                {t("sv4_move_to")}
+              </button>
+            )}
+          />
+          <button type="button" className="series-select-btn" onClick={exitSelecting}>
+            {t("cancel")}
+          </button>
+        </div>
+      )}
+
       {view === "changes" ? (
         loading && versions.length === 0 ? (
           <ol className="series-versions"><VersionSkeleton /></ol>
@@ -624,7 +927,7 @@ export default function SeriesDetail({
           <ol className="series-versions" aria-label={t("sv2_view_changes")}>
             {versions.map((v) =>
               v.hidden ? (
-                <HiddenVersionRow key={v.version} v={v} />
+                <HiddenVersionRow key={v.version} v={v} ids={versionIds.get(v.version)} />
               ) : (
                 <VersionGroup
                   key={v.version}
@@ -634,6 +937,17 @@ export default function SeriesDetail({
                   onOpen={(img) => onOpenViewer(img, outputs.length ? outputs : [img])}
                   reasonOf={(a) => reason(a.raw_finish, a.provider) || a.error_message || t("no_output")}
                   menu={versionMenu(v)}
+                  reorder={{
+                    ids: versionIds.get(v.version) ?? v.attempts.map((a) => a.id),
+                    selecting,
+                    selected,
+                    onToggle: toggleIds,
+                    onModClick: startSelecting,
+                    onGrip: gripFor(versionIds.get(v.version) ?? v.attempts.map((a) => a.id)),
+                    dim,
+                    was: hints.was,
+                    tag: hints.tags.get(v.version) ?? null,
+                  }}
                   renderAttempts={() => (
                     <ol className="series-timeline in-version" aria-label={t("series_attempts")}>
                       {[...v.attempts].reverse().map((a) => attemptItem(attemptRow(v, a, id), v))}
@@ -658,6 +972,42 @@ export default function SeriesDetail({
         <div className="series-more"><span className="spinner" /></div>
       )}
       <div ref={setEndEl} className="series-end" aria-hidden="true" />
+
+      {picker && order && (
+        <SeriesMovePicker
+          order={order}
+          moving={picker.ids}
+          side={picker.side}
+          anchorRect={picker.rect}
+          phone={phone}
+          onClose={() => setPicker(null)}
+          onPick={(anchor) => {
+            const m = placeAt(orderIds, picker.ids, anchor, picker.side);
+            setPicker(null);
+            if (m) void commitMove(m);
+          }}
+        />
+      )}
+      {drag &&
+        createPortal(
+          <>
+            {drag.zoneRect && (
+              <div className="series-drag-zone" style={drag.zoneRect}>
+                <Icon name={drag.zone === "up" ? "chevronUp" : "chevronDown"} size="sm" />
+                {drag.zone === "up" ? t("sv4_scrolling_up") : t("sv4_scrolling_down")}
+              </div>
+            )}
+            {drag.line && <div className="series-drop-line" style={drag.line} />}
+            <div className="series-drag-stack" style={{ left: drag.x + 14, top: drag.y + 10 }}>
+              {drag.thumbs.map((src) => (
+                <img key={src} src={src} alt="" />
+              ))}
+              <strong>{t("sv2_n_attempts", { n: drag.ids.size })}</strong>
+              <span className="series-drag-count">{drag.ids.size}</span>
+            </div>
+          </>,
+          document.body,
+        )}
 
       {dialog === "rename" && (
         <SeriesEditDialog
@@ -690,6 +1040,7 @@ function TimelineRow({
   reasonText,
   timeText,
   fullTimeText,
+  reorder,
 }: {
   g: SeriesGeneration;
   compact: boolean;
@@ -704,6 +1055,16 @@ function TimelineRow({
   reasonText: string;
   timeText: string;
   fullTimeText: string;
+  /** series-v2 B4: grip, checkbox, move menu, renumber hint. */
+  reorder?: {
+    selecting: boolean;
+    selected: boolean;
+    onToggle: (e: ReactMouseEvent) => void;
+    onGrip?: (e: ReactPointerEvent) => void;
+    dim: boolean;
+    was?: number;
+    moveItems: MenuItem[];
+  };
 }) {
   const { t } = useI18n();
   const { spec } = useProviders();
@@ -790,8 +1151,33 @@ function TimelineRow({
     <div className="series-row-media" style={{ width: compact ? COMPACT_OUTPUT_WIDTH : OUTPUT_WIDTH }}>{media}</div>
   );
 
+  const was = reorder?.was;
+  const wasTag = was !== undefined ? <span className="series-was">{t("sv4_was_n", { n: was })}</span> : null;
+  const moves = reorder?.moveItems ?? [];
+  const rowCls = [
+    "series-row",
+    compact && "compact",
+    reorder?.dim && "drag-source",
+    reorder?.selected && "selected",
+    was !== undefined && "renumbered",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <li className={`series-row${compact ? " compact" : ""}`}>
+    <li className={rowCls} data-drop-ids={g.id}>
+      {reorder?.onGrip && (
+        <span
+          className="series-grip"
+          role="button"
+          tabIndex={-1}
+          aria-label={t("sv4_drag_handle")}
+          title={t("sv4_drag_handle")}
+          onPointerDown={reorder.onGrip}
+        >
+          <Icon name="grip" size="sm" />
+        </span>
+      )}
       {compact && mediaBox}
       {!compact && <span className="series-row-n">#{g.seq}</span>}
       {!compact && (
@@ -802,7 +1188,20 @@ function TimelineRow({
       <div className="series-row-body">
         <div className="series-row-meta">
           {compact && <i className={`series-row-dot ${status}`} aria-hidden="true" />}
+          {reorder?.selecting && (
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={reorder.selected}
+              aria-label={t("sv4_select_attempt", { n: g.seq })}
+              className={`series-check${reorder.selected ? " on" : ""}`}
+              onClick={reorder.onToggle}
+            >
+              {reorder.selected && <Icon name="check" size="sm" />}
+            </button>
+          )}
           {compact && <span className="series-row-n-inline">#{g.seq}</span>}
+          {wasTag}
           <strong className={`series-status ${status}`}>{t(`status_${status}`)}</strong>
           {!compact && <time dateTime={g.created_at} title={fullTimeText}>{timeText}</time>}
           {!compact && runtime && <span>· {runtime}</span>}
@@ -821,7 +1220,7 @@ function TimelineRow({
           {compact ? (
             <Menu
               className="series-row-more"
-              items={actions}
+              items={[...moves, ...actions]}
               renderTrigger={({ open, toggle }) => (
                 <IconButton icon="more" size="sm" label={t("more_actions")} aria-expanded={open} onClick={toggle} />
               )}
@@ -833,6 +1232,14 @@ function TimelineRow({
                   {a.label}
                 </button>
               ))}
+              {moves.length > 0 && (
+                <Menu
+                  items={[...moves, ...actions]}
+                  renderTrigger={({ open, toggle }) => (
+                    <IconButton icon="more" size="sm" label={t("more_actions")} aria-expanded={open} onClick={toggle} />
+                  )}
+                />
+              )}
             </span>
           )}
         </div>

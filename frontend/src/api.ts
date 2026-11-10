@@ -956,6 +956,32 @@ export interface SeriesVersions {
   order_custom: boolean;
 }
 
+// series-v2 B4: the whole series order (small) and the reorder endpoints.
+export interface SeriesOrderItem {
+  id: number;
+  seq: number;
+  version: number;
+  /** Index into `SeriesOrder.keys` (the version configuration). */
+  k: number;
+  status: Generation["status"];
+  created_at: string;
+  output_image_id: number | null;
+}
+
+export interface SeriesOrder {
+  items: SeriesOrderItem[];
+  keys: string[];
+  order_custom: boolean;
+}
+
+export interface SeriesReorderResult {
+  order_custom: boolean;
+  /** Every record whose #N changed, in new order. */
+  changed: { id: number; seq: number; old_seq: number | null }[];
+  /** reset only: the full order before, for Undo. */
+  previous_order?: number[];
+}
+
 export interface SeriesImportPreview {
   tagId: number;
   found: number;
@@ -1056,6 +1082,22 @@ export const seriesApi = {
     if (params.cursor) q.set("cursor", String(params.cursor));
     if (params.limit) q.set("limit", String(params.limit));
     return handle(await fetch(`/api/series/${id}/versions?${q.toString()}`, { cache: "no-store" }));
+  },
+  // series-v2 B4: custom order.
+  async order(id: number): Promise<SeriesOrder> {
+    return handle(await fetch(`/api/series/${id}/order`, { cache: "no-store" }));
+  },
+  async reorder(
+    id: number,
+    body: { generationIds: number[]; before?: number; after?: number },
+  ): Promise<SeriesReorderResult> {
+    return handle(await fetch(`/api/series/${id}/reorder`, jsonInit("POST", body)));
+  },
+  async reorderReset(id: number): Promise<SeriesReorderResult> {
+    return handle(await fetch(`/api/series/${id}/reorder/reset`, { method: "POST" }));
+  },
+  async reorderRestore(id: number, generationIds: number[]): Promise<SeriesReorderResult> {
+    return handle(await fetch(`/api/series/${id}/reorder/restore`, jsonInit("POST", { generationIds })));
   },
   async membership(
     imageIds: number[],

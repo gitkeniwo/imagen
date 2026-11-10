@@ -1,5 +1,9 @@
 import {
   AppWindow,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  GripVertical,
   Archive,
   ArrowLeftRight,
   ArchiveRestore,
@@ -193,6 +197,11 @@ const ICONS = {
   hide: EyeOff,
   refresh: RefreshCw,
   info: Info,
+  // series-v2 B4
+  grip: GripVertical,
+  moveUp: ArrowUp,
+  moveDown: ArrowDown,
+  reorder: ArrowUpDown,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
