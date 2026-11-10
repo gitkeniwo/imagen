@@ -524,8 +524,9 @@ def _purge(conn, row) -> None:
     )
     conn.execute("DELETE FROM generation_inputs WHERE image_id = ?", (image_id,))
     conn.execute("DELETE FROM image_tags WHERE image_id = ?", (image_id,))
-    # A purged series "best" pick falls back to the newest success (the FK is
-    # ON DELETE SET NULL too; this keeps it explicit like the lines above).
+    # Purging drops the image's marks and any explicit series cover. The cover
+    # then falls back to the latest pick, or latest success.
+    conn.execute("DELETE FROM series_marks WHERE image_id = ?", (image_id,))
     conn.execute(
         "UPDATE series SET best_image_id = NULL WHERE best_image_id = ?", (image_id,)
     )

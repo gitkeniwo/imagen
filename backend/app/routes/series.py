@@ -12,10 +12,11 @@ import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import series_order, storage
+from .. import series_marks, series_order, storage
 from ..db import GENERATION_SORT_AT, get_conn, now_timestamp
 from ..models import (
-    SeriesAssign, SeriesCreate, SeriesImport, SeriesReorder, SeriesRestore, SeriesUpdate,
+    SeriesAssign, SeriesCreate, SeriesImport, SeriesMarkClear, SeriesMarkUpdate,
+    SeriesReorder, SeriesRestore, SeriesUpdate,
 )
 from .generations import _RESULT_FILTERS, _hydrate
 
@@ -129,7 +130,7 @@ def _insert(conn, kind: str, name: str, parent_id: int | None, color: str | None
 def _empty_stats() -> dict:
     return {
         "tries": 0, "success": 0, "blocked": 0, "error": 0, "aborted": 0,
-        "running": 0, "records": 0, "drafts": 0, "last_at": None,
+        "running": 0, "records": 0, "drafts": 0, "picks": 0, "last_at": None,
         "strip": [], "cover": [],
     }
 
@@ -137,11 +138,19 @@ def _empty_stats() -> dict:
 def _stats(conn, ids: list[int] | None = None) -> dict[int, dict]:
     """Per-series counters, recent status strip and collage cover."""
     where, params = "series_id IS NOT NULL", []
+    mark_where, mark_params = "1 = 1", []
+    pick_where = "1 = 1"
+    series_where, series_params = "", []
     if ids is not None:
         if not ids:
             return {}
         where = f"series_id IN ({','.join('?' * len(ids))})"
+        mark_where = where
+        pick_where = "sm.series_id IN (" + ",".join("?" * len(ids)) + ")"
+        series_where = f"AND s.id IN ({','.join('?' * len(ids))})"
         params = list(ids)
+        mark_params = list(ids)
+        series_params = list(ids)
     out: dict[int, dict] = {}
     rows = conn.execute(
         f"""SELECT series_id, status, created_at FROM generations
@@ -171,29 +180,68 @@ def _stats(conn, ids: list[int] | None = None) -> dict[int, dict]:
         s = out.setdefault(r["series_id"], _empty_stats())
         s["drafts"] = r["c"]
 
-    # Collage: the chosen best image (when still live) first, then the newest
-    # live successful outputs, de-duplicated.
-    best = {
-        r["id"]: r["best_image_id"]
-        for r in conn.execute(
-            "SELECT id, best_image_id FROM series WHERE best_image_id IS NOT NULL"
-        ).fetchall()
-    }
-    best_rows = {}
-    if best:
-        ph = ",".join("?" * len(best))
-        best_rows = {
-            r["id"]: dict(r)
-            for r in conn.execute(
-                f"SELECT * FROM images WHERE id IN ({ph}) AND deleted_at IS NULL",
-                list(best.values()),
-            ).fetchall()
-        }
-    for sid, image_id in best.items():
-        if image_id in best_rows and (ids is None or sid in ids):
-            out.setdefault(sid, _empty_stats())["cover"].append(
-                storage.public_image(best_rows[image_id])
-            )
+    for r in conn.execute(
+        f"SELECT series_id, COUNT(*) c FROM series_marks "
+        f"WHERE kind = 'pick' AND {mark_where} GROUP BY series_id",
+        mark_params,
+    ).fetchall():
+        out.setdefault(r["series_id"], _empty_stats())["picks"] = r["c"]
+
+    marks: dict[int, dict[int, str]] = {}
+    for r in conn.execute(
+        f"SELECT series_id, image_id, kind FROM series_marks WHERE {mark_where}",
+        mark_params,
+    ).fetchall():
+        marks.setdefault(r["series_id"], {})[r["image_id"]] = r["kind"]
+
+    # Cover fallback: explicit cover, else the latest pick, else the latest
+    # successful output. Reject marks are never cover material. The rest of the
+    # collage is the picks in series order, then newest successful outputs,
+    # de-duplicated.
+    for r in conn.execute(
+        """SELECT s.id AS sid, i.* FROM series s
+           JOIN images i ON i.id = s.best_image_id
+           WHERE s.best_image_id IS NOT NULL AND i.deleted_at IS NULL """
+        + series_where,
+        series_params,
+    ).fetchall():
+        sid = r["sid"]
+        if marks.get(sid, {}).get(r["id"]) == "reject":
+            continue
+        img = dict(r)
+        img.pop("sid")
+        out.setdefault(sid, _empty_stats())["cover"].append(storage.public_image(img))
+
+    picks: dict[int, list[tuple[dict, str]]] = {}
+    for r in conn.execute(
+        f"""SELECT sm.series_id AS sid, sm.image_id AS image_id,
+                   MIN(g.series_pos) AS series_pos, MIN(sm.created_at) AS marked_at, i.*
+            FROM series_marks sm
+            JOIN generations g ON g.series_id = sm.series_id
+                              AND g.output_image_id = sm.image_id
+                              AND g.status != 'note'
+            JOIN images i ON i.id = sm.image_id
+            WHERE sm.kind = 'pick' AND i.deleted_at IS NULL AND {pick_where}
+            GROUP BY sm.series_id, sm.image_id
+            ORDER BY sm.series_id, series_pos, sm.image_id""",
+        mark_params,
+    ).fetchall():
+        img = dict(r)
+        sid = img.pop("sid")
+        img.pop("image_id")
+        img.pop("series_pos")
+        marked_at = img.pop("marked_at")
+        picks.setdefault(sid, []).append((storage.public_image(img), marked_at or ""))
+
+    for sid, images in picks.items():
+        s = out.setdefault(sid, _empty_stats())
+        if not s["cover"] and images:
+            latest, _ = max(images, key=lambda item: (item[1], item[0]["id"]))
+            s["cover"].append(latest)
+        for img, _ in images:
+            if len(s["cover"]) < COVER_LEN and all(c["id"] != img["id"] for c in s["cover"]):
+                s["cover"].append(img)
+
     for r in conn.execute(
         f"""SELECT g.series_id AS sid, i.* FROM generations g
             JOIN images i ON i.id = g.output_image_id
@@ -206,6 +254,8 @@ def _stats(conn, ids: list[int] | None = None) -> dict[int, dict]:
             continue
         img = dict(r)
         img.pop("sid")
+        if marks.get(r["sid"], {}).get(img["id"]) == "reject":
+            continue
         if any(c["id"] == img["id"] for c in s["cover"]):
             continue
         s["cover"].append(storage.public_image(img))
@@ -215,6 +265,8 @@ def _stats(conn, ids: list[int] | None = None) -> dict[int, dict]:
 def _node(row: dict, stats: dict | None) -> dict:
     node = dict(row)
     node.update(stats or _empty_stats())
+    # best_* stays as a compatibility alias for one release.
+    node["cover_image_id"] = node["best_image_id"]
     node["next_seq"] = node["records"] + 1
     return node
 
@@ -222,14 +274,18 @@ def _node(row: dict, stats: dict | None) -> dict:
 def _sum_theme(theme: dict, children: list[dict]) -> dict:
     agg = _empty_stats()
     for c in children:
-        for k in ("tries", "success", "blocked", "error", "aborted", "running", "records", "drafts"):
+        for k in (
+            "tries", "success", "blocked", "error", "aborted", "running",
+            "records", "drafts", "picks",
+        ):
             agg[k] += c[k]
         if c["last_at"] and (agg["last_at"] is None or c["last_at"] > agg["last_at"]):
             agg["last_at"] = c["last_at"]
-    # Theme collage: each series' first cover image (its best, if set).
+    # Theme collage: each series' first cover image (explicit cover or fallback).
     agg["cover"] = [c["cover"][0] for c in children if c["cover"]][:COVER_LEN]
     node = dict(theme)
     node.update(agg)
+    node["cover_image_id"] = node["best_image_id"]
     node["series"] = children
     return node
 
@@ -304,6 +360,7 @@ def _detail(conn, series_id: int) -> dict:
             LIMIT ?""",
         (series_id, FILM_LEN),
     ).fetchall()
+    marks = series_marks.for_series(conn, series_id)
     node["outputs"] = []
     seen: set[int] = set()
     for r in film:
@@ -312,14 +369,12 @@ def _detail(conn, series_id: int) -> dict:
         if img["id"] in seen:
             continue
         seen.add(img["id"])
-        node["outputs"].append({"generation_id": gid, "image": storage.public_image(img)})
-    best = None
-    if row["best_image_id"]:
-        b = conn.execute(
-            "SELECT * FROM images WHERE id = ? AND deleted_at IS NULL", (row["best_image_id"],)
-        ).fetchone()
-        best = storage.public_image(dict(b)) if b else None
+        public = storage.public_image(img)
+        public["mark"] = marks.get(public["id"])
+        node["outputs"].append({"generation_id": gid, "image": public})
+    best = node["cover"][0] if node["cover"] else None
     node["best_image"] = best
+    node["cover_image"] = best
     node["order_custom"] = series_order.order_custom(conn, series_id)
     return node
 
@@ -459,12 +514,17 @@ def update_series(series_id: int, body: SeriesUpdate):
             sets["color"] = _clean_color(body.color) if body.color else None
         if "archived" in fields and body.archived is not None:
             sets["archived"] = 1 if body.archived else 0
-        if "bestImageId" in fields:
+        if "coverImageId" in fields or "bestImageId" in fields:
             if row["kind"] != "series":
-                raise HTTPException(status_code=400, detail="Only a series has a best image.")
-            if body.bestImageId is not None and not storage.get_image(conn, body.bestImageId):
+                raise HTTPException(status_code=400, detail="Only a series has a cover image.")
+            cover_id = (
+                body.coverImageId
+                if "coverImageId" in fields
+                else body.bestImageId
+            )
+            if cover_id is not None and not storage.get_image(conn, cover_id):
                 raise HTTPException(status_code=404, detail="Image not found")
-            sets["best_image_id"] = body.bestImageId
+            sets["best_image_id"] = cover_id
         if not sets:
             raise HTTPException(status_code=400, detail="Nothing to update")
         sets["updated_at"] = now_timestamp()
@@ -476,6 +536,80 @@ def update_series(series_id: int, body: SeriesUpdate):
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="name_taken")
         return _detail(conn, series_id)
+
+
+@router.put("/{series_id}/marks/{image_id}")
+def set_series_mark(series_id: int, image_id: int, body: SeriesMarkUpdate):
+    """Set/replace one mark, or clear it with ``kind: null``.
+
+    A mark is valid only for an image that a record in this series outputs.
+    Rejecting the explicit cover clears that cover so the normal fallback
+    takes over immediately.
+    """
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+
+        if body.kind is None:
+            conn.execute(
+                "DELETE FROM series_marks WHERE series_id = ? AND image_id = ?",
+                (series_id, image_id),
+            )
+            created_at = None
+        else:
+            output = conn.execute(
+                """SELECT 1 FROM generations
+                   WHERE series_id = ? AND output_image_id = ? AND status != 'note'
+                   LIMIT 1""",
+                (series_id, image_id),
+            ).fetchone()
+            if not output:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only an output image of this series can be marked.",
+                )
+            current = conn.execute(
+                "SELECT kind, created_at FROM series_marks "
+                "WHERE series_id = ? AND image_id = ?",
+                (series_id, image_id),
+            ).fetchone()
+            created_at = (
+                current["created_at"]
+                if current and current["kind"] == body.kind
+                else now_timestamp()
+            )
+            conn.execute(
+                """INSERT INTO series_marks (series_id, image_id, kind, created_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(series_id, image_id) DO UPDATE SET
+                       kind = excluded.kind, created_at = excluded.created_at""",
+                (series_id, image_id, body.kind, created_at),
+            )
+            if body.kind == "reject":
+                conn.execute(
+                    "UPDATE series SET best_image_id = NULL "
+                    "WHERE id = ? AND best_image_id = ?",
+                    (series_id, image_id),
+                )
+    return {
+        "series_id": series_id,
+        "image_id": image_id,
+        "kind": body.kind,
+        "created_at": created_at,
+    }
+
+
+@router.post("/{series_id}/marks/clear")
+def clear_series_marks(series_id: int, body: SeriesMarkClear):
+    """Clear every pick. Reject marks and the explicit cover stay untouched."""
+    if body.kind != "pick":
+        raise HTTPException(status_code=400, detail="Only picks can be cleared.")
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        cur = conn.execute(
+            "DELETE FROM series_marks WHERE series_id = ? AND kind = 'pick'",
+            (series_id,),
+        )
+    return {"cleared": cur.rowcount}
 
 
 @router.delete("/{series_id}")
@@ -526,6 +660,13 @@ def _assign(conn, series_id: int | None, generation_ids: list[int], draft_ids: l
     moved = 0
     if gen_ids:
         ph = ",".join("?" * len(gen_ids))
+        old_outputs = [
+            (r["series_id"], r["output_image_id"])
+            for r in conn.execute(
+                f"SELECT series_id, output_image_id FROM generations WHERE id IN ({ph})",
+                gen_ids,
+            ).fetchall()
+        ]
         if series_id is not None:
             moved = conn.execute(
                 f"""SELECT COUNT(*) c FROM generations WHERE id IN ({ph})
@@ -536,6 +677,7 @@ def _assign(conn, series_id: int | None, generation_ids: list[int], draft_ids: l
             f"UPDATE generations SET series_id = ? WHERE id IN ({ph}) AND status != 'note'",
             (series_id, *gen_ids),
         )
+        series_marks.cleanup_detached_outputs(conn, old_outputs)
     if d_ids:
         ph = ",".join("?" * len(d_ids))
         conn.execute(f"UPDATE drafts SET series_id = ? WHERE id IN ({ph})", (series_id, *d_ids))
@@ -644,9 +786,14 @@ def series_generations(
                     "input_ids": inputs.get(p["id"], []),
                 }
         out = _hydrate(conn, rows)
+        marks = series_marks.for_series(conn, series_id)
         for g in out:
             pid = g.pop("prev_id", None)
             g["previous"] = previous.get(pid) if pid else None
+            mark = marks.get(g["output_image_id"])
+            g["mark"] = mark
+            if g["outputImage"] is not None:
+                g["outputImage"]["mark"] = mark
     return {"generations": out, "total": total, "counts": counts}
 
 
@@ -733,8 +880,12 @@ VERSION_PAGE = 15
 VERSION_ATTEMPTS_MAX = 200
 
 
-def _attempt(row: dict, outputs: dict[int, dict]) -> dict:
+def _attempt(row: dict, outputs: dict[int, dict], marks: dict[int, str]) -> dict:
     out = outputs.get(row["output_image_id"]) if row["output_image_id"] else None
+    mark = marks.get(row["output_image_id"]) if row["output_image_id"] else None
+    output = storage.public_image(out) if out else None
+    if output is not None:
+        output["mark"] = mark
     return {
         "id": row["id"],
         "seq": row["seq"],
@@ -748,7 +899,8 @@ def _attempt(row: dict, outputs: dict[int, dict]) -> dict:
         "attempts": row["attempts"],
         "marker_color": row["marker_color"],
         "output_image_id": row["output_image_id"],
-        "outputImage": storage.public_image(out) if out else None,
+        "outputImage": output,
+        "mark": mark,
     }
 
 
@@ -770,7 +922,8 @@ def series_versions(
     """The series as versions, newest first, paged by version.
 
     Consecutive attempts with the same ``version_key`` are one version, over
-    the full series order. ``status`` only filters each version's
+    the full series order. ``status`` also accepts ``pick`` / ``reject`` for
+    mark filters, and only filters each version's
     ``attempts``: a version with none left is still returned with
     ``hidden: true`` and its counts, and ``base_version`` always points at the
     previous version of the full order. ``cursor`` is a version number: the
@@ -778,10 +931,14 @@ def series_versions(
     (the last ones in order); ``attempts_total`` is the unclipped count.
     """
     wanted = None
+    mark_filter = None
     if status:
-        if status not in _RESULT_FILTERS:
+        if status in series_marks.MARK_KINDS:
+            mark_filter = status
+        elif status not in _RESULT_FILTERS:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
-        wanted = set(_RESULT_FILTERS[status])
+        else:
+            wanted = set(_RESULT_FILTERS[status])
     with get_conn() as conn:
         require_leaf(conn, series_id)
         rows = [
@@ -805,13 +962,21 @@ def series_versions(
         ).fetchall():
             inputs.setdefault(ir["generation_id"], []).append(ir["image_id"])
         versions = series_order.group_versions(rows, inputs)
+        marks = series_marks.for_series(conn, series_id)
         total = len(versions)
         top = min(cursor - 1, total) if cursor is not None else total
         page = versions[max(0, top - limit):top][::-1]
 
         shown: dict[int, list[dict]] = {}
+
+        def matches(row: dict) -> bool:
+            if mark_filter is not None:
+                image_id = row["output_image_id"]
+                return bool(image_id) and marks.get(image_id) == mark_filter
+            return wanted is None or row["status"] in wanted
+
         for v in page:
-            match = [r for r in v["rows"] if wanted is None or r["status"] in wanted]
+            match = [r for r in v["rows"] if matches(r)]
             shown[v["version"]] = match
         out_ids = [
             r["output_image_id"]
@@ -853,13 +1018,15 @@ def series_versions(
                 "base_prompt": by_number[v["base_version"]]["prompt"] if v["base_version"] else None,
                 "base_params": by_number[v["base_version"]]["params"] if v["base_version"] else None,
                 # The filter hides every attempt of the baseline ("vs v4 (hidden)").
-                "base_hidden": bool(v["base_version"]) and wanted is not None and not any(
-                    r["status"] in wanted for r in by_number[v["base_version"]]["rows"]
+                "base_hidden": bool(v["base_version"]) and status is not None and not any(
+                    matches(r) for r in by_number[v["base_version"]]["rows"]
                 ),
                 "inputs": [
                     storage.public_image(in_rows[i]) for i in v["params"]["input_ids"] if i in in_rows
                 ],
-                "attempts": [_attempt(r, outputs) for r in match[-VERSION_ATTEMPTS_MAX:]],
+                "attempts": [
+                    _attempt(r, outputs, marks) for r in match[-VERSION_ATTEMPTS_MAX:]
+                ],
                 "attempts_total": len(match),
                 "counts": _version_counts(v["rows"]),
                 "hidden": not match,

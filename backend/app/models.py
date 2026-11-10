@@ -101,12 +101,24 @@ class SeriesCreate(BaseModel):
 
 class SeriesUpdate(BaseModel):
     """Partial update; a field that is present but null clears it (parentId →
-    "No theme", bestImageId → automatic cover)."""
+    "No theme", coverImageId → automatic cover)."""
     name: Optional[str] = None
     color: Optional[str] = None
     parentId: Optional[int] = None
     archived: Optional[bool] = None
+    coverImageId: Optional[int] = None
+    # Deprecated alias, accepted for one release (series-v2 B5).
     bestImageId: Optional[int] = None
+
+
+class SeriesMarkUpdate(BaseModel):
+    """Set or replace one series-scoped mark; null clears it."""
+    kind: Optional[Literal["pick", "reject"]]
+
+
+class SeriesMarkClear(BaseModel):
+    """Clear every pick in a series. Reject marks and the cover are untouched."""
+    kind: Literal["pick"] = "pick"
 
 
 class SeriesAssign(BaseModel):

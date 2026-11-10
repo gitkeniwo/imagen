@@ -96,6 +96,7 @@ with db.get_conn() as conn:
     tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     idx = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
 check("series" in tables, "migration creates series table")
+check("series_marks" in tables, "migration creates series_marks table")
 check("series_id" in gcols and "series_id" in dcols, "migration adds series_id columns")
 check({"idx_generations_series_id", "idx_drafts_series_id"} <= idx, "series_id indexes exist")
 
@@ -487,6 +488,190 @@ if fresh:
     bv = versions(big)["versions"]
     check(len(bv) == 1 and bv[0]["attempts_total"] == 205 and len(bv[0]["attempts"]) == 200
           and bv[0]["attempts"][-1]["seq"] == 205, "a version lists at most 200 attempts (the last ones)")
+
+    # --- series-v2 B5: marks, cover fallback, collage and cleanup -------------
+    mark_theme = ok(c.post("/api/series", json={"kind": "theme", "name": "Marks theme"}),
+                    "create marks theme")["id"]
+    marks_id = ok(c.post("/api/series", json={"name": "Marks", "parentId": mark_theme}),
+                  "create marks series")["id"]
+    # Four live output images give the three-slot collage enough candidates.
+    # Image 4 is deliberately not an output yet, for the "output only" check.
+    marked = []
+    for minute, image_id in [(0, 1), (10, 3), (20, 5)]:
+        marked.append(ok(c.post("/api/generations/manual", json={
+            "model": "gemini-3-pro-image", "status": "success", "prompt": f"mark p{minute}",
+            "createdAt": at(minute), "outputImageId": image_id, "seriesId": marks_id,
+        }), f"manual marked output {image_id}")["id"])
+
+    def mark(sid, image_id, kind, code=200):
+        return c.put(f"/api/series/{sid}/marks/{image_id}", json={"kind": kind}), code
+
+    def marks_detail(sid=marks_id):
+        return c.get(f"/api/series/{sid}").json()
+
+    def mark_rows(sid=marks_id):
+        with db.get_conn() as conn:
+            return [tuple(r) for r in conn.execute(
+                "SELECT image_id, kind FROM series_marks WHERE series_id = ? ORDER BY image_id",
+                (sid,),
+            ).fetchall()]
+
+    res, code = mark(marks_id, 4, "pick", 400)
+    check(res.status_code == code, "marking a non-output image is refused (400)")
+    marked.append(ok(c.post("/api/generations/manual", json={
+        "model": "gemini-3-pro-image", "status": "success", "prompt": "mark p30",
+        "createdAt": at(30), "outputImageId": 4, "seriesId": marks_id,
+    }), "manual fourth marked output")["id"])
+
+    d = marks_detail()
+    check([im["id"] for im in d["cover"]] == [4, 5, 3]
+          and d["best_image"]["id"] == 4 and d["picks"] == 0,
+          "cover fallback without marks = newest successful outputs")
+
+    res, code = mark(marks_id, 3, "pick")
+    check(res.status_code == code and res.json()["kind"] == "pick", "set pick")
+    res, code = mark(marks_id, 1, "pick")
+    check(res.status_code == code, "set second pick, marked later")
+    d = marks_detail()
+    check(d["picks"] == 2, "stats count every pick")
+    check([im["id"] for im in d["cover"]] == [1, 3, 4]
+          and d["best_image"]["id"] == 1,
+          "cover fallback = latest pick; remaining picks lead the collage")
+    check([o["image"]["mark"] for o in d["outputs"] if o["image"]["id"] in (1, 3)]
+          == ["pick", "pick"], "detail outputs carry their mark")
+
+    ok(c.patch(f"/api/series/{marks_id}", json={"coverImageId": 4}), "set coverImageId")
+    d = marks_detail()
+    check(d["cover_image_id"] == 4 and d["cover_image"]["id"] == 4
+          and d["best_image"]["id"] == 4 and d["cover"][0]["id"] == 4,
+          "explicit cover wins the three-way fallback")
+    ok(c.patch(f"/api/series/{marks_id}", json={"bestImageId": 5}), "legacy bestImageId alias")
+    d = marks_detail()
+    check(d["cover_image_id"] == 5 and d["cover"][0]["id"] == 5,
+          "legacy bestImageId still sets the explicit cover")
+
+    ok(c.patch(f"/api/series/{marks_id}", json={"coverImageId": 4}), "cover before reject")
+    res, code = mark(marks_id, 4, "reject")
+    check(res.status_code == code, "replace a pick with reject")
+    d = marks_detail()
+    check(d["cover_image_id"] is None and d["best_image_id"] is None
+          and d["best_image"]["id"] == 1,
+          "rejecting the explicit cover clears it and falls back")
+    check(all(im["id"] != 4 for im in d["cover"]), "rejected image is excluded from the collage")
+
+    res, code = mark(marks_id, 1, None)
+    check(res.status_code == code and res.json()["kind"] is None, "null clears a mark")
+    check((1, "pick") not in mark_rows() and (3, "pick") in mark_rows(),
+          "only the requested mark is cleared")
+
+    ok(c.patch(f"/api/series/{marks_id}", json={"coverImageId": 3}), "set cover before clear picks")
+    res = ok(c.post(f"/api/series/{marks_id}/marks/clear", json={"kind": "pick"}),
+             "clear all picks")
+    d = marks_detail()
+    check(res["cleared"] == 1 and d["picks"] == 0 and (4, "reject") in mark_rows()
+          and d["cover_image_id"] == 3,
+          "clear picks keeps rejects and the explicit cover")
+
+    # Version and attempts views expose marks, including the pick/reject filters.
+    mark(marks_id, 1, "pick")
+    mark(marks_id, 5, "reject")
+    vv = c.get(f"/api/series/{marks_id}/versions?limit=100").json()["versions"]
+    attempts = {a["id"]: a for v in vv for a in v["attempts"]}
+    check(attempts[marked[0]]["mark"] == "pick"
+          and attempts[marked[0]]["outputImage"]["mark"] == "pick"
+          and attempts[marked[2]]["mark"] == "reject",
+          "versions carry mark on each output")
+    tl = c.get(f"/api/series/{marks_id}/generations?limit=100").json()["generations"]
+    check({g["id"]: g["mark"] for g in tl}[marked[2]] == "reject"
+          and {g["id"]: g["outputImage"]["mark"] for g in tl}[marked[0]] == "pick",
+          "attempts timeline carries mark on each output")
+    picked = c.get(f"/api/series/{marks_id}/versions?limit=100&status=pick").json()["versions"]
+    visible = [a["id"] for v in picked for a in v["attempts"]]
+    check(visible == [marked[0]] and any(v["hidden"] for v in picked),
+          "versions status=pick filters by mark")
+    rejected = c.get(f"/api/series/{marks_id}/versions?limit=100&status=reject").json()["versions"]
+    check({a["id"] for v in rejected for a in v["attempts"]} == {marked[2], marked[3]},
+          "versions status=reject filters by mark")
+
+    tree = c.get("/api/series").json()
+    theme_node = next(t for t in tree["themes"] if t["id"] == mark_theme)
+    node = next(s for s in theme_node["series"] if s["id"] == marks_id)
+    check(node["picks"] == 1 and theme_node["picks"] == 1,
+          "tree and theme sum picks")
+    check([im["id"] for im in node["cover"]] == [3, 1],
+          "tree uses the same cover fallback and collage order")
+
+    # Moving a record out drops a mark only when no other record in the old
+    # series still outputs that image.
+    other = ok(c.post("/api/series", json={"name": "Marks elsewhere"}),
+               "create marks destination")["id"]
+    ok(c.post(f"/api/series/{other}/assign", json={"generationIds": [marked[0]]}),
+       "move the only output of image 1")
+    check((1, "pick") not in mark_rows(), "moving out cleans an orphaned mark")
+
+    mark(marks_id, 3, "pick")
+    duplicate = ok(c.post("/api/generations/manual", json={
+        "model": "gemini-3-pro-image", "status": "success", "prompt": "duplicate output",
+        "createdAt": at(40), "outputImageId": 3, "seriesId": marks_id,
+    }), "duplicate image output")["id"]
+    ok(c.post(f"/api/series/{other}/assign", json={"generationIds": [marked[1]]}),
+       "move one of two outputs of image 3")
+    check((3, "pick") in mark_rows(), "mark survives while another output uses the image")
+    ok(c.post(f"/api/series/{other}/assign", json={"generationIds": [duplicate]}),
+       "move the last output of image 3")
+    check((3, "pick") not in mark_rows(), "moving the last output cleans the mark")
+
+    # Purging removes the mark and an explicit cover; an edit that changes an
+    # output similarly cleans a mark that no longer belongs to the series.
+    ok(c.post("/api/generations/manual", json={
+        "model": "gemini-3-pro-image", "status": "success", "prompt": "fallback output",
+        "createdAt": at(45), "outputImageId": 3, "seriesId": marks_id,
+    }), "fallback output after cleanup")
+    ok(c.patch(f"/api/series/{marks_id}", json={"coverImageId": 4}), "cover for purge")
+    mark(marks_id, 4, "pick")
+    with db.get_conn() as conn:
+        from app.routes.images import _purge
+        _purge(conn, dict(conn.execute("SELECT * FROM images WHERE id = 4").fetchone()))
+    check((4, "pick") not in mark_rows(), "purge removes the image's marks")
+    d = marks_detail()
+    check(d["cover_image_id"] is None and d["best_image_id"] is None
+          and d["best_image"] is not None,
+          "purge clears an explicit cover and falls back")
+
+    keep = ok(c.post("/api/generations/manual", json={
+        "model": "gemini-3-pro-image", "status": "success", "prompt": "edit output",
+        "createdAt": at(50), "outputImageId": 1, "seriesId": marks_id,
+    }), "record for output edit")["id"]
+    mark(marks_id, 1, "pick")
+    ok(c.patch(f"/api/generations/{keep}", json={
+        "model": "gemini-3-pro-image", "status": "error", "prompt": "edit output",
+        "outputImageId": None, "seriesId": marks_id,
+    }), "edit removes the output")
+    check((1, "pick") not in mark_rows(), "changing an output cleans its orphaned mark")
+
+    # One-time best -> pick migration; the marker keeps a new explicit cover
+    # from being converted into a pick by a later restart.
+    legacy = ok(c.post("/api/series", json={"name": "Legacy best"}), "legacy best series")["id"]
+    with db.get_conn() as conn:
+        conn.execute("UPDATE series SET best_image_id = 1 WHERE id = ?", (legacy,))
+        conn.execute("DELETE FROM series_marks WHERE series_id = ?", (legacy,))
+        conn.execute("DELETE FROM settings WHERE key = 'series_marks_best_migrated'")
+    db.init_storage()
+    with db.get_conn() as conn:
+        migrated = [tuple(r) for r in conn.execute(
+            "SELECT image_id, kind FROM series_marks WHERE series_id = ?", (legacy,)
+        ).fetchall()]
+        best = conn.execute("SELECT best_image_id FROM series WHERE id = ?", (legacy,)).fetchone()[0]
+    check(migrated == [(1, "pick")] and best is None,
+          "migration turns best_image_id into a pick and clears the explicit cover")
+    db.init_storage()
+    check(mark_rows(legacy) == [(1, "pick")], "best -> pick migration is idempotent")
+    ok(c.patch(f"/api/series/{legacy}", json={"coverImageId": 5}), "explicit cover after migration")
+    db.init_storage()
+    with db.get_conn() as conn:
+        best = conn.execute("SELECT best_image_id FROM series WHERE id = ?", (legacy,)).fetchone()[0]
+    check(best == 5 and mark_rows(legacy) == [(1, "pick")],
+          "a post-migration explicit cover is not converted again")
 
     ok(c.delete(f"/api/series/{lab}"), "delete order lab")
     with db.get_conn() as conn:
