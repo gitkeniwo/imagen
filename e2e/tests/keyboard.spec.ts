@@ -33,7 +33,9 @@ test("Shift+F10 opens the menu, arrows cycle, → / ← enter and leave the tag 
   // Focus starts on the first item.
   await expect.poll(() => focusedItem(page)).toBe("View");
 
-  const order = ["View", "Add to input", "Favorite", "Download", "Copy image", "Tags", "Move to Bin"];
+  // landscape-alps.jpg is an input of records in two series: "Open series ›"
+  // (series-v2 B1a); the disabled "Add to series" is skipped.
+  const order = ["View", "Add to input", "Favorite", "Download", "Copy image", "Tags", "Open series", "Move to Bin"];
   for (const name of order.slice(1)) {
     await page.keyboard.press("ArrowDown");
     await expect.poll(() => focusedItem(page)).toBe(name);
@@ -45,6 +47,8 @@ test("Shift+F10 opens the menu, arrows cycle, → / ← enter and leave the tag 
   await expect.poll(() => focusedItem(page)).toBe("Move to Bin");
 
   // → on "Tags" opens the submenu and moves focus into it; ← goes back.
+  await page.keyboard.press("ArrowUp");
+  await expect.poll(() => focusedItem(page)).toBe("Open series");
   await page.keyboard.press("ArrowUp");
   await expect.poll(() => focusedItem(page)).toBe("Tags");
   await page.keyboard.press("ArrowRight");

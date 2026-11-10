@@ -35,7 +35,8 @@ import RemoteIndicator, { RemoteChip } from "./components/RemoteIndicator";
 import { useRemote } from "./remote";
 import AddHistoryModal from "./components/AddHistoryModal";
 import UsageDashboard from "./components/UsageDashboard";
-import ImageViewer, { type ViewerPager } from "./components/ImageViewer";
+import ImageViewer, { loadSeriesViewerContext, type ViewerPager, type ViewerSeriesContext } from "./components/ImageViewer";
+import { SeriesNavProvider } from "./seriesContext";
 import HoverPeek from "./components/HoverPeek";
 import FullscreenManager, { type ManagerPanel } from "./components/FullscreenManager";
 import Drafts from "./pages/Drafts";
@@ -212,21 +213,53 @@ export default function App() {
     list: ImageRow[];
     pager?: ViewerPager;
     onIndexChange?: (globalIndex: number, image?: ImageRow) => void;
+    series?: ViewerSeriesContext;
   } | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [draftVersion, setDraftVersion] = useState(0);
   const [seriesOpenId, setSeriesOpenId] = useState<number | null>(null);
+  // Series ids restart in every library: never reopen the old one after a
+  // switch. The first key (null → key at startup) is not a switch.
+  const seriesLibraryKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (libraryKey === null) return;
+    if (seriesLibraryKey.current !== null && seriesLibraryKey.current !== libraryKey) setSeriesOpenId(null);
+    seriesLibraryKey.current = libraryKey;
+  }, [libraryKey]);
   const seriesStore = useSeriesState(libraryKey, dataVersion);
   // Stable handle for callbacks that must not re-create on every reload.
   const seriesStoreRef = useRef(seriesStore);
   seriesStoreRef.current = seriesStore;
+  // series-v2 B1a: `context.seriesId` (from a series detail) pages through
+  // every attempt of that series that has an output, in series order.
+  const viewerRequest = useRef(0);
   const openViewer = useCallback(
     (
       image: ImageRow,
       list: ImageRow[] = [],
       pager?: ViewerPager,
       onIndexChange?: (globalIndex: number, image?: ImageRow) => void,
-    ) => setViewer({ image, list, pager, onIndexChange }),
+      context?: { seriesId: number },
+    ) => {
+      const request = ++viewerRequest.current;
+      if (!context) {
+        setViewer({ image, list, pager, onIndexChange });
+        return;
+      }
+      loadSeriesViewerContext(context.seriesId)
+        .then((series) => {
+          if (viewerRequest.current !== request) return;
+          const inSeries = series.images.some((img) => img.id === image.id);
+          setViewer(
+            inSeries
+              ? { image, list: series.images, onIndexChange, series }
+              : { image, list, pager, onIndexChange, series },
+          );
+        })
+        .catch(() => {
+          if (viewerRequest.current === request) setViewer({ image, list, pager, onIndexChange });
+        });
+    },
     [],
   );
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), []);
@@ -917,6 +950,33 @@ export default function App() {
     [workspaces, selectWorkspace, updateDraft, isPhone],
   );
 
+  // series-v2 B1a: badges, info cards and menus open a series from anywhere.
+  const openSeries = useCallback(
+    (id: number) => {
+      viewerRequest.current++;
+      setViewer(null);
+      setManagerOpen(false);
+      if (isPhone) changePhoneTab("series");
+      else setSidebarPanel("series");
+      setSeriesOpenId(id);
+    },
+    [isPhone, changePhoneTab],
+  );
+  const seriesNav = useMemo(
+    () => ({
+      openSeries,
+      openInWorkspace: (id: number) => {
+        viewerRequest.current++;
+        setViewer(null);
+        setManagerOpen(false);
+        openSeriesInWorkspace(id);
+      },
+      onChanged: bumpData,
+      epoch: `${libraryKey ?? ""}:${seriesStore.version}`,
+    }),
+    [openSeries, openSeriesInWorkspace, bumpData, libraryKey, seriesStore.version],
+  );
+
   const seriesPage = (phone: boolean) => (
     <Series
       phone={phone}
@@ -924,7 +984,9 @@ export default function App() {
       bound={boundSeries}
       openId={seriesOpenId}
       onOpenIdChange={setSeriesOpenId}
-      onOpenViewer={openViewer}
+      onOpenViewer={(img, list) =>
+        openViewer(img, list, undefined, undefined, seriesOpenId ? { seriesId: seriesOpenId } : undefined)
+      }
       onReuse={reuse}
       onRerun={rerunGeneration}
       onOpenInWorkspace={openSeriesInWorkspace}
@@ -940,6 +1002,7 @@ export default function App() {
 
   return (
     <SeriesContextProvider value={seriesStore}>
+    <SeriesNavProvider value={seriesNav}>
       {!isPhone && (
       <div
         className={`app-shell${remote ? " remote" : ""}`}
@@ -1405,6 +1468,7 @@ export default function App() {
           list={viewer.list}
           pager={viewer.pager}
           onIndexChange={viewer.onIndexChange}
+          series={viewer.series}
           onClose={() => setViewer(null)}
           onAddToTray={addToTray}
           trayIds={trayIds}
@@ -1414,6 +1478,7 @@ export default function App() {
           onChanged={bumpData}
         />
       )}
+    </SeriesNavProvider>
     </SeriesContextProvider>
   );
 }

@@ -9,6 +9,9 @@ import Icon from "./ui/Icon";
 import { PopoverSection, ViewPopover } from "./ui/ToolbarPopover";
 import { useToast } from "./Toast";
 import { MarkerSwatches, downloadImage, markerHex } from "./GenerationCard";
+import { SeriesBadge } from "./SeriesBits";
+import { useSeriesActions } from "./SeriesMenu";
+import { useSeriesNav } from "../seriesContext";
 import { FullTextButton, PromptClamp } from "./FullText";
 import Menu from "./ui/Menu";
 import { IconButton } from "./ui/Button";
@@ -230,6 +233,7 @@ const QueueItem = memo(function QueueItem({
   const { t, reason } = useI18n();
   const toast = useToast();
   const { open: openContextMenu } = useContextMenu();
+  const series = useSeriesActions(useSeriesNav().onChanged);
   const [now, setNow] = useState(() => Date.now());
   const counting = task.status === "pending" && task.dispatchAt > now;
   useEffect(() => {
@@ -383,7 +387,13 @@ const QueueItem = memo(function QueueItem({
       images: [output],
       prompt: task.prompt,
       quickActions,
-      sections: recordActions.length ? [recordActions] : [],
+      sections: [
+        recordActions,
+        series.section([task.seriesId], {
+          body: { imageIds: [output.id] },
+          members: [task.seriesId ?? null],
+        }),
+      ].filter((section) => section.length > 0),
       ariaLabel: t("image_menu"),
     });
   };
@@ -444,6 +454,13 @@ const QueueItem = memo(function QueueItem({
           <ProviderBadge provider={task.provider} />
           <span className="hcard-meta-text">{meta}</span>
           {runtime && <span className="hcard-runtime">{runtime}</span>}
+          {task.seriesId ? (
+            <SeriesBadge
+              className="in-queue"
+              seriesId={task.seriesId}
+              subject={{ kind: "task", seriesId: task.seriesId, imageId: output?.id ?? null, clientTaskId: task.id }}
+            />
+          ) : null}
         </div>
         <PromptClamp text={task.prompt} lines={2} />
         <div className="hcard-chips">
@@ -512,6 +529,7 @@ const QueueItem = memo(function QueueItem({
           </div>
         </div>
       </div>
+      {series.dialog}
     </article>
   );
 });
