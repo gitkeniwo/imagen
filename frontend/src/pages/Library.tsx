@@ -462,10 +462,49 @@ export default function Library({
     stopSelect();
   };
 
+  // Remove mode lists only tags on the selected images (union), with how many
+  // of the selection carry each. Fresh lookups, so unloaded rows count too.
+  const [tagsVersion, setTagsVersion] = useState(0);
+  const [selectedTags, setSelectedTags] = useState<{ tag: Tag; n: number }[]>([]);
+  useEffect(() => {
+    if (batchMode !== "remove" || selected.size === 0) {
+      setSelectedTags([]);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(async () => {
+      try {
+        const ids = [...selected];
+        const counts = new Map<number, number>();
+        for (let i = 0; i < ids.length; i += LOOKUP_BATCH) {
+          const r = await api.lookupImages(ids.slice(i, i + LOOKUP_BATCH));
+          for (const img of r.images) {
+            for (const tg of img.tags ?? []) counts.set(tg.id, (counts.get(tg.id) ?? 0) + 1);
+          }
+        }
+        if (!live) return;
+        setSelectedTags(
+          tags.filter((tg) => counts.has(tg.id)).map((tg) => ({ tag: tg, n: counts.get(tg.id)! })),
+        );
+      } catch {
+        if (live) setSelectedTags([]);
+      }
+    }, 200);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchMode, selected, tags, tagsVersion]);
+
+  const batchChips =
+    batchMode === "remove" ? selectedTags : tags.map((tag) => ({ tag, n: tag.count }));
+
   const applyBatch = async (tagId: number) => {
     if (!batchMode || selected.size === 0) return;
     try {
       await api.batchTag([...selected], [tagId], batchMode);
+      setTagsVersion((v) => v + 1);
       refresh();
       loadTags();
     } catch (e) {
@@ -618,7 +657,12 @@ export default function Library({
         setSelected(ids);
       }
       const idList = [...ids];
-      const known = knownRows(idList);
+      let known = knownRows(idList);
+      try {
+        known = await rowsFor(idList);
+      } catch {
+        // fall back to the rows we already have
+      }
       const images = known.length ? known : [img];
       const count = idList.length;
       const seriesTarget = await seriesTargetFor(idList);
@@ -1093,6 +1137,7 @@ export default function Library({
           value={tagFilter}
           phone={phone}
           total={total}
+          onTagsChanged={afterTagChange}
           onChange={(id) => {
             setTagFilter(id);
           }}
@@ -1103,18 +1148,24 @@ export default function Library({
           <div className="batch-bar">
             <div className="batch-bar-row">
               <span className="batch-count">{t("selected_n", { n: selected.size })}</span>
-              <Button
-                variant="link"
-                disabled={total === 0 || allSelected}
-                onClick={selectAllResults}
-              >
-                {t("select_all_results")}
-              </Button>
-              {selected.size > 0 && (
-                <Button variant="link" onClick={() => setSelected(new Set())}>
+              <div className="btn-group" role="group">
+                <Button
+                  size="sm"
+                  icon="check"
+                  disabled={total === 0 || allSelected}
+                  onClick={selectAllResults}
+                >
+                  {t("select_all_results")}
+                </Button>
+                <Button
+                  size="sm"
+                  icon="deselect"
+                  disabled={selected.size === 0}
+                  onClick={() => setSelected(new Set())}
+                >
                   {t("deselect_all")}
                 </Button>
-              )}
+              </div>
               <div className="spacer" />
               <Button
                 variant="primary"
@@ -1219,15 +1270,19 @@ export default function Library({
             <div className="batch-section">
               <span className="batch-section-title">{t("apply_to_selected")}</span>
               <div className="tag-chip-row">
-                {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
-                {tags.map((tag) => (
+                {batchChips.length === 0 && (
+                  <span className="muted small">
+                    {t(batchMode === "remove" ? "no_tags_on_selected" : "no_tags")}
+                  </span>
+                )}
+                {batchChips.map(({ tag, n }) => (
                   <button
                     key={tag.id}
                     className="tag-chip"
                     onClick={() => applyBatch(tag.id)}
                   >
                     <Icon name={batchMode === "add" ? "add" : "remove"} size="sm" /> {tag.name}
-                    <span className="tag-count">{tag.count}</span>
+                    <span className="tag-count">{n}</span>
                   </button>
                 ))}
               </div>
@@ -1388,8 +1443,12 @@ export default function Library({
             </div>
           </div>
           <div className="sheet-tag-wrap">
-            {tags.length === 0 && <span className="muted small">{t("no_tags")}</span>}
-            {tags.map((tag) => (
+            {batchChips.length === 0 && (
+              <span className="muted small">
+                {t(batchMode === "remove" ? "no_tags_on_selected" : "no_tags")}
+              </span>
+            )}
+            {batchChips.map(({ tag, n }) => (
               <button
                 key={tag.id}
                 type="button"
@@ -1400,7 +1459,7 @@ export default function Library({
                 }}
               >
                 <Icon name={batchMode === "remove" ? "remove" : "add"} size="sm" /> {tag.name}
-                <span className="tag-count">{tag.count}</span>
+                <span className="tag-count">{n}</span>
               </button>
             ))}
           </div>

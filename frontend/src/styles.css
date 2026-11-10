@@ -1620,6 +1620,16 @@ body.resizing-sidebar .side-panel {
   background: var(--panel); border: 1px solid var(--border); color: var(--text); box-shadow: none;
   --tag-color: var(--accent); min-height: 28px; font-weight: 400;
 }
+.tag-chip-wrap { position: relative; display: inline-flex; }
+.tag-chip-del {
+  position: absolute; top: -5px; right: -4px; width: 16px; height: 16px; padding: 0;
+  display: none; align-items: center; justify-content: center; border-radius: var(--radius-full);
+  background: var(--panel); border: 1px solid var(--border); color: var(--muted); box-shadow: none;
+  min-height: 0;
+}
+.tag-chip-del:hover { color: var(--danger); border-color: var(--danger); background: var(--panel); }
+.tag-chip-wrap:hover .tag-chip-del, .tag-chip-del:focus-visible { display: inline-flex; }
+@media (hover: none) { .tag-chip-wrap .tag-chip-del { display: inline-flex; } }
 .tag-chip:hover:not(.on):not(:disabled) { border-color: var(--hover-border); background: var(--panel); }
 .tag-chip.on { background: var(--ui-accent-soft); color: var(--ui-accent); border-color: var(--ui-accent-line); }
 .tag-chip.on:hover:not(:disabled) { background: var(--ui-accent-soft); border-color: var(--ui-accent); }

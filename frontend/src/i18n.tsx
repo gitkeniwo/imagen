@@ -308,6 +308,9 @@ const zh: Dict = {
 
   // tags
   no_tags: "还没有标签",
+  delete_tag: "删除标签",
+  confirm_delete_tag: "删除标签“{name}”？将从 {n} 张图片上移除，图片本身不受影响。",
+  no_tags_on_selected: "所选图片没有标签",
   new_tag_placeholder: "新标签…",
   create: "创建",
   tags_label: "标签",
@@ -1274,6 +1277,9 @@ const en: Dict = {
 
   // tags
   no_tags: "No tags yet",
+  delete_tag: "Delete tag",
+  confirm_delete_tag: "Delete tag “{name}”? It will be removed from {n} images; the images are not affected.",
+  no_tags_on_selected: "The selected images have no tags",
   new_tag_placeholder: "New tag…",
   create: "Create",
   tags_label: "Tags",

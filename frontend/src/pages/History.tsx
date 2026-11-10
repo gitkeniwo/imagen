@@ -532,6 +532,13 @@ export default function History({
       onChange={(id) => {
         setTagFilter(id);
       }}
+      onTagsChanged={() => {
+        api
+          .listTags()
+          .then((result) => setTags(result.tags))
+          .catch(() => {});
+        void refresh();
+      }}
     />
   );
 

@@ -1,5 +1,7 @@
 import { type CSSProperties, useState } from "react";
-import type { Tag } from "../api";
+import { api, type Tag } from "../api";
+import { useConfirm } from "./ConfirmDialog";
+import { useToast } from "./Toast";
 import { useI18n } from "../i18n";
 import { IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
@@ -25,6 +27,7 @@ export default function TagFilterRow({
   onChange,
   phone = false,
   total,
+  onTagsChanged,
 }: {
   tags: Tag[];
   value: number | null;
@@ -32,8 +35,12 @@ export default function TagFilterRow({
   phone?: boolean;
   // Library total, for the sheet footer when no tag is selected.
   total?: number;
+  // Called after a tag is deleted so the page can reload tags and results.
+  onTagsChanged?: () => void;
 }) {
   const { t } = useI18n();
+  const askConfirm = useConfirm();
+  const toast = useToast();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -48,16 +55,42 @@ export default function TagFilterRow({
     }
   };
 
+  const removeTag = async (tag: Tag) => {
+    const ok = await askConfirm({
+      message: t("confirm_delete_tag", { name: tag.name, n: tag.count }),
+      confirmLabel: t("delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.deleteTag(tag.id);
+      if (value === tag.id) onChange(null);
+      onTagsChanged?.();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }));
+    }
+  };
+
   const chip = (tag: Tag, onClick?: () => void) => (
-    <button
-      key={tag.id}
-      className={`tag-chip${value === tag.id ? " on" : ""}`}
-      style={tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined}
-      onClick={onClick ?? (() => onChange(tag.id))}
-    >
-      {tag.name}
-      <span className="tag-count">{tag.count}</span>
-    </button>
+    <span key={tag.id} className="tag-chip-wrap">
+      <button
+        className={`tag-chip${value === tag.id ? " on" : ""}`}
+        style={tag.color ? ({ "--tag-color": tag.color } as CSSProperties) : undefined}
+        onClick={onClick ?? (() => onChange(tag.id))}
+      >
+        {tag.name}
+        <span className="tag-count">{tag.count}</span>
+      </button>
+      <button
+        type="button"
+        className="tag-chip-del"
+        title={t("delete_tag")}
+        aria-label={`${t("delete_tag")}: ${tag.name}`}
+        onClick={() => void removeTag(tag)}
+      >
+        <Icon name="close" size="sm" />
+      </button>
+    </span>
   );
 
   const active = tags.find((tag) => tag.id === value);
