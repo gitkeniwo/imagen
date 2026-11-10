@@ -14,6 +14,7 @@ import { useProviders } from "../useProviders";
 import { AspectShape } from "./ComposerControls";
 import LibraryPickerModal from "./LibraryPickerModal";
 import ReferenceTray from "./ReferenceTray";
+import SeriesField from "./SeriesField";
 import TagPicker from "./TagPicker";
 import { isRefDrag, readImageDrag } from "../imageDrag";
 import Icon from "./ui/Icon";
@@ -106,6 +107,8 @@ export default function AddHistoryModal({
   const [outputTagIds, setOutputTagIds] = useState<number[]>(
     (src?.outputImage?.tags ?? []).map((tg) => tg.id),
   );
+  const [seriesId, setSeriesId] = useState<number | null>(src?.series_id ?? null);
+  const [seriesTouched, setSeriesTouched] = useState(false);
   const [outputBusy, setOutputBusy] = useState(false);
   const [outputDrag, setOutputDrag] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -232,6 +235,7 @@ export default function AddHistoryModal({
         errorMessage: errorMessage.trim() || null,
         inputImageIds: inputImages.map((i) => i.id),
         createdAt: createdAt ? new Date(createdAt).toISOString() : null,
+        ...(isCreate || seriesTouched ? { seriesId } : {}),
       };
       if (existing) {
         const out = outputImages[0];
@@ -489,6 +493,24 @@ export default function AddHistoryModal({
                 value={createdAt}
                 onChange={(e) => setCreatedAt(e.target.value)}
               />
+            </div>
+
+            <div>
+              <label>{t("series_series")}</label>
+              <SeriesField
+                context="record"
+                value={seriesId}
+                onChange={(id) => {
+                  setSeriesId(id);
+                  setSeriesTouched(true);
+                }}
+              />
+              {existing &&
+                existing.series_id &&
+                seriesTouched &&
+                seriesId !== existing.series_id && (
+                  <p className="series-edit-move-hint">{t("series_edit_move_hint")}</p>
+                )}
             </div>
           </div>
         </div>

@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { seriesApi } from "../api";
 import { useI18n } from "../i18n";
 import { seriesPathText, useSeries } from "../seriesStore";
 import { SeriesDot } from "./SeriesBits";
 import SeriesPicker from "./SeriesPicker";
+import { useToast } from "./Toast";
 import Icon from "./ui/Icon";
 import Popover from "./ui/Popover";
 
@@ -10,16 +12,36 @@ import Popover from "./ui/Popover";
 export default function SeriesField({
   value,
   onChange,
+  context = "composer",
 }: {
   value: number | null;
   onChange: (id: number | null) => void;
+  /** Composer context also explains what the archive means for the next try. */
+  context?: "composer" | "record" | "draft";
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const store = useSeries();
   const [open, setOpen] = useState(false);
+  const [unarchiving, setUnarchiving] = useState(false);
   const path = store.get(value);
   const node = store.node(value);
   const noTheme = t("series_no_theme");
+  const archived = !!path?.archived;
+
+  const unarchive = async () => {
+    if (!value || unarchiving) return;
+    setUnarchiving(true);
+    try {
+      await seriesApi.update(value, { archived: false });
+      await store.reload();
+      toast(t("series_unarchived_toast"));
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    } finally {
+      setUnarchiving(false);
+    }
+  };
 
   return (
     <div className="series-field">
@@ -33,7 +55,7 @@ export default function SeriesField({
         trigger={
           <button
             type="button"
-            className={`series-pill${path ? " on" : ""}`}
+            className={`series-pill${path ? " on" : ""}${archived ? " archived" : ""}`}
             aria-haspopup="listbox"
             aria-expanded={open}
             title={path ? seriesPathText(path, noTheme) : t("series_none_hint")}
@@ -41,7 +63,7 @@ export default function SeriesField({
           >
             {path ? (
               <>
-                <SeriesDot color={path.color} />
+                {archived ? <Icon name="archive" size="sm" /> : <SeriesDot color={path.color} />}
                 <span className="series-pill-text">
                   {path.theme && <span className="series-pill-theme">{path.theme.name} /</span>}
                   <span className="series-pill-name">{path.name}</span>
@@ -57,11 +79,26 @@ export default function SeriesField({
         <SeriesPicker
           value={path ? value : null}
           onPick={(id) => onChange(id)}
-          noneLabel={t("series_none_for_workspace")}
+          noneLabel={
+            context === "composer" ? t("series_none_for_workspace") : t("series_none")
+          }
           onClose={() => setOpen(false)}
         />
       </Popover>
-      {node && (
+      {archived && (
+        <span className="series-field-archived">
+          {context === "composer" ? t("series_archived_here") : t("series_archived")}
+          <button
+            type="button"
+            className="series-field-unarchive"
+            disabled={unarchiving}
+            onClick={() => void unarchive()}
+          >
+            {t("series_unarchive")}
+          </button>
+        </span>
+      )}
+      {!archived && node && context === "composer" && (
         <span className="series-field-meta">{t("series_tries_so_far", { n: node.tries })}</span>
       )}
     </div>

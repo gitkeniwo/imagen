@@ -1,10 +1,24 @@
-import { type MouseEvent, useEffect, useMemo, useState } from "react";
-import { type ImageRow, type SeriesGeneration, type SeriesNode, seriesApi } from "../api";
+import {
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  type ImageRow,
+  type SeriesGeneration,
+  type SeriesNode,
+  seriesApi,
+} from "../api";
 import { useI18n } from "../i18n";
-import { cardTime, parseTime } from "../historyTime";
+import { cardTime, clockTime, dayKey, parseTime } from "../historyTime";
 import { useSeries } from "../seriesStore";
 import { useRemote } from "../remote";
 import { pressable } from "../a11y";
+import { copyText } from "../clipboard";
 import appIcon from "../assets/app-icon.png";
 import SearchBox from "../components/SearchBox";
 import { RemoteChip } from "../components/RemoteIndicator";
@@ -17,6 +31,7 @@ import { Button, IconButton } from "../components/ui/Button";
 import Icon from "../components/ui/Icon";
 import Menu from "../components/ui/Menu";
 import Segmented from "../components/ui/Segmented";
+import Sheet from "../components/ui/Sheet";
 import { type ContextMenuItem, openContextMenuFromEvent, useContextMenu } from "../components/ui/ContextMenu";
 
 const VIEW_KEY = "imagen-series-view";
@@ -46,6 +61,15 @@ interface Group {
   name: string;
   archived: boolean;
   items: SeriesNode[];
+}
+
+interface PromptPeek {
+  series: SeriesNode;
+  /** Card / row bounds; the popover sits beside or below it. */
+  rect: DOMRect;
+  /** Left edge to align with (the series name in the list view). */
+  left: number;
+  mode: "grid" | "list";
 }
 
 type Dialog =
@@ -89,6 +113,13 @@ export default function Series({
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [themeSheet, setThemeSheet] = useState<Group | null>(null);
+  const [promptPeek, setPromptPeek] = useState<PromptPeek | null>(null);
+  const [promptCache, setPromptCache] = useState<
+    Map<number, SeriesGeneration | null>
+  >(() => new Map());
+  const peekShowTimer = useRef<number | undefined>(undefined);
+  const peekHideTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     try {
@@ -105,6 +136,61 @@ export default function Series({
       /* memory only */
     }
   }, [collapsed]);
+
+  // Prompt previews follow the shared series revision, so a finished
+  // generation never leaves an old "latest" prompt on screen.
+  useEffect(() => {
+    setPromptCache(new Map());
+  }, [store.version]);
+
+  useEffect(() => {
+    if (!promptPeek || promptCache.has(promptPeek.series.id)) return;
+    let cancelled = false;
+    void seriesApi
+      .timeline(promptPeek.series.id, { limit: 1 })
+      .then((res) => {
+        if (cancelled) return;
+        setPromptCache((current) => {
+          const next = new Map(current);
+          next.set(promptPeek.series.id, res.generations[0] ?? null);
+          return next;
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPromptCache((current) => {
+          const next = new Map(current);
+          next.set(promptPeek.series.id, null);
+          return next;
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [promptPeek, promptCache]);
+
+  useEffect(() => {
+    if (!promptPeek) return;
+    const hide = () => setPromptPeek(null);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("wheel", hide, { passive: true });
+    window.addEventListener("keydown", hide);
+    window.addEventListener("blur", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("wheel", hide);
+      window.removeEventListener("keydown", hide);
+      window.removeEventListener("blur", hide);
+    };
+  }, [promptPeek]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(peekShowTimer.current);
+      window.clearTimeout(peekHideTimer.current);
+    },
+    [],
+  );
 
   // Keep the tree fresh when the page is shown or generations finish.
   useEffect(() => {
@@ -143,6 +229,38 @@ export default function Series({
       else next.add(key);
       return next;
     });
+
+  const schedulePromptPeek =
+    (series: SeriesNode, mode: "grid" | "list") =>
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (phone || event.pointerType !== "mouse" || event.buttons) return;
+      if ((event.target as HTMLElement).closest(".series-theme-actions")) return;
+      window.clearTimeout(peekShowTimer.current);
+      window.clearTimeout(peekHideTimer.current);
+      const rect = event.currentTarget.getBoundingClientRect();
+      const label =
+        mode === "list"
+          ? event.currentTarget.querySelector<HTMLElement>(".series-tr-label")
+          : null;
+      const left = label?.getBoundingClientRect().left ?? rect.left + 10;
+      peekShowTimer.current = window.setTimeout(
+        () => setPromptPeek({ series, rect, left, mode }),
+        600,
+      );
+    };
+
+  const leavePromptPeek = () => {
+    window.clearTimeout(peekShowTimer.current);
+    window.clearTimeout(peekHideTimer.current);
+    if (!promptPeek) return;
+    peekHideTimer.current = window.setTimeout(() => setPromptPeek(null), 150);
+  };
+
+  const hidePromptPeek = () => {
+    window.clearTimeout(peekShowTimer.current);
+    window.clearTimeout(peekHideTimer.current);
+    setPromptPeek(null);
+  };
 
   const now = new Date();
   const lastText = (iso: string | null) => {
@@ -211,13 +329,51 @@ export default function Series({
     g.themeId === null
       ? []
       : [
-          { label: t("series_new_series"), icon: "add" as const, onSelect: () => setDialog({ kind: "new-series", theme: g.themeId }) },
+          { label: t("series_new_in", { theme: g.name }), icon: "add" as const, onSelect: () => setDialog({ kind: "new-series", theme: g.themeId }) },
           { label: t("series_rename"), icon: "edit" as const, onSelect: () => setDialog({ kind: "edit", id: g.themeId!, name: g.name, color: null }) },
           g.archived
             ? { label: t("series_unarchive"), icon: "unarchive" as const, onSelect: () => void archiveNode(g.themeId!, false) }
             : { label: t("series_archive_theme"), icon: "archive" as const, onSelect: () => void archiveNode(g.themeId!, true) },
           { label: t("series_delete_theme"), icon: "delete" as const, danger: true, onSelect: () => void deleteNode(g.themeId!, g.name, true, 0) },
         ];
+
+  const themeActions = (g: Group, where: "grid" | "list") => {
+    if (g.themeId === null) return null;
+    return (
+      <span className={`series-theme-actions ${where}`}>
+        {!phone && (
+          <button
+            type="button"
+            className="series-group-add"
+            title={t("series_new_in", { theme: g.name })}
+            onClick={() => setDialog({ kind: "new-series", theme: g.themeId })}
+          >
+            + {t("series_series")}
+          </button>
+        )}
+        {phone ? (
+          <IconButton
+            icon="more"
+            label={t("series_theme_menu")}
+            className="series-theme-more"
+            onClick={() => setThemeSheet(g)}
+          />
+        ) : (
+          <Menu
+            items={themeMenuItems(g)}
+            renderTrigger={({ open: menuOpen, toggle }) => (
+              <IconButton
+                icon="more"
+                label={t("series_theme_menu")}
+                aria-expanded={menuOpen}
+                onClick={toggle}
+              />
+            )}
+          />
+        )}
+      </span>
+    );
+  };
 
   if (openId !== null) {
     return (
@@ -250,6 +406,9 @@ export default function Series({
         aria-label={s.name}
         onClick={() => onOpenIdChange(s.id)}
         onContextMenu={openSeriesMenu(s)}
+        onPointerEnter={schedulePromptPeek(s, "grid")}
+        onPointerLeave={leavePromptPeek}
+        onPointerDown={hidePromptPeek}
         {...pressable(() => onOpenIdChange(s.id))}
       >
         <Collage node={s} size={phone ? "mini" : "card"} />
@@ -288,28 +447,45 @@ export default function Series({
             {`${t("series_n_series", { n: g.items.length })} · ${t("series_tries_n", { n: sums.tries })}`}
           </span>
         </button>
-        {g.themeId !== null && !phone && (
-          <>
-            <button
-              type="button"
-              className="series-group-add"
-              onClick={() => setDialog({ kind: "new-series", theme: g.themeId })}
-            >
-              + {t("series_series")}
-            </button>
-            <Menu
-              items={themeMenuItems(g)}
-              renderTrigger={({ open: menuOpen, toggle }) => (
-                <IconButton icon="more" label={t("series_theme_menu")} aria-expanded={menuOpen} onClick={toggle} />
-              )}
-            />
-          </>
-        )}
+        {themeActions(g, "grid")}
       </div>
     );
   };
 
   const empty = groups.length === 0;
+  const peekGen = promptPeek
+    ? promptCache.get(promptPeek.series.id)
+    : undefined;
+  const peekWhen = peekGen ? parseTime(peekGen.created_at) : null;
+  const peekTries = Math.max(1, peekGen?.attempts ?? 1);
+  const peekStamp = peekWhen
+    ? dayKey(peekWhen) === dayKey(now)
+      ? clockTime(peekWhen, lang)
+      : `${cardTime(peekWhen, now, lang)} ${clockTime(peekWhen, lang)}`
+    : "";
+  let peekLeft = 0;
+  let peekTop = 0;
+  if (promptPeek) {
+    const width = 340;
+    const maxHeight = 360;
+    if (promptPeek.mode === "grid") {
+      peekLeft = promptPeek.rect.right + 10;
+      if (peekLeft + width > window.innerWidth - 8) {
+        peekLeft = promptPeek.rect.left - width - 10;
+      }
+      peekTop = Math.max(
+        8,
+        Math.min(promptPeek.rect.top, window.innerHeight - maxHeight - 8),
+      );
+    } else {
+      peekLeft = promptPeek.left;
+      peekTop = promptPeek.rect.bottom + 8;
+      if (peekTop + maxHeight > window.innerHeight - 8) {
+        peekTop = Math.max(8, promptPeek.rect.top - maxHeight - 8);
+      }
+    }
+    peekLeft = Math.max(8, Math.min(peekLeft, window.innerWidth - width - 8));
+  }
 
   return (
     <div className={`series-page${phone ? " phone" : ""}`}>
@@ -421,7 +597,9 @@ export default function Series({
                   <span role="cell" />
                   <span role="cell" className="num">{sums.tries}</span>
                   <span role="cell" className="num">{rate === null ? "—" : `${rate}%`}</span>
-                  <span role="cell" className="num">{lastText(sums.last_at)}</span>
+                  <span role="cell" className="series-tr-actions">
+                    {themeActions(g, "list")}
+                  </span>
                 </div>
                 {open &&
                   g.items.map((s) => {
@@ -433,6 +611,9 @@ export default function Series({
                         className={`series-tr item${ws ? " bound" : ""}`}
                         onClick={() => onOpenIdChange(s.id)}
                         onContextMenu={openSeriesMenu(s)}
+                        onPointerEnter={schedulePromptPeek(s, "list")}
+                        onPointerLeave={leavePromptPeek}
+                        onPointerDown={hidePromptPeek}
                         {...pressable(() => onOpenIdChange(s.id))}
                         role="row"
                       >
@@ -492,6 +673,71 @@ export default function Series({
       {dialog?.kind === "import" && (
         <ImportFromTagDialog onClose={() => setDialog(null)} onDone={(id) => onOpenIdChange(id)} />
       )}
+      {themeSheet && (
+        <Sheet title={themeSheet.name} onClose={() => setThemeSheet(null)}>
+          <div className="series-theme-sheet">
+            {themeMenuItems(themeSheet).map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                className={`menu-item${item.danger ? " danger" : ""}`}
+                onClick={() => {
+                  setThemeSheet(null);
+                  item.onSelect();
+                }}
+              >
+                {item.icon && <Icon name={item.icon} size="sm" />}
+                <span className="menu-item-label">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+      {promptPeek &&
+        peekGen &&
+        createPortal(
+          <div
+            className="series-prompt-peek"
+            role="dialog"
+            aria-label={`${promptPeek.series.name} · ${t("series_latest")}`}
+            style={{ left: peekLeft, top: peekTop }}
+            onPointerEnter={() => window.clearTimeout(peekHideTimer.current)}
+            onPointerLeave={leavePromptPeek}
+          >
+            <div className="series-prompt-peek-head">
+              <span className="series-prompt-peek-latest">
+                {t("series_latest")}
+                {` · ${t("series_tries_n", { n: peekTries })}`}
+                {peekStamp ? ` · ${peekStamp}` : ""}
+              </span>
+              <IconButton
+                icon="copy"
+                label={t("copy_prompt")}
+                onClick={async () =>
+                  toast(
+                    (await copyText(peekGen.prompt)) ? t("copied") : t("copy_failed"),
+                  )
+                }
+              />
+            </div>
+            <p className="series-prompt-peek-text">
+              {peekGen.prompt || t("series_no_prompt")}
+            </p>
+            <div className="series-prompt-peek-params">
+              {[
+                peekGen.model.replace("-image", "").replace("-preview", ""),
+                peekGen.resolution,
+                peekGen.aspect_ratio,
+                peekGen.inputs?.length
+                  ? t("inputs_n", { n: peekGen.inputs.length })
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

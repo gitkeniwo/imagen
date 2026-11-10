@@ -231,11 +231,13 @@ export default function ComposerTabs({
           const label = workspace.name ?? String(workspace.number);
           const series = seriesStore.get(workspace.seriesId);
           const seriesText = series ? seriesPathText(series, t("series_no_theme")) : null;
+          const seriesArchived = !!series?.archived;
           const aria = [
             workspace.name
               ? `${t("ws_label", { n: workspace.number })}: ${workspace.name}`
               : t("ws_label", { n: workspace.number }),
             seriesText,
+            seriesArchived ? t("series_archived") : null,
           ].filter(Boolean).join(" · ");
           return (
             <Popover
@@ -274,7 +276,7 @@ export default function ComposerTabs({
                   ]}
                   renderTrigger={({ open, toggle }) => (
                     <div
-                      className={`ws-tab-wrap${isActive ? " active" : ""}${workspaceTone(workspace)}`}
+                      className={`ws-tab-wrap${isActive ? " active" : ""}${workspaceTone(workspace)}${seriesArchived ? " series-archived" : ""}`}
                       onContextMenu={(event) => {
                         if (phone) {
                           event.preventDefault();
@@ -356,8 +358,12 @@ export default function ComposerTabs({
                           >
                             <span className="ws-tab-name">{label}</span>
                             {series && (
-                              <span className="ws-tab-series">
-                                <SeriesDot color={series.color} />
+                              <span className={`ws-tab-series${seriesArchived ? " archived" : ""}`}>
+                                {seriesArchived ? (
+                                  <Icon name="archive" size="sm" />
+                                ) : (
+                                  <SeriesDot color={series.color} />
+                                )}
                                 <span>{series.name}</span>
                               </span>
                             )}

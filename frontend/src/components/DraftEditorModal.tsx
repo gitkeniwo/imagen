@@ -15,6 +15,7 @@ import { useProviders } from "../useProviders";
 import LibraryPickerModal from "./LibraryPickerModal";
 import OptionBar from "./OptionBar";
 import ReferenceTray from "./ReferenceTray";
+import SeriesField from "./SeriesField";
 import TagPicker from "./TagPicker";
 import Icon from "./ui/Icon";
 import ImageViewer from "./ImageViewer";
@@ -66,6 +67,9 @@ export default function DraftEditorModal({
   const [outputs, setOutputs] = useState<ImageRow[]>(existing?.outputImages ?? []);
   const [tagIds, setTagIds] = useState<number[]>(
     existing?.tags.map((tag) => tag.id) ?? seed?.tagIds ?? [],
+  );
+  const [seriesId, setSeriesId] = useState<number | null>(
+    existing ? existing.series_id ?? null : seed?.seriesId ?? null,
   );
   const [picker, setPicker] = useState<"input" | "output" | null>(null);
   const [outputBusy, setOutputBusy] = useState(false);
@@ -160,7 +164,7 @@ export default function DraftEditorModal({
       inputImageIds: inputs.map((img) => img.id),
       outputImageIds: outputs.map((img) => img.id),
       tagIds,
-      seriesId: existing ? existing.series_id ?? null : seed?.seriesId ?? null,
+      seriesId,
     };
     try {
       const draft = existing
@@ -271,6 +275,11 @@ export default function DraftEditorModal({
         <div className="mt-4">
           <label>{t("archive_to")}</label>
           <TagPicker selected={tagIds} onChange={setTagIds} />
+        </div>
+
+        <div className="draft-series-row">
+          <span className="draft-series-label">{t("series_series")}</span>
+          <SeriesField context="draft" value={seriesId} onChange={setSeriesId} />
         </div>
 
         <div className="draft-editor-toggles">

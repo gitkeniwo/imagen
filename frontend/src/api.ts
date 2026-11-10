@@ -232,6 +232,8 @@ export interface ManualGenerationBody {
   inputImageIds: number[];
   outputImageId?: number | null;
   createdAt?: string | null;
+  // Omit on PATCH to keep the stored series; explicit null clears it.
+  seriesId?: number | null;
 }
 
 // Live progress of an in-flight generation (polled while a task is running).
