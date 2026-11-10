@@ -69,6 +69,8 @@ export interface ContextMenuItem {
   id?: string;
   label: string;
   icon?: IconName;
+  /** Replaces the icon slot (e.g. a series color dot). */
+  leading?: ReactNode;
   hint?: ReactNode;
   danger?: boolean;
   disabled?: boolean;
@@ -580,6 +582,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
                         <span className="context-check">
                           <Icon name="check" size="sm" />
                         </span>
+                      ) : item.leading ? (
+                        <i className="context-leading">{item.leading}</i>
                       ) : item.icon ? (
                         <Icon name={item.icon} size="sm" />
                       ) : (
@@ -663,6 +667,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
                         <span className="context-check">
                           <Icon name="check" size="sm" />
                         </span>
+                      ) : item.leading ? (
+                        <i className="context-leading">{item.leading}</i>
                       ) : item.icon ? (
                         <Icon name={item.icon} size="sm" />
                       ) : (

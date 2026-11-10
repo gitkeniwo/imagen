@@ -125,7 +125,9 @@ export default function Generate({
     seriesId,
   } = draft;
   const setSeriesId = (id: number | null) => updateDraft({ seriesId: id });
-  const seriesNode = useSeries().node(seriesId);
+  const seriesStore = useSeries();
+  const seriesNode = seriesStore.node(seriesId);
+  const seriesArchived = !!seriesStore.get(seriesId)?.archived;
   const setPrompt = (v: string) => updateDraft({ prompt: v });
   const setProvider = (v: TaskSpec["provider"]) => updateDraft({ provider: v });
   const setModel = (v: string) => updateDraft({ model: v });
@@ -433,8 +435,14 @@ export default function Generate({
                 {conn !== "lost" && <kbd className="kbd">⌘↵</kbd>}
               </button>
               {seriesNode && (
-                <span className="series-next-hint" title={t("series_next_hint_title")}>
-                  {t("series_next_hint", { n: seriesNode.next_seq, name: seriesNode.name })}
+                <span
+                  className={`series-next-hint${seriesArchived ? " archived" : ""}`}
+                  title={t("series_next_hint_title")}
+                >
+                  {seriesArchived && <Icon name="archive" size="sm" />}
+                  <span className="series-next-hint-text">
+                    {t("series_next_hint", { n: seriesNode.next_seq, name: seriesNode.name })}
+                  </span>
                 </span>
               )}
             </div>

@@ -856,6 +856,36 @@ const zh: Dict = {
   provider_error_last_provider: "至少保留一个生成服务开启。",
   provider_error_key_from_env: "密钥由 IMAGEN_GEMINI_API_KEY 提供，不能在应用内修改。",
   provider_error_key_env_only: "Docker 服务器模式不能保存密钥，请使用 IMAGEN_GEMINI_API_KEY。",
+
+  // series-v2 B1b
+  series_archived_here: "已归档 — 新的尝试仍会归入这里。",
+  series_edit_move_hint: "修改这条记录会移到新系列，原系列中的编号随之空出。",
+  // series-v2 B1a
+  sv2_badge_aria: "系列：{theme} / {series}",
+  sv2_badge_archived: "已归档的系列",
+  sv2_badge_more: "还在另外 {n} 个系列中",
+  sv2_stats: "{n} 次 · 成功率 {p}%",
+  sv2_stats_tries: "{n} 次",
+  sv2_this_record: "本条记录",
+  sv2_open_series: "打开系列",
+  sv2_change_series: "换系列…",
+  sv2_also_in: "还在另外 {n} 个系列中",
+  sv2_primary_latest: "主系列 · 最近",
+  sv2_input_of: "#{n} 的输入图",
+  sv2_removed_from: "已移出 {series}",
+  sv2_menu_open: "打开「{series}」",
+  sv2_menu_open_multi: "打开系列",
+  sv2_viewer_strip: "{series} · 第 {n}/{total} 次",
+  sv2_viewer_series: "系列",
+  sv2_viewer_series_n: "系列 · {n}",
+  sv2_not_in_series: "不属于任何系列",
+  sv2_add_to_series: "加入系列…",
+  sv2_move_title: "把 {n} 条记录移到 {series}？",
+  sv2_move_body: "每条记录只能属于一个系列。加入这些图片会移动对应的记录：",
+  sv2_move_from: "{n} 条记录将从 {series} 移出",
+  sv2_move_unfiled: "{n} 条记录尚无系列，将直接加入",
+  sv2_move_confirm: "移动 {n} 条记录",
+  sv2_card_label: "系列信息",
 };
 
 const en: Dict = {
@@ -1741,6 +1771,43 @@ const en: Dict = {
     "The key is provided by IMAGEN_GEMINI_API_KEY and cannot be changed in the app.",
   provider_error_key_env_only:
     "Docker server mode cannot save a key; use IMAGEN_GEMINI_API_KEY.",
+
+  // series-v2 B1b
+  series_archived_here: "Archived — new tries still go here.",
+  series_edit_move_hint:
+    "Changing it moves this record. Its number in the old series is freed.",
+  // series-v2 B1a
+  sv2_badge_aria: "Series: {theme} / {series}",
+  sv2_badge_archived: "Archived series",
+  sv2_badge_more: "Also in {n} more series",
+  sv2_stats: "{n} tries · {p}% ok",
+  sv2_stats_one: "1 try · {p}% ok",
+  sv2_stats_tries: "{n} tries",
+  sv2_stats_tries_one: "1 try",
+  sv2_this_record: "This record",
+  sv2_open_series: "Open series",
+  sv2_change_series: "Change series…",
+  sv2_also_in: "Also in {n} series",
+  sv2_primary_latest: "Primary · latest",
+  sv2_input_of: "input of #{n}",
+  sv2_removed_from: "Removed from {series}",
+  sv2_menu_open: "Open “{series}”",
+  sv2_menu_open_multi: "Open series",
+  sv2_viewer_strip: "{series} · #{n} of {total}",
+  sv2_viewer_series: "Series",
+  sv2_viewer_series_n: "Series · {n}",
+  sv2_not_in_series: "Not in a series",
+  sv2_add_to_series: "Add to series…",
+  sv2_move_title: "Move {n} records to {series}?",
+  sv2_move_title_one: "Move 1 record to {series}?",
+  sv2_move_body: "A record belongs to one series. Adding these images will move their records:",
+  sv2_move_from: "{n} records will move from {series}",
+  sv2_move_from_one: "1 record will move from {series}",
+  sv2_move_unfiled: "{n} records have no series and will be added",
+  sv2_move_unfiled_one: "1 record has no series and will be added",
+  sv2_move_confirm: "Move {n} records",
+  sv2_move_confirm_one: "Move 1 record",
+  sv2_card_label: "Series info",
 };
 
 const DICTS: Record<Lang, Dict> = { zh, en };

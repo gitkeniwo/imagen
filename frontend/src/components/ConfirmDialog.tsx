@@ -20,6 +20,8 @@ export interface ConfirmOptions {
   danger?: boolean;
   /** Raised above the image viewer when confirming from its context menu. */
   aboveViewer?: boolean;
+  /** Extra content under the message (series-v2 B1a: move summary). */
+  details?: ReactNode;
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
@@ -118,6 +120,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             <p id="confirm-dialog-message" className="confirm-message">
               {request.message}
             </p>
+            {request.details}
             <div className="modal-actions">
               <button autoFocus onClick={() => close(false)}>
                 {cancelLabel}

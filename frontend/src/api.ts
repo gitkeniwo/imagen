@@ -232,6 +232,8 @@ export interface ManualGenerationBody {
   inputImageIds: number[];
   outputImageId?: number | null;
   createdAt?: string | null;
+  // Omit on PATCH to keep the stored series; explicit null clears it.
+  seriesId?: number | null;
 }
 
 // Live progress of an in-flight generation (polled while a task is running).
@@ -745,6 +747,19 @@ export const api = {
   async generationByOutput(imageId: number): Promise<Generation | null> {
     return handle(await fetch(`/api/generations/by-output/${imageId}`));
   },
+  async getGeneration(id: number): Promise<Generation> {
+    return handle(await fetch(`/api/generations/${id}`, { cache: "no-store" }));
+  },
+  // series-v2 B1a: every record that uses an image (output or input).
+  async generationsByImage(imageId: number): Promise<{ generations: ImageUse[] }> {
+    return handle(await fetch(`/api/generations/by-image/${imageId}`, { cache: "no-store" }));
+  },
+  async imageSeries(imageIds: number[]): Promise<{ items: { imageId: number; series: ImageSeriesEntry[] }[] }> {
+    return handle(await fetch(`/api/generations/image-series?ids=${imageIds.join(",")}`, { cache: "no-store" }));
+  },
+  async seriesPositions(generationIds: number[]): Promise<{ items: SeriesPosition[] }> {
+    return handle(await fetch(`/api/generations/series-position?ids=${generationIds.join(",")}`, { cache: "no-store" }));
+  },
   async createManualGeneration(body: ManualGenerationBody): Promise<Generation> {
     return handle(
       await fetch("/api/generations/manual", {
@@ -894,6 +909,31 @@ export interface SeriesImportPreview {
   failedSamePrompt: number;
   failedInOtherSeries: number;
   total: number;
+}
+
+// --- series-v2 B1a: series context of records and images ---------------------
+
+/** One series an image belongs to. `role` = how that series' records use it. */
+export interface ImageSeriesEntry {
+  seriesId: number;
+  generationId: number;
+  role: "output" | "input";
+  seq: number | null;
+  total: number | null;
+}
+
+/** A record's place in its series (#N; `version` arrives with B3). */
+export interface SeriesPosition {
+  generationId: number;
+  seriesId: number | null;
+  seq: number | null;
+  total: number | null;
+  version: number | null;
+}
+
+export interface ImageUse extends Omit<Generation, "inputs" | "outputImage"> {
+  role: "output" | "input";
+  seq: number | null;
 }
 
 export interface SeriesAssignBody {

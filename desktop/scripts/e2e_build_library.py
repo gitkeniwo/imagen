@@ -211,8 +211,7 @@ def populate(c: httpx.Client) -> dict:
          "inputImageIds": [ids["texture-terrazzo.png"], ids["texture-confetti.webp"], ids["sticker-animated.gif"]],
          "outputImageIds": [], "tagIds": [], "skipIfPrecedingSucceeds": True},
     ]
-    for d in drafts:
-        ok(c.post("/api/drafts", json=d), "draft")
+    draft_ids = [ok(c.post("/api/drafts", json=d), "draft")["id"] for d in drafts]
 
     # ---------- 6. favorites, notes, renames, source flips, tag cover ----------
     ok(c.patch(f"/api/images/{out_id(g4)}", json={"starred": True, "note": "客户选定版本 ✅ — 交付 2026-11-10"}),
@@ -231,9 +230,10 @@ def populate(c: httpx.Client) -> dict:
 
     # ---------- 8. manual (imported) history across past months, for usage stats ----------
     now = datetime.now(timezone.utc)
+    imported = []
     for k in range(10):
         status = ["success", "success", "success", "blocked", "error"][k % 5]
-        ok(c.post("/api/generations/manual", json={
+        imported.append(ok(c.post("/api/generations/manual", json={
             "prompt": f"Imported run {k + 1} from old workflow",
             "provider": "gemini" if k % 2 else "vertex",
             "model": "gemini-3-pro-image" if k % 3 else "gemini-2.5-flash-image",
@@ -245,7 +245,30 @@ def populate(c: httpx.Client) -> dict:
             # already marked as imported, so uploads stay uploads.
             "outputImageId": ids["landscape-dunes.jpg"] if status == "success" else None,
             "createdAt": (now - timedelta(days=12 * k + 3)).isoformat(),
-        }), "manual")
+        }), "manual")["id"])
+
+    # ---------- 9. series (series-v2 B1a): 2 themes, 3 series ----------
+    # Perfume poster = the g1-g4 chain (+ the pinned poster draft); Lookbook
+    # cover = the flat-lay fork + imported run 1; Logo sticker set = two mascot
+    # tries + imported run 2. Imported runs 1 and 2 both output
+    # landscape-dunes.jpg, so that image is in two series as an output; the
+    # flat-lay output is in Lookbook cover as output and Logo sticker set as an
+    # input of the mascot tries.
+    def series(kind, name, parent=None, color=None):
+        return ok(c.post("/api/series", json={"kind": kind, "name": name, "parentId": parent,
+                                              "color": color}), f"series {name}")["id"]
+
+    autumn = series("theme", "Autumn campaign")
+    brand = series("theme", "Brand")
+    perfume = series("series", "Perfume poster", autumn, "#ea580c")
+    lookbook = series("series", "Lookbook cover", autumn, "#7c3aed")
+    logo = series("series", "Logo sticker set", brand, "#0891b2")
+    ok(c.post(f"/api/series/{perfume}/assign", json={
+        "imageIds": [out_id(g1), out_id(g2), out_id(g3), out_id(g4)], "draftIds": [draft_ids[0]]}), "assign")
+    ok(c.post(f"/api/series/{lookbook}/assign", json={
+        "imageIds": [out_id(g5)], "generationIds": [imported[0]]}), "assign")
+    ok(c.post(f"/api/series/{logo}/assign", json={
+        "imageIds": [out_id(tries[0]), out_id(tries[1])], "generationIds": [imported[1]]}), "assign")
 
     summary = {
         "images": ok(c.get("/api/images", params={"limit": 1}), "imgs")["total"],
@@ -255,6 +278,9 @@ def populate(c: httpx.Client) -> dict:
         "ids": {"uploads": ids, "poster_final": out_id(g4), "poster_alps": out_id(g3),
                 "perfume_first": out_id(g1), "flatlay": out_id(g5), "sneaker_dunes": out_id(g6),
                 "tries": [out_id(t) for t in tries]},
+        "series": {"themes": {"autumn": autumn, "brand": brand},
+                   "perfume": perfume, "lookbook": lookbook, "logo": logo,
+                   "imported": imported[:2], "drafts": draft_ids},
     }
     return summary
 

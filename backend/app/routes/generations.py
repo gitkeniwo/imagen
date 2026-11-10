@@ -526,6 +526,169 @@ def list_generation_ids(
     return {"ids": [row["id"] for row in rows], "total": total}
 
 
+# --- Series context (series-v2 B1a) -------------------------------------------
+# Read-only helpers for the series badge, info card and Viewer. Membership is
+# derived: an image belongs to every series whose records use it, as the output
+# or as an input. The record's position (#N) lives in one function so the
+# custom order (generations.series_pos, B2) only has to change `_SERIES_ORDER`.
+
+_MAX_CONTEXT_IDS = 500
+_SERIES_ORDER = f"{_SORT_AT} ASC, id ASC"
+
+
+def _parse_ids(raw: str) -> list[int]:
+    try:
+        ids = [int(x) for x in raw.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ids")
+    return list(dict.fromkeys(i for i in ids if i > 0))[:_MAX_CONTEXT_IDS]
+
+
+def _series_positions(conn, gen_ids: list[int]) -> dict[int, dict]:
+    """`{generation_id: {series_id, seq, total}}` for records filed in a series.
+
+    #N is 1-based over every attempt in the series (notes excluded), the same
+    numbering as the series timeline. Records outside a series are omitted.
+    """
+    if not gen_ids:
+        return {}
+    ph = ",".join("?" * len(gen_ids))
+    rows = conn.execute(
+        f"""WITH seqd AS (
+                SELECT id, series_id,
+                       ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY {_SERIES_ORDER}) AS seq,
+                       COUNT(*) OVER (PARTITION BY series_id) AS total
+                FROM generations
+                WHERE status != 'note' AND series_id IN (
+                    SELECT series_id FROM generations
+                    WHERE id IN ({ph}) AND series_id IS NOT NULL
+                )
+            )
+            SELECT * FROM seqd WHERE id IN ({ph})""",
+        (*gen_ids, *gen_ids),
+    ).fetchall()
+    return {
+        r["id"]: {"series_id": r["series_id"], "seq": r["seq"], "total": r["total"]}
+        for r in rows
+    }
+
+
+def _image_uses(conn, image_ids: list[int], *, series_only: bool) -> list[dict]:
+    """Every record that uses one of these images, newest first (History order).
+
+    A record that uses the same image as output and input appears once, as the
+    output.
+    """
+    if not image_ids:
+        return []
+    ph = ",".join("?" * len(image_ids))
+    series_sql = "AND g.series_id IS NOT NULL" if series_only else ""
+    rows = conn.execute(
+        f"""SELECT * FROM (
+                SELECT g.*, g.output_image_id AS image_ref, 'output' AS role
+                FROM generations g
+                WHERE g.output_image_id IN ({ph}) AND g.status != 'note' {series_sql}
+                UNION ALL
+                SELECT g.*, gi.image_id AS image_ref, 'input' AS role
+                FROM generation_inputs gi JOIN generations g ON g.id = gi.generation_id
+                WHERE gi.image_id IN ({ph}) AND g.status != 'note' {series_sql}
+                  AND (g.output_image_id IS NULL OR g.output_image_id != gi.image_id)
+            )
+            ORDER BY {_ORDER}, role DESC""",
+        (*image_ids, *image_ids),
+    ).fetchall()
+    seen: set[tuple[int, int]] = set()
+    out = []
+    for r in rows:
+        key = (r["image_ref"], r["id"])
+        if key in seen:  # the same image used twice as an input
+            continue
+        seen.add(key)
+        out.append(dict(r))
+    return out
+
+
+@router.get("/series-position")
+def series_position(ids: str = Query("")):
+    """#N (and later vK) of each record inside its series.
+
+    ``version`` stays null until the Changes view (B3) defines versions.
+    """
+    gen_ids = _parse_ids(ids)
+    with get_conn() as conn:
+        pos = _series_positions(conn, gen_ids)
+    return {
+        "items": [
+            {
+                "generationId": gid,
+                "seriesId": pos[gid]["series_id"] if gid in pos else None,
+                "seq": pos[gid]["seq"] if gid in pos else None,
+                "total": pos[gid]["total"] if gid in pos else None,
+                "version": None,
+            }
+            for gid in gen_ids
+        ]
+    }
+
+
+@router.get("/image-series")
+def image_series(ids: str = Query("")):
+    """The series each image belongs to, most recently used first.
+
+    One entry per series. ``role`` is ``output`` when a record of that series
+    produced the image (``generationId``/``seq`` then point at the newest such
+    record), otherwise ``input`` (the newest record that used it as an input).
+    The first entry is the primary series: the series of the newest record that
+    uses the image at all.
+    """
+    image_ids = _parse_ids(ids)
+    with get_conn() as conn:
+        uses = _image_uses(conn, image_ids, series_only=True)
+        pos = _series_positions(conn, list({u["id"] for u in uses}))
+    per_image: dict[int, dict[int, dict]] = {i: {} for i in image_ids}
+    for u in uses:
+        entries = per_image[u["image_ref"]]
+        sid = u["series_id"]
+        entry = entries.get(sid)
+        if entry is None:
+            entries[sid] = {
+                "seriesId": sid,
+                "generationId": u["id"],
+                "role": u["role"],
+                "seq": pos.get(u["id"], {}).get("seq"),
+                "total": pos.get(u["id"], {}).get("total"),
+            }
+        elif entry["role"] == "input" and u["role"] == "output":
+            # Keep the series' place (most recent use) but prefer the output.
+            entry.update(
+                generationId=u["id"], role="output", seq=pos.get(u["id"], {}).get("seq")
+            )
+    return {
+        "items": [
+            {"imageId": i, "series": list(per_image[i].values())} for i in image_ids
+        ]
+    }
+
+
+@router.get("/by-image/{image_id}")
+def generations_by_image(image_id: int):
+    """Every record that uses this image, as output or input, newest first.
+
+    Rows carry ``role`` ('output' | 'input') and ``series_id``; prompts and
+    lineage are not hydrated (use ``/{id}`` for one record).
+    """
+    with get_conn() as conn:
+        uses = _image_uses(conn, [image_id], series_only=False)
+        pos = _series_positions(conn, [u["id"] for u in uses if u["series_id"]])
+    out = []
+    for u in uses:
+        u.pop("image_ref", None)
+        p = pos.get(u["id"])
+        u["seq"] = p["seq"] if p else None
+        out.append(u)
+    return {"generations": out}
+
+
 @router.get("/by-output/{image_id}")
 def generation_by_output(image_id: int):
     """The most recent generation that produced this output image, or null.
