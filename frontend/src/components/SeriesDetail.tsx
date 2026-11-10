@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   type HistoryResult,
   type ImageRow,
@@ -6,8 +6,11 @@ import {
   providerOf,
   type SeriesDetail as SeriesDetailRow,
   type SeriesGeneration,
+  type SeriesVersion,
+  type SeriesVersionAttempt,
   seriesApi,
 } from "../api";
+import { copyText } from "../clipboard";
 import { useI18n } from "../i18n";
 import { cardTime, clockTime, dayKey, fullTime, parseTime } from "../historyTime";
 import { generationRuntime } from "../generationMetrics";
@@ -19,12 +22,98 @@ import { useToast } from "./Toast";
 import { Switch } from "./ComposerControls";
 import { SeriesDot, successRate } from "./SeriesBits";
 import { MoveToThemeDialog, SeriesEditDialog } from "./SeriesDialogs";
+import { HiddenVersionRow, VersionGroup, VersionSkeleton } from "./SeriesVersionGroup";
 import { Button, IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
 import Menu, { type MenuItem } from "./ui/Menu";
 import Segmented from "./ui/Segmented";
 
 const PAGE = 30;
+// series-v2 B3: versions per chunk of the Changes view (whole versions only).
+const VERSION_PAGE = 15;
+// The backend's page limits, for refreshing everything already loaded.
+const MAX_ROWS = 200;
+const MAX_VERSIONS = 100;
+const DETAIL_VIEW_KEY = "imagen-series-detail-view";
+type DetailView = "changes" | "attempts";
+
+function initialDetailView(): DetailView {
+  try {
+    return localStorage.getItem(DETAIL_VIEW_KEY) === "attempts" ? "attempts" : "changes";
+  } catch {
+    return "changes";
+  }
+}
+
+/** The nearest scrolling ancestor (`overflowing` = only one that scrolls now). */
+function scrollParent(el: HTMLElement | null, overflowing = true): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === "auto" || overflowY === "scroll") && (!overflowing || node.scrollHeight > node.clientHeight)) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/** Calls `onHit` when `el` comes within 300 px of the visible area. */
+function useNearEnd(el: HTMLElement | null, enabled: boolean, onHit: () => void) {
+  const hit = useRef(onHit);
+  hit.current = onHit;
+  useEffect(() => {
+    if (!el || !enabled) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) hit.current();
+      },
+      { root: scrollParent(el, false), rootMargin: "300px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [el, enabled]);
+}
+
+/** A version attempt as an Attempts-view row (they share everything else
+ *  with the version), so the expanded group can reuse `TimelineRow`. */
+function attemptRow(v: SeriesVersion, a: SeriesVersionAttempt, seriesId: number): SeriesGeneration {
+  return {
+    id: a.id,
+    seq: a.seq,
+    prompt: v.prompt,
+    provider: a.provider,
+    model: v.params.model ?? "",
+    aspect_ratio: v.params.aspect_ratio,
+    resolution: v.params.resolution,
+    status: a.status,
+    error_message: a.error_message,
+    raw_finish: a.raw_finish,
+    output_image_id: a.output_image_id,
+    created_at: a.created_at,
+    source: a.source,
+    client_task_id: null,
+    marker_color: a.marker_color,
+    duration_ms: a.duration_ms,
+    attempts: a.attempts,
+    series_id: seriesId,
+    inputs: v.inputs,
+    outputImage: a.outputImage,
+    // Inside a version every earlier attempt has the same configuration.
+    previous:
+      a.seq > v.first_seq
+        ? {
+            id: 0,
+            seq: a.seq - 1,
+            prompt: v.prompt,
+            provider: a.provider,
+            model: v.params.model ?? "",
+            aspect_ratio: v.params.aspect_ratio,
+            resolution: v.params.resolution,
+            status: a.status,
+            input_ids: v.params.input_ids,
+          }
+        : null,
+  };
+}
 const FILM_HEIGHT = 96;
 const BEST_HEIGHT = 180;
 const OUTPUT_WIDTH = 88;
@@ -56,7 +145,6 @@ export default function SeriesDetail({
   id,
   onBack,
   phone = false,
-  refreshKey = 0,
   boundTo = [],
   onOpenViewer,
   onReuse,
@@ -66,7 +154,6 @@ export default function SeriesDetail({
   id: number;
   onBack: () => void;
   phone?: boolean;
-  refreshKey?: number;
   /** Workspace numbers bound to this series. */
   boundTo?: number[];
   onOpenViewer: (img: ImageRow, list: ImageRow[]) => void;
@@ -85,49 +172,140 @@ export default function SeriesDetail({
   const [counts, setCounts] = useState({ all: 0, success: 0, blocked: 0, error: 0 });
   const [filter, setFilter] = useState<HistoryResult | "all">("all");
   const [showChanges, setShowChanges] = useState(true);
+  const [view, setView] = useState<DetailView>(initialDetailView);
+  const [versions, setVersions] = useState<SeriesVersion[]>([]);
+  const [versionCursor, setVersionCursor] = useState<number | null>(null);
+  const [versionTotal, setVersionTotal] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [endEl, setEndEl] = useState<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<"rename" | "move" | null>(null);
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null);
   const compact = useNarrow(rootEl, COMPACT_BELOW) || phone;
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(DETAIL_VIEW_KEY, view);
+    } catch {
+      /* memory only */
+    }
+  }, [view]);
+
+  const status = filter === "all" ? undefined : filter;
+  // Sizes already loaded, so a refresh keeps them (read through a ref: a
+  // refresh must not depend on them).
+  const loaded = useRef({ rows: 0, versions: 0 });
+  loaded.current = { rows: rows.length, versions: versions.length };
+  const loadToken = useRef(0);
+
+  /** Header, counts and the current view from the top. `keep` = refresh what
+   *  is loaded (a finished generation) instead of starting over. */
   const load = useCallback(
-    async (append = false) => {
-      if (!append) setLoading(true);
+    async (keep: boolean) => {
+      const token = ++loadToken.current;
+      if (!keep) setLoading(true);
       setError(null);
       try {
-        const [d, tl] = await Promise.all([
-          append ? Promise.resolve(null) : seriesApi.get(id),
-          seriesApi.timeline(id, {
-            status: filter === "all" ? undefined : filter,
-            limit: PAGE,
-            offset: append ? rows.length : 0,
-          }),
+        const rowLimit = keep ? Math.min(MAX_ROWS, Math.max(PAGE, loaded.current.rows)) : PAGE;
+        const versionLimit = keep
+          ? Math.min(MAX_VERSIONS, Math.max(VERSION_PAGE, loaded.current.versions))
+          : VERSION_PAGE;
+        const [d, tl, vs] = await Promise.all([
+          seriesApi.get(id),
+          // The Changes view only needs the filter counts from here.
+          seriesApi.timeline(id, { status, limit: view === "attempts" ? rowLimit : 1 }),
+          // The Attempts view only needs the version count from here.
+          seriesApi.versions(id, { status, limit: view === "changes" ? versionLimit : 1 }),
         ]);
-        if (d) setDetail(d);
-        setRows((current) => (append ? [...current, ...tl.generations] : tl.generations));
-        setTotal(tl.total);
+        if (token !== loadToken.current) return;
+        setDetail(d);
         setCounts(tl.counts);
+        setTotal(tl.total);
+        setVersionTotal(vs.total);
+        if (view === "attempts") {
+          setRows(tl.generations);
+        } else {
+          setVersions(vs.versions);
+          setVersionCursor(vs.next_cursor);
+        }
       } catch (e) {
-        setError((e as Error).message);
+        if (token === loadToken.current) setError((e as Error).message);
       } finally {
-        setLoading(false);
+        if (token === loadToken.current) setLoading(false);
       }
     },
-    // rows.length only matters for "load more"; a filter change restarts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, filter, rows.length],
+    [id, status, view],
   );
 
+  /** Next chunk: whole versions (Changes) or the next rows (Attempts). */
+  const loadMore = useCallback(async () => {
+    if (loadingMore || loading) return;
+    const token = loadToken.current;
+    setLoadingMore(true);
+    try {
+      if (view === "changes") {
+        if (versionCursor === null) return;
+        const vs = await seriesApi.versions(id, { status, cursor: versionCursor, limit: VERSION_PAGE });
+        if (token !== loadToken.current) return;
+        setVersions((current) => [...current, ...vs.versions.filter((v) => !current.some((c) => c.version === v.version))]);
+        setVersionCursor(vs.next_cursor);
+      } else {
+        if (rows.length >= total) return;
+        const tl = await seriesApi.timeline(id, { status, limit: PAGE, offset: rows.length });
+        if (token !== loadToken.current) return;
+        setRows((current) => [...current, ...tl.generations.filter((g) => !current.some((c) => c.id === g.id))]);
+        setTotal(tl.total);
+      }
+    } catch (e) {
+      if (token === loadToken.current) toast(t("load_error", { msg: (e as Error).message }), "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [id, status, view, versionCursor, rows.length, total, loading, loadingMore, toast, t]);
+
+  // A new series, filter or view starts from the top.
   useEffect(() => {
+    setRows([]);
+    setVersions([]);
+    setVersionCursor(null);
     void load(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, filter, refreshKey, store.version]);
+  }, [id, filter, view]);
+
+  // Filters scroll back to the top of the list (the toolbar stays in view).
+  const barRef = useRef<HTMLDivElement>(null);
+  const firstFilter = useRef(true);
+  useEffect(() => {
+    if (firstFilter.current) {
+      firstFilter.current = false;
+      return;
+    }
+    const bar = barRef.current;
+    const scroller = scrollParent(bar);
+    if (!bar || !scroller) return;
+    const offset = bar.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    if (offset < 0) scroller.scrollTop += offset - 8;
+  }, [filter]);
+
+  // Only this series' changes refresh it (series-v2 B3): finished
+  // generations elsewhere leave it alone.
+  const seriesVersion = store.versionOf(id);
+  const firstVersion = useRef(seriesVersion);
+  useEffect(() => {
+    if (seriesVersion === firstVersion.current) return;
+    firstVersion.current = seriesVersion;
+    void load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesVersion]);
+
+  const hasMore = view === "changes" ? versionCursor !== null : rows.length < total;
+  useNearEnd(endEl, hasMore && !loading && !loadingMore && !error, () => void loadMore());
 
   const setBest = async (imageId: number | null) => {
     try {
       await seriesApi.update(id, { bestImageId: imageId });
-      await store.reload();
+      await store.reload([id]);
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }), "error");
     }
@@ -136,7 +314,7 @@ export default function SeriesDetail({
   const archive = async (archived: boolean) => {
     try {
       await seriesApi.update(id, { archived });
-      await store.reload();
+      await store.reload([id]);
       toast(archived ? t("series_archived_toast") : t("series_unarchived_toast"));
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }), "error");
@@ -154,7 +332,7 @@ export default function SeriesDetail({
     if (!ok) return;
     try {
       await seriesApi.remove(id);
-      await store.reload();
+      await store.reload([id]);
       onBack();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }), "error");
@@ -188,9 +366,20 @@ export default function SeriesDetail({
     );
   }
 
-  const first = rows.length ? parseTime(rows[rows.length - 1].created_at) : null;
+  // The oldest record, once everything is loaded (either view).
+  const oldestOf = () => {
+    if (view === "attempts") {
+      return rows.length === total && rows.length ? rows[rows.length - 1].created_at : null;
+    }
+    if (versionCursor !== null || !versions.length) return null;
+    return versions[versions.length - 1].attempts.reduce<string | null>(
+      (min, a) => (min === null || a.created_at < min ? a.created_at : min),
+      null,
+    );
+  };
+  const first = parseTime(oldestOf());
   const now = new Date();
-  const spanFrom = detail.records > 0 && filter === "all" && rows.length === total && first ? first : null;
+  const spanFrom = detail.records > 0 && filter === "all" && first ? first : null;
   const last = parseTime(detail.last_at);
   const rate = successRate(detail);
   const statLine = [
@@ -224,6 +413,55 @@ export default function SeriesDetail({
     ...(bestId ? [{ label: t("series_clear_best"), icon: "best" as const, onSelect: () => void setBest(null) }] : []),
     { label: t("series_delete"), icon: "delete", danger: true, onSelect: () => void remove() },
   ];
+
+  const timeTexts = (iso: string) => {
+    const d = parseTime(iso);
+    if (!d) return { short: "", full: "" };
+    return {
+      short: dayKey(d) === dayKey(now) ? clockTime(d, lang) : `${cardTime(d, now, lang)} ${clockTime(d, lang)}`,
+      full: fullTime(d, lang),
+    };
+  };
+
+  /** One Attempts-view row; inside a version (`v`) it also says "First try of vK". */
+  const attemptItem = (g: SeriesGeneration, v?: SeriesVersion) => {
+    const when = timeTexts(g.created_at);
+    return (
+      <TimelineRow
+        key={g.id}
+        g={g}
+        compact={compact}
+        showChanges={v ? true : showChanges}
+        firstOf={v && g.seq === v.first_seq ? v.version : undefined}
+        isBest={!!g.output_image_id && g.output_image_id === bestId}
+        onOpen={(img) => onOpenViewer(img, outputs.length ? outputs : [img])}
+        onReuse={() => onReuse(g)}
+        onRerun={onRerun && g.source !== "manual" && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
+        onSetBest={g.outputImage && !g.outputImage.deleted_at ? () => void setBest(g.outputImage!.id) : undefined}
+        reasonText={reason(g.raw_finish, providerOf(g)) || g.error_message || t("no_output")}
+        timeText={when.short}
+        fullTimeText={when.full}
+      />
+    );
+  };
+
+  /** ⋯ of a version: acts on its latest attempt (same configuration). */
+  const versionMenu = (v: SeriesVersion): MenuItem[] => {
+    const latest = v.attempts[v.attempts.length - 1];
+    if (!latest) return [];
+    const g = attemptRow(v, latest, id);
+    return [
+      { label: t("reuse"), icon: "reuse", onSelect: () => onReuse(g) },
+      ...(onRerun && g.source !== "manual" && isReady(providerOf(g))
+        ? [{ label: t("rerun_short"), icon: "rerun" as const, onSelect: () => onRerun(g) }]
+        : []),
+      {
+        label: t("sv2_copy_prompt"),
+        icon: "copy",
+        onSelect: async () => toast((await copyText(v.prompt)) ? t("copied") : t("copy_failed")),
+      },
+    ];
+  };
 
   const filterOptions = [
     { value: "all" as const, label: `${t("filter_all")} ${counts.all}` },
@@ -321,7 +559,39 @@ export default function SeriesDetail({
         </section>
       )}
 
-      <div className="series-timeline-bar">
+      {/* series-v2 B3: Changes (versions) / Attempts (the timeline). */}
+      <div className={`series-view-bar${compact ? " compact" : ""}`}>
+        <Segmented
+          className="series-view-seg"
+          value={view}
+          onChange={setView}
+          options={[
+            {
+              value: "changes" as const,
+              label: (
+                <>
+                  {t("sv2_view_changes")}
+                  {versionTotal !== null && <span className="series-view-count">{versionTotal}</span>}
+                </>
+              ),
+              title: t("sv2_view_changes"),
+            },
+            {
+              value: "attempts" as const,
+              label: (
+                <>
+                  {t("sv2_view_attempts")}
+                  <span className="series-view-count">{counts.all}</span>
+                </>
+              ),
+              title: t("sv2_view_attempts"),
+            },
+          ]}
+        />
+        {!compact && <span className="series-order">{t("series_newest_first")}</span>}
+      </div>
+
+      <div className="series-timeline-bar" ref={barRef}>
         {compact ? (
           <div className="series-filter-chips" role="group" aria-label={t("hist_filter_result")}>
             {filterOptions.map((o) => (
@@ -340,48 +610,54 @@ export default function SeriesDetail({
           <Segmented value={filter} onChange={setFilter} options={filterOptions} />
         )}
         <div className="spacer" />
-        <Switch checked={showChanges} onChange={setShowChanges} label={t("series_show_changes")} />
-        {!compact && <span className="series-order">{t("series_newest_first")}</span>}
+        {view === "attempts" && (
+          <Switch checked={showChanges} onChange={setShowChanges} label={t("series_show_changes")} />
+        )}
       </div>
 
-      {loading && rows.length === 0 ? (
+      {view === "changes" ? (
+        loading && versions.length === 0 ? (
+          <ol className="series-versions"><VersionSkeleton /></ol>
+        ) : versions.length === 0 ? (
+          <div className="series-empty">{detail.records === 0 ? t("series_detail_empty") : t("no_results")}</div>
+        ) : (
+          <ol className="series-versions" aria-label={t("sv2_view_changes")}>
+            {versions.map((v) =>
+              v.hidden ? (
+                <HiddenVersionRow key={v.version} v={v} />
+              ) : (
+                <VersionGroup
+                  key={v.version}
+                  v={v}
+                  compact={compact}
+                  filtered={filter !== "all"}
+                  onOpen={(img) => onOpenViewer(img, outputs.length ? outputs : [img])}
+                  reasonOf={(a) => reason(a.raw_finish, a.provider) || a.error_message || t("no_output")}
+                  menu={versionMenu(v)}
+                  renderAttempts={() => (
+                    <ol className="series-timeline in-version" aria-label={t("series_attempts")}>
+                      {[...v.attempts].reverse().map((a) => attemptItem(attemptRow(v, a, id), v))}
+                    </ol>
+                  )}
+                />
+              ),
+            )}
+            {loadingMore && <VersionSkeleton />}
+          </ol>
+        )
+      ) : loading && rows.length === 0 ? (
         <div className="panel muted"><span className="spinner" /> {t("loading")}</div>
       ) : rows.length === 0 ? (
         <div className="series-empty">{detail.records === 0 ? t("series_detail_empty") : t("no_results")}</div>
       ) : (
         <ol className="series-timeline" aria-label={t("series_attempts")}>
-          {rows.map((g) => (
-            <TimelineRow
-              key={g.id}
-              g={g}
-              compact={compact}
-              showChanges={showChanges}
-              isBest={!!g.output_image_id && g.output_image_id === bestId}
-              onOpen={(img) => onOpenViewer(img, outputs.length ? outputs : [img])}
-              onReuse={() => onReuse(g)}
-              onRerun={onRerun && g.source !== "manual" && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
-              onSetBest={g.outputImage && !g.outputImage.deleted_at ? () => void setBest(g.outputImage!.id) : undefined}
-              reasonText={reason(g.raw_finish, providerOf(g)) || g.error_message || t("no_output")}
-              timeText={(() => {
-                const d = parseTime(g.created_at);
-                if (!d) return "";
-                return dayKey(d) === dayKey(now) ? clockTime(d, lang) : `${cardTime(d, now, lang)} ${clockTime(d, lang)}`;
-              })()}
-              fullTimeText={(() => {
-                const d = parseTime(g.created_at);
-                return d ? fullTime(d, lang) : "";
-              })()}
-            />
-          ))}
+          {rows.map((g) => attemptItem(g))}
         </ol>
       )}
-      {rows.length < total && (
-        <div className="series-more">
-          <Button onClick={() => void load(true)} disabled={loading}>
-            {t("series_load_more", { n: total - rows.length })}
-          </Button>
-        </div>
+      {view === "attempts" && loadingMore && (
+        <div className="series-more"><span className="spinner" /></div>
       )}
+      <div ref={setEndEl} className="series-end" aria-hidden="true" />
 
       {dialog === "rename" && (
         <SeriesEditDialog
@@ -405,6 +681,7 @@ function TimelineRow({
   g,
   compact,
   showChanges,
+  firstOf,
   isBest,
   onOpen,
   onReuse,
@@ -417,6 +694,8 @@ function TimelineRow({
   g: SeriesGeneration;
   compact: boolean;
   showChanges: boolean;
+  /** First attempt of version K (inside an expanded version group). */
+  firstOf?: number;
   isBest: boolean;
   onOpen: (img: ImageRow) => void;
   onReuse: () => void;
@@ -462,7 +741,9 @@ function TimelineRow({
   ];
 
   const prompt =
-    showChanges && same ? (
+    firstOf !== undefined ? (
+      <p className="series-same">{t("sv2_first_try_of", { k: firstOf })}</p>
+    ) : showChanges && same ? (
       <p className="series-same">{t("series_same_prompt", { n: prev!.seq })}</p>
     ) : showChanges && prev ? (
       <p className="series-prompt">

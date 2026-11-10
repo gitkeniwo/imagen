@@ -21,6 +21,8 @@ import {
 // names and colors; anything that changes series calls `reload()`.
 
 const RECENT_LIMIT = 4;
+// series-v2 B3: one tree fetch per burst of finished generations.
+const RELOAD_DEBOUNCE_MS = 400;
 const recentKey = (libraryKey: string | null) => `imagen-series-recent:${libraryKey ?? "memory"}`;
 
 export interface SeriesPath {
@@ -39,7 +41,14 @@ export interface SeriesStore {
   themes: ThemeNode[];
   get: (id: number | null | undefined) => SeriesPath | null;
   node: (id: number | null | undefined) => SeriesNode | null;
-  reload: () => Promise<void>;
+  /** Refetch the tree (trailing debounce, ~400 ms, so a batch of finished
+   *  generations refreshes once). `touched` = the series whose contents
+   *  changed: their `versionOf` goes up after the fetch. Omitted = all of
+   *  them; `[]` = names/counts only. */
+  reload: (touched?: number[] | "all") => Promise<void>;
+  /** Changes whenever this series' records may have changed (series-v2 B3);
+   *  a series detail listens to its own id only. */
+  versionOf: (id: number | null | undefined) => number;
   /** Recently picked series ids, newest first (live, unarchived only). */
   recent: number[];
   markRecent: (id: number) => void;
@@ -55,6 +64,7 @@ const empty: SeriesStore = {
   get: () => null,
   node: () => null,
   reload: async () => {},
+  versionOf: () => 0,
   recent: [],
   markRecent: () => {},
   create: async () => {
@@ -95,12 +105,33 @@ export function useSeriesState(libraryKey: string | null, refreshKey: unknown): 
   const [tree, setTree] = useState<SeriesTree | null>(null);
   const [version, setVersion] = useState(0);
   const [picked, setPicked] = useState<number[]>(() => readRecent(libraryKey));
-  const inFlight = useRef<Promise<void> | null>(null);
+  // Per-series change counters + one epoch for "everything changed".
+  const [bumps, setBumps] = useState<Map<number, number>>(() => new Map());
+  const [epoch, setEpoch] = useState(0);
+  const pending = useRef<{
+    all: boolean;
+    ids: Set<number>;
+    timer: number | undefined;
+    waiters: (() => void)[];
+  }>({ all: false, ids: new Set(), timer: undefined, waiters: [] });
 
   useEffect(() => setPicked(readRecent(libraryKey)), [libraryKey]);
 
-  const reload = useCallback(async () => {
-    const run = seriesApi
+  const flush = useCallback(() => {
+    const batch = pending.current;
+    pending.current = { all: false, ids: new Set(), timer: undefined, waiters: [] };
+    const settle = () => {
+      if (batch.all) setEpoch((e) => e + 1);
+      else if (batch.ids.size) {
+        setBumps((current) => {
+          const next = new Map(current);
+          for (const id of batch.ids) next.set(id, (next.get(id) ?? 0) + 1);
+          return next;
+        });
+      }
+      for (const done of batch.waiters) done();
+    };
+    seriesApi
       .tree("all")
       .then((next) => {
         setTree(next);
@@ -109,14 +140,37 @@ export function useSeriesState(libraryKey: string | null, refreshKey: unknown): 
       .catch(() => {
         // Older backend or offline: the feature simply shows nothing.
         setTree((current) => current ?? { themes: [], unthemed: [] });
-      });
-    inFlight.current = run;
-    return run;
+      })
+      .finally(settle);
   }, []);
 
+  const reload = useCallback(
+    (touched: number[] | "all" = "all") =>
+      new Promise<void>((resolve) => {
+        const p = pending.current;
+        if (touched === "all") p.all = true;
+        else for (const id of touched) if (id) p.ids.add(id);
+        p.waiters.push(resolve);
+        window.clearTimeout(p.timer);
+        p.timer = window.setTimeout(flush, RELOAD_DEBOUNCE_MS);
+      }),
+    [flush],
+  );
+
+  useEffect(() => () => window.clearTimeout(pending.current.timer), []);
+
+  // Startup, a library switch or a data change: fetch now (menus and the
+  // composer need the tree), taking any pending debounced call along.
   useEffect(() => {
-    void reload();
-  }, [reload, refreshKey, libraryKey]);
+    void reload("all");
+    window.clearTimeout(pending.current.timer);
+    flush();
+  }, [reload, flush, refreshKey, libraryKey]);
+
+  const versionOf = useCallback(
+    (id: number | null | undefined) => (id ? bumps.get(id) ?? 0 : 0) + epoch,
+    [bumps, epoch],
+  );
 
   const { leaves, themes, byId, themeById } = useMemo(() => {
     const themes = tree?.themes ?? [];
@@ -183,7 +237,7 @@ export function useSeriesState(libraryKey: string | null, refreshKey: unknown): 
   const create = useCallback(
     async (kind: SeriesKind, name: string, parentId: number | null = null) => {
       const created = await seriesApi.create({ kind, name, parentId });
-      await reload();
+      await reload([]);
       if (kind === "series") markRecent(created.id);
       return created;
     },
@@ -199,12 +253,13 @@ export function useSeriesState(libraryKey: string | null, refreshKey: unknown): 
       get,
       node,
       reload,
+      versionOf,
       recent,
       markRecent,
       create,
       version,
     }),
-    [tree, leaves, themes, get, node, reload, recent, markRecent, create, version],
+    [tree, leaves, themes, get, node, reload, versionOf, recent, markRecent, create, version],
   );
 }
 

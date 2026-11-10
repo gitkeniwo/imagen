@@ -108,7 +108,9 @@ export function useSeriesActions(onChanged?: () => void) {
             "success",
           );
         }
-        await store.reload();
+        await store.reload(
+          [...target.members, id].filter((sid): sid is number => sid !== null),
+        );
         onChanged?.();
       } catch (e) {
         toast(t("op_failed", { msg: (e as Error).message }), "error");

@@ -24,6 +24,8 @@ interface Entry {
   role: "output" | "input";
   seq: number | null;
   generationId: number | null;
+  /** vK (series-v2 B3), outputs only. */
+  version?: number | null;
 }
 
 function initialEntries(subject: SeriesSubject, fixed?: number | null): Entry[] {
@@ -34,6 +36,7 @@ function initialEntries(subject: SeriesSubject, fixed?: number | null): Entry[] 
       role: e.role,
       seq: e.seq,
       generationId: e.generationId,
+      version: e.version ?? null,
     }));
   } else {
     list = [
@@ -48,13 +51,14 @@ function initialEntries(subject: SeriesSubject, fixed?: number | null): Entry[] 
   return fixed ? list.filter((e) => e.seriesId === fixed) : list;
 }
 
-/** #N label for one entry: "#12" or "input of #2". */
+/** #N label for one entry: "#12 · v4" or "input of #2". */
 export function entryPosition(
-  entry: { role: "output" | "input"; seq: number | null },
+  entry: { role: "output" | "input"; seq: number | null; version?: number | null },
   t: (key: string, vars?: Record<string, string | number>) => string,
 ): string | null {
   if (entry.seq == null) return null;
-  return entry.role === "input" ? t("sv2_input_of", { n: entry.seq }) : `#${entry.seq}`;
+  if (entry.role === "input") return t("sv2_input_of", { n: entry.seq });
+  return entry.version ? t("sv2_seq_version", { n: entry.seq, k: entry.version }) : `#${entry.seq}`;
 }
 
 export default function SeriesInfoCard({
@@ -91,7 +95,9 @@ export default function SeriesInfoCard({
         const { items } = await api.seriesPositions([subject.generationId]);
         const p = items[0];
         if (alive && p?.seriesId) {
-          setEntries([{ seriesId: p.seriesId, role: "output", seq: p.seq, generationId: subject.generationId }]);
+          setEntries([
+            { seriesId: p.seriesId, role: "output", seq: p.seq, generationId: subject.generationId, version: p.version },
+          ]);
         }
       } else if (subject.kind === "image") {
         const list = subject.entries ?? (await fetchImageSeries(subject.imageId));
@@ -104,6 +110,11 @@ export default function SeriesInfoCard({
         const own = generations.find((g) => g.role === "output" && g.client_task_id === subject.clientTaskId);
         if (alive && own?.series_id) {
           setEntries([{ seriesId: own.series_id, role: "output", seq: own.seq, generationId: own.id }]);
+          const { items } = await api.seriesPositions([own.id]);
+          const version = items[0]?.version ?? null;
+          if (alive && version) {
+            setEntries([{ seriesId: own.series_id, role: "output", seq: own.seq, generationId: own.id, version }]);
+          }
         }
       }
     };

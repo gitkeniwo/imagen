@@ -902,6 +902,60 @@ export interface SeriesTimeline {
   counts: { all: number; success: number; blocked: number; error: number };
 }
 
+// series-v2 B3: versions = consecutive attempts with the same configuration.
+export interface SeriesVersionParams {
+  model: string | null;
+  aspect_ratio: string | null;
+  resolution: string | null;
+  input_ids: number[];
+}
+
+export interface SeriesVersionAttempt {
+  id: number;
+  seq: number;
+  status: Generation["status"];
+  provider: ProviderId;
+  source: Generation["source"];
+  created_at: string;
+  error_message: string | null;
+  raw_finish: string | null;
+  duration_ms: number | null;
+  attempts: number | null;
+  marker_color: MarkerColor | null;
+  output_image_id: number | null;
+  outputImage: ImageRow | null;
+}
+
+export type SeriesVersionParam = "model" | "aspect_ratio" | "resolution" | "inputs";
+
+export interface SeriesVersion {
+  version: number;
+  key: string;
+  first_seq: number;
+  last_seq: number;
+  prompt: string;
+  params: SeriesVersionParams;
+  changed_params: SeriesVersionParam[];
+  prompt_changed: boolean;
+  base_version: number | null;
+  base_prompt: string | null;
+  base_params: SeriesVersionParams | null;
+  base_hidden: boolean;
+  inputs: ImageRow[];
+  /** Attempts left by the status filter, in series order (at most 200). */
+  attempts: SeriesVersionAttempt[];
+  attempts_total: number;
+  counts: { all: number; success: number; blocked: number; error: number; aborted: number };
+  hidden: boolean;
+}
+
+export interface SeriesVersions {
+  versions: SeriesVersion[];
+  total: number;
+  next_cursor: number | null;
+  order_custom: boolean;
+}
+
 export interface SeriesImportPreview {
   tagId: number;
   found: number;
@@ -920,9 +974,11 @@ export interface ImageSeriesEntry {
   role: "output" | "input";
   seq: number | null;
   total: number | null;
+  /** vK of that record (series-v2 B3); missing on an older backend. */
+  version?: number | null;
 }
 
-/** A record's place in its series (#N; `version` arrives with B3). */
+/** A record's place in its series (#N · vK). */
 export interface SeriesPosition {
   generationId: number;
   seriesId: number | null;
@@ -989,6 +1045,17 @@ export const seriesApi = {
     if (params.limit) q.set("limit", String(params.limit));
     if (params.offset) q.set("offset", String(params.offset));
     return handle(await fetch(`/api/series/${id}/generations?${q.toString()}`, { cache: "no-store" }));
+  },
+  // series-v2 B3: the Changes view, paged by version (newest first).
+  async versions(
+    id: number,
+    params: { status?: HistoryResult; cursor?: number | null; limit?: number } = {},
+  ): Promise<SeriesVersions> {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.cursor) q.set("cursor", String(params.cursor));
+    if (params.limit) q.set("limit", String(params.limit));
+    return handle(await fetch(`/api/series/${id}/versions?${q.toString()}`, { cache: "no-store" }));
   },
   async membership(
     imageIds: number[],
