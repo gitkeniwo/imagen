@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .. import provider_config, providers, remote, storage, tagging
-from ..db import get_conn, now_timestamp
+from ..db import SERIES_POS_STEP, get_conn, now_timestamp
 from ..models import GenerateRequest
 from ..remote_gate import is_lan
 from .series import require_leaf
@@ -164,10 +164,15 @@ async def generate(body: GenerateRequest, request: Request):
                 """INSERT INTO generations
                    (prompt, model, aspect_ratio, resolution, status, error_message,
                     raw_finish, output_image_id, created_at, source,
-                    client_task_id, marker_color, provider, series_id)
-                   VALUES (?, ?, ?, ?, 'running', NULL, NULL, NULL, ?, 'vertex', ?, ?, ?, ?)""",
+                    client_task_id, marker_color, provider, series_id, series_pos)
+                   VALUES (?, ?, ?, ?, 'running', NULL, NULL, NULL, ?, 'vertex', ?, ?, ?, ?,
+                           CASE WHEN ? IS NULL THEN NULL ELSE
+                           (SELECT COALESCE(MAX(series_pos), 0) + ? FROM generations
+                            WHERE series_id = ?) END)""",
                 (body.prompt, model, body.aspectRatio, resolution, _now(),
-                 body.clientTaskId, body.markerColor, provider.ID, body.seriesId),
+                 body.clientTaskId, body.markerColor, provider.ID, body.seriesId,
+                 # New attempts always go last in the series (series-v2 §3).
+                 body.seriesId, SERIES_POS_STEP, body.seriesId),
             )
             gen_id = cur.lastrowid
             for pos, img_id in enumerate(ordered_ids):

@@ -148,6 +148,70 @@ GENERATION_SORT_AT = (
 )
 
 
+# --- series order (series-v2 B2) ----------------------------------------------
+# `generations.series_pos` is a record's place inside its series. It starts out
+# in time order, then follows the user's custom order (drag / move). Gaps of
+# SERIES_POS_STEP leave room to insert between two records at their midpoint.
+SERIES_POS_STEP = 1024.0
+# Below this distance between neighbors the series is renumbered n * STEP.
+SERIES_POS_EPSILON = 1e-6
+
+
+def _sort_at(alias: str) -> str:
+    return GENERATION_SORT_AT.replace("created_at", f"{alias}.created_at")
+
+
+def place_by_time_sql(target: str) -> str:
+    """UPDATE that puts row ``target`` into its series in time order (§3 rule 1).
+
+    It lands right after the furthest-placed record of the series that is
+    older by ``(GENERATION_SORT_AT, id)``, at the midpoint to the next record
+    (or one step past the last / before the first). Rows without a position
+    are ignored, so a batch can be placed one row at a time. Shared by the
+    triggers below and by the migration, so every writer — assign, import,
+    manual create, record edit — follows the same rule.
+    """
+    me, p, n = "generations", "p", "n"
+    older = (
+        f"SELECT MAX({p}.series_pos) FROM generations {p} "
+        f"WHERE {p}.series_id = {me}.series_id AND {p}.id != {me}.id "
+        f"AND {p}.series_pos IS NOT NULL "
+        f"AND ({_sort_at(p)} < {_sort_at(me)} "
+        f"OR ({_sort_at(p)} = {_sort_at(me)} AND {p}.id < {me}.id))"
+    )
+    nxt = (
+        f"SELECT MIN({n}.series_pos) FROM generations {n} "
+        f"WHERE {n}.series_id = {me}.series_id AND {n}.id != {me}.id "
+        f"AND {n}.series_pos > COALESCE(({older}), -1e300)"
+    )
+    step = SERIES_POS_STEP
+    return (
+        f"UPDATE generations SET series_pos = COALESCE("
+        f"(({older}) + ({nxt})) / 2.0, ({older}) + {step}, ({nxt}) - {step}, {step}) "
+        f"WHERE id = {target} AND series_id IS NOT NULL"
+    )
+
+
+# Placement and clearing live in triggers so that every path that writes
+# series_id follows them, including routes that know nothing about order.
+# /api/generate inserts with an explicit series_pos (max + STEP: new attempts
+# always go last), which the insert trigger leaves alone. Renumbering when
+# gaps get too small is done in Python (series_order.renumber_if_tight).
+SERIES_POS_TRIGGERS = f"""
+CREATE TRIGGER IF NOT EXISTS trg_generations_series_pos_insert
+AFTER INSERT ON generations
+WHEN NEW.series_id IS NOT NULL AND NEW.series_pos IS NULL
+BEGIN {place_by_time_sql("NEW.id")}; END;
+CREATE TRIGGER IF NOT EXISTS trg_generations_series_pos_update
+AFTER UPDATE OF series_id ON generations
+WHEN NEW.series_id IS NOT OLD.series_id
+BEGIN
+    UPDATE generations SET series_pos = NULL WHERE id = NEW.id;
+    {place_by_time_sql("NEW.id")};
+END;
+"""
+
+
 # Created after _migrate so index columns exist on pre-migration databases.
 INDEXES = f"""
 CREATE INDEX IF NOT EXISTS idx_image_tags_tag_id ON image_tags(tag_id);
@@ -205,7 +269,8 @@ BEFORE UPDATE OF series_id ON drafts
 WHEN NEW.series_id IS NOT NULL
     AND (SELECT kind FROM series WHERE id = NEW.series_id) IS NOT 'series'
 BEGIN SELECT RAISE(ABORT, 'series_id must point at a series'); END;
-"""
+CREATE INDEX IF NOT EXISTS idx_generations_series_pos ON generations(series_id, series_pos);
+""" + SERIES_POS_TRIGGERS
 
 
 def canonical_timestamp(value: str) -> str:
@@ -267,6 +332,12 @@ def _migrate(conn) -> None:
             "ALTER TABLE generations ADD COLUMN series_id INTEGER "
             "REFERENCES series(id) ON DELETE SET NULL"
         )
+    # Custom order inside a series (series-v2 B2). The first run numbers each
+    # series in time order (ROW_NUMBER * STEP); later runs only place rows
+    # that somehow lack a position, so a custom order is never reset.
+    if "series_pos" not in gen_cols:
+        conn.execute("ALTER TABLE generations ADD COLUMN series_pos REAL")
+    _backfill_series_pos(conn)
     draft_cols = {r["name"] for r in conn.execute("PRAGMA table_info(drafts)")}
     if "provider" not in draft_cols:
         conn.execute(
@@ -358,6 +429,39 @@ def _migrate(conn) -> None:
                 (draft_id, note["output_image_id"]),
             )
     conn.commit()
+
+
+def _backfill_series_pos(conn) -> None:
+    """Give every series member a ``series_pos``; idempotent.
+
+    A series where nobody has a position yet (fresh column) is numbered in
+    time order. Stray rows in an already ordered series (written by an older
+    build without the triggers) are placed by the time rule, oldest first.
+    """
+    missing = conn.execute(
+        f"""SELECT id, series_id FROM generations
+            WHERE series_id IS NOT NULL AND series_pos IS NULL
+            ORDER BY series_id, {GENERATION_SORT_AT} ASC, id ASC"""
+    ).fetchall()
+    if not missing:
+        return
+    ordered = {
+        r["series_id"]
+        for r in conn.execute(
+            "SELECT DISTINCT series_id FROM generations "
+            "WHERE series_id IS NOT NULL AND series_pos IS NOT NULL"
+        ).fetchall()
+    }
+    fresh = [r for r in missing if r["series_id"] not in ordered]
+    rank: dict[int, int] = {}
+    updates = []
+    for r in fresh:
+        rank[r["series_id"]] = rank.get(r["series_id"], 0) + 1
+        updates.append((rank[r["series_id"]] * SERIES_POS_STEP, r["id"]))
+    conn.executemany("UPDATE generations SET series_pos = ? WHERE id = ?", updates)
+    for r in missing:
+        if r["series_id"] in ordered:
+            conn.execute(place_by_time_sql("?"), (r["id"],))
 
 
 @contextlib.contextmanager

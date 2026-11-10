@@ -118,9 +118,38 @@ export function splitTrailingSpace(text: string): [string, string] {
   return [body, text.slice(body.length)];
 }
 
+/** The prompt as versions compare it: edge whitespace (JS `trim`) removed.
+ *  backend/app/series_order.py `normalize_prompt` mirrors this exactly. */
+export function normalizePrompt(prompt: string | null | undefined): string {
+  return (prompt ?? "").trim();
+}
+
 /** True when nothing but the edges' whitespace differs. */
 export function samePrompt(before: string, after: string): boolean {
-  return before.trim() === after.trim();
+  return normalizePrompt(before) === normalizePrompt(after);
+}
+
+// series-v2 B2
+export interface VersionKeyInput {
+  prompt: string | null;
+  model: string | null;
+  resolution: string | null;
+  aspect_ratio: string | null;
+  input_ids: number[];
+}
+
+/** Attempts with the same key, next to each other in a series, form one
+ *  version. Provider is deliberately left out. Mirrors `version_key` in
+ *  backend/app/series_order.py; both are tested against
+ *  scripts/fixtures/version-key.json. */
+export function versionKey(a: VersionKeyInput): string {
+  return JSON.stringify([
+    normalizePrompt(a.prompt),
+    a.model ?? "",
+    a.resolution ?? "",
+    a.aspect_ratio ?? "",
+    [...a.input_ids],
+  ]);
 }
 
 export type ParamKey = "provider" | "model" | "aspect_ratio" | "resolution" | "inputs";

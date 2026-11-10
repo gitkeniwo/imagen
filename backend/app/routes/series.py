@@ -12,9 +12,11 @@ import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import storage
+from .. import series_order, storage
 from ..db import GENERATION_SORT_AT, get_conn, now_timestamp
-from ..models import SeriesAssign, SeriesCreate, SeriesImport, SeriesUpdate
+from ..models import (
+    SeriesAssign, SeriesCreate, SeriesImport, SeriesReorder, SeriesRestore, SeriesUpdate,
+)
 from .generations import _RESULT_FILTERS, _hydrate
 
 router = APIRouter(prefix="/api/series", tags=["series"])
@@ -318,6 +320,7 @@ def _detail(conn, series_id: int) -> dict:
         ).fetchone()
         best = storage.public_image(dict(b)) if b else None
     node["best_image"] = best
+    node["order_custom"] = series_order.order_custom(conn, series_id)
     return node
 
 
@@ -538,6 +541,9 @@ def _assign(conn, series_id: int | None, generation_ids: list[int], draft_ids: l
         conn.execute(f"UPDATE drafts SET series_id = ? WHERE id IN ({ph})", (series_id, *d_ids))
     if series_id is not None:
         conn.execute("UPDATE series SET updated_at = ? WHERE id = ?", (now_timestamp(), series_id))
+        # The triggers placed each record by time; tidy up if that left a
+        # gap too small to insert into later.
+        series_order.renumber_if_tight(conn, series_id)
     return {"generations": len(gen_ids), "drafts": len(d_ids), "moved": moved}
 
 
@@ -565,11 +571,12 @@ def series_generations(
     limit: int = Query(40, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    """The series timeline, newest first, using History's row shape.
+    """The series timeline, last first, using History's row shape.
 
-    Each row carries ``seq`` (1-based, oldest = #1, over every attempt in the
-    series regardless of the filter) and ``previous``: the attempt right before
-    it in time, so the client can diff prompts and parameters.
+    Rows follow the series order (``series_pos``), not time. Each carries
+    ``seq`` (1-based #N in that order, over every attempt in the series
+    regardless of the filter) and ``previous``: the attempt right before it in
+    the order, so the client can diff prompts and parameters.
     """
     status_sql, status_params = "", []
     if status:
@@ -582,8 +589,8 @@ def series_generations(
         require_leaf(conn, series_id)
         seqd = f"""
             SELECT g.*,
-                   ROW_NUMBER() OVER (ORDER BY {GENERATION_SORT_AT} ASC, id ASC) AS seq,
-                   LAG(id) OVER (ORDER BY {GENERATION_SORT_AT} ASC, id ASC) AS prev_id
+                   ROW_NUMBER() OVER (ORDER BY {series_order.ORDER_SQL}) AS seq,
+                   LAG(id) OVER (ORDER BY {series_order.ORDER_SQL}) AS prev_id
             FROM generations g
             WHERE series_id = ? AND status != 'note'
         """
@@ -641,3 +648,206 @@ def series_generations(
             pid = g.pop("prev_id", None)
             g["previous"] = previous.get(pid) if pid else None
     return {"generations": out, "total": total, "counts": counts}
+
+
+# --- custom order (series-v2 B2) ---------------------------------------------
+
+
+def _order_result(conn, series_id: int, before: dict[int, int]) -> dict:
+    after = series_order.seq_map(conn, series_id)
+    return {
+        "order_custom": series_order.order_custom(conn, series_id),
+        "changed": series_order.changed_seqs(before, after),
+    }
+
+
+@router.post("/{series_id}/reorder")
+def reorder(series_id: int, body: SeriesReorder):
+    """Move records as one block (in their current relative order) right
+    before or right after a target record. Returns ``order_custom`` and every
+    record whose #N changed (``changed: [{id, seq, old_seq}]``)."""
+    if (body.before is None) == (body.after is None):
+        raise HTTPException(status_code=400, detail="Give exactly one of before / after.")
+    target = body.before if body.before is not None else body.after
+    wanted = set(body.generationIds)
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Nothing to move")
+    if target in wanted:
+        raise HTTPException(status_code=400, detail="The target cannot be one of the moved records.")
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        current = series_order.ordered_ids(conn, series_id)
+        members = set(current)
+        if not wanted <= members:
+            raise HTTPException(status_code=400, detail="Every moved record must be in this series.")
+        if target not in members:
+            raise HTTPException(status_code=400, detail="The target must be in this series.")
+        before = series_order.seq_map(conn, series_id)
+        block = [gid for gid in current if gid in wanted]
+        series_order.move_block(conn, series_id, block, body.before, body.after)
+        return _order_result(conn, series_id, before)
+
+
+@router.post("/{series_id}/reorder/reset")
+def reorder_reset(series_id: int):
+    """Back to time order. ``previous_order`` is the full order before, for
+    the client's Undo (``reorder/restore``)."""
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        before = series_order.seq_map(conn, series_id)
+        previous = series_order.ordered_ids(conn, series_id)
+        series_order.write_order(conn, series_order.time_ids(conn, series_id, notes=True))
+        out = _order_result(conn, series_id, before)
+    out["previous_order"] = previous
+    return out
+
+
+@router.post("/{series_id}/reorder/restore")
+def reorder_restore(series_id: int, body: SeriesRestore):
+    """Write a complete order back. Ids no longer in the series are ignored;
+    records of the series missing from the list (added in the meantime) are
+    placed by the time rule, as if they had just been filed."""
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        before = series_order.seq_map(conn, series_id)
+        members = set(series_order.ordered_ids(conn, series_id))
+        listed = [gid for gid in dict.fromkeys(body.generationIds) if gid in members]
+        listed_set = set(listed)
+        rest = [
+            gid for gid in series_order.time_ids(conn, series_id, notes=True)
+            if gid not in listed_set
+        ]
+        if rest:
+            ph = ",".join("?" * len(rest))
+            conn.execute(f"UPDATE generations SET series_pos = NULL WHERE id IN ({ph})", rest)
+        series_order.write_order(conn, listed)
+        for gid in rest:
+            series_order.place_by_time(conn, gid)
+        series_order.renumber_if_tight(conn, series_id)
+        return _order_result(conn, series_id, before)
+
+
+# --- versions (series-v2 B2) --------------------------------------------------
+
+VERSION_PAGE = 15
+VERSION_ATTEMPTS_MAX = 200
+
+
+def _attempt(row: dict, outputs: dict[int, dict]) -> dict:
+    out = outputs.get(row["output_image_id"]) if row["output_image_id"] else None
+    return {
+        "id": row["id"],
+        "seq": row["seq"],
+        "status": row["status"],
+        "provider": row["provider"],
+        "source": row["source"],
+        "created_at": row["created_at"],
+        "error_message": row["error_message"],
+        "raw_finish": row["raw_finish"],
+        "duration_ms": row["duration_ms"],
+        "marker_color": row["marker_color"],
+        "output_image_id": row["output_image_id"],
+        "outputImage": storage.public_image(out) if out else None,
+    }
+
+
+def _version_counts(rows: list[dict]) -> dict:
+    counts = {"all": len(rows), "success": 0, "blocked": 0, "error": 0, "aborted": 0}
+    for r in rows:
+        if r["status"] in counts:
+            counts[r["status"]] += 1
+    return counts
+
+
+@router.get("/{series_id}/versions")
+def series_versions(
+    series_id: int,
+    status: str | None = None,
+    cursor: int | None = Query(None, ge=1),
+    limit: int = Query(VERSION_PAGE, ge=1, le=100),
+):
+    """The series as versions, newest first, paged by version.
+
+    Consecutive attempts with the same ``version_key`` are one version, over
+    the full series order. ``status`` only filters each version's
+    ``attempts``: a version with none left is still returned with
+    ``hidden: true`` and its counts, and ``base_version`` always points at the
+    previous version of the full order. ``cursor`` is a version number: the
+    page holds the versions below it. A version lists at most 200 attempts
+    (the last ones in order); ``attempts_total`` is the unclipped count.
+    """
+    wanted = None
+    if status:
+        if status not in _RESULT_FILTERS:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        wanted = set(_RESULT_FILTERS[status])
+    with get_conn() as conn:
+        require_leaf(conn, series_id)
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"""SELECT id, prompt, model, aspect_ratio, resolution, status, provider,
+                           source, created_at, error_message, raw_finish, duration_ms,
+                           marker_color, output_image_id,
+                           ROW_NUMBER() OVER (ORDER BY {series_order.ORDER_SQL}) AS seq
+                    FROM generations WHERE series_id = ? AND status != 'note'
+                    ORDER BY {series_order.ORDER_SQL}""",
+                (series_id,),
+            ).fetchall()
+        ]
+        inputs: dict[int, list[int]] = {}
+        for ir in conn.execute(
+            """SELECT gi.generation_id, gi.image_id FROM generation_inputs gi
+               JOIN generations g ON g.id = gi.generation_id
+               WHERE g.series_id = ? ORDER BY gi.generation_id, gi.position""",
+            (series_id,),
+        ).fetchall():
+            inputs.setdefault(ir["generation_id"], []).append(ir["image_id"])
+        versions = series_order.group_versions(rows, inputs)
+        total = len(versions)
+        top = min(cursor - 1, total) if cursor is not None else total
+        page = versions[max(0, top - limit):top][::-1]
+
+        shown: dict[int, list[dict]] = {}
+        for v in page:
+            match = [r for r in v["rows"] if wanted is None or r["status"] in wanted]
+            shown[v["version"]] = match
+        out_ids = [
+            r["output_image_id"]
+            for match in shown.values()
+            for r in match[-VERSION_ATTEMPTS_MAX:]
+            if r["output_image_id"]
+        ]
+        outputs: dict[int, dict] = {}
+        if out_ids:
+            ph = ",".join("?" * len(out_ids))
+            outputs = {
+                r["id"]: dict(r)
+                for r in conn.execute(f"SELECT * FROM images WHERE id IN ({ph})", out_ids).fetchall()
+            }
+        result = []
+        for v in page:
+            match = shown[v["version"]]
+            item = {
+                "version": v["version"],
+                "key": v["key"],
+                "first_seq": v["rows"][0]["seq"],
+                "last_seq": v["rows"][-1]["seq"],
+                "prompt": v["prompt"],
+                "params": v["params"],
+                "changed_params": v["changed_params"],
+                "prompt_changed": v["prompt_changed"],
+                "base_version": v["base_version"],
+                "attempts": [_attempt(r, outputs) for r in match[-VERSION_ATTEMPTS_MAX:]],
+                "attempts_total": len(match),
+                "counts": _version_counts(v["rows"]),
+                "hidden": not match,
+            }
+            result.append(item)
+        next_cursor = page[-1]["version"] if page and page[-1]["version"] > 1 else None
+        return {
+            "versions": result,
+            "total": total,
+            "next_cursor": next_cursor,
+            "order_custom": series_order.order_custom(conn, series_id),
+        }
