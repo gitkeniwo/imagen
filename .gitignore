@@ -19,6 +19,9 @@ build/
 # App data (local images + sqlite)
 backend/data/
 
+# Local synthetic test libraries (never real data)
+/test-data/
+
 # Local Docker Compose overrides
 docker-compose.yml
 !docker-compose.example.yml
