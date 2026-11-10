@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import providers, storage, tagging
+from .. import providers, series_order, storage, tagging
 from ..db import GENERATION_SORT_AT, canonical_timestamp, get_conn, now_timestamp
 from ..models import ManualGenerationRequest, MarkerPatch
 from ..timeline import MAX_IDS_LIMIT, query_timeline
@@ -610,13 +610,12 @@ def _image_uses(conn, image_ids: list[int], *, series_only: bool) -> list[dict]:
 
 @router.get("/series-position")
 def series_position(ids: str = Query("")):
-    """#N (and later vK) of each record inside its series.
-
-    ``version`` stays null until the Changes view (B3) defines versions.
-    """
+    """#N and vK of each record inside its series (vK = its version in the
+    Changes view, see ``GET /api/series/{id}/versions``)."""
     gen_ids = _parse_ids(ids)
     with get_conn() as conn:
         pos = _series_positions(conn, gen_ids)
+        versions = series_order.version_numbers(conn, [p["series_id"] for p in pos.values()])
     return {
         "items": [
             {
@@ -624,7 +623,7 @@ def series_position(ids: str = Query("")):
                 "seriesId": pos[gid]["series_id"] if gid in pos else None,
                 "seq": pos[gid]["seq"] if gid in pos else None,
                 "total": pos[gid]["total"] if gid in pos else None,
-                "version": None,
+                "version": versions.get(gid),
             }
             for gid in gen_ids
         ]
@@ -645,6 +644,7 @@ def image_series(ids: str = Query("")):
     with get_conn() as conn:
         uses = _image_uses(conn, image_ids, series_only=True)
         pos = _series_positions(conn, list({u["id"] for u in uses}))
+        versions = series_order.version_numbers(conn, [p["series_id"] for p in pos.values()])
     per_image: dict[int, dict[int, dict]] = {i: {} for i in image_ids}
     for u in uses:
         entries = per_image[u["image_ref"]]
@@ -657,11 +657,13 @@ def image_series(ids: str = Query("")):
                 "role": u["role"],
                 "seq": pos.get(u["id"], {}).get("seq"),
                 "total": pos.get(u["id"], {}).get("total"),
+                "version": versions.get(u["id"]),
             }
         elif entry["role"] == "input" and u["role"] == "output":
             # Keep the series' place (most recent use) but prefer the output.
             entry.update(
-                generationId=u["id"], role="output", seq=pos.get(u["id"], {}).get("seq")
+                generationId=u["id"], role="output", seq=pos.get(u["id"], {}).get("seq"),
+                version=versions.get(u["id"]),
             )
     return {
         "items": [

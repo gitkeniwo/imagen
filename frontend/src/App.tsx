@@ -923,9 +923,23 @@ export default function App() {
   );
 
   // Finished generations change series counts (and "#N" in the composer).
+  // series-v2 B3: only the finished tasks' own series count as changed, so
+  // an open series detail refreshes only for its own generations. Other data
+  // changes (dataVersion) already reload everything inside useSeriesState.
+  const finishedTasks = useRef<Set<string>>(new Set());
   useEffect(() => {
-    void seriesStoreRef.current.reload();
-  }, [completedRefreshKey]);
+    const seen = finishedTasks.current;
+    const touched = new Set<number>();
+    let fresh = false;
+    for (const task of queue) {
+      if (task.status === "pending" || task.status === "running") continue;
+      if (seen.has(task.id)) continue;
+      seen.add(task.id);
+      fresh = true;
+      if (task.seriesId) touched.add(task.seriesId);
+    }
+    if (fresh) void seriesStoreRef.current.reload([...touched]);
+  }, [queue]);
 
   // Series binding: which workspace numbers point at each series.
   const boundSeries = useMemo(() => {

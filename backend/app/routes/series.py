@@ -745,6 +745,7 @@ def _attempt(row: dict, outputs: dict[int, dict]) -> dict:
         "error_message": row["error_message"],
         "raw_finish": row["raw_finish"],
         "duration_ms": row["duration_ms"],
+        "attempts": row["attempts"],
         "marker_color": row["marker_color"],
         "output_image_id": row["output_image_id"],
         "outputImage": storage.public_image(out) if out else None,
@@ -788,7 +789,7 @@ def series_versions(
             for r in conn.execute(
                 f"""SELECT id, prompt, model, aspect_ratio, resolution, status, provider,
                            source, created_at, error_message, raw_finish, duration_ms,
-                           marker_color, output_image_id,
+                           attempts, marker_color, output_image_id,
                            ROW_NUMBER() OVER (ORDER BY {series_order.ORDER_SQL}) AS seq
                     FROM generations WHERE series_id = ? AND status != 'note'
                     ORDER BY {series_order.ORDER_SQL}""",
@@ -818,6 +819,16 @@ def series_versions(
             for r in match[-VERSION_ATTEMPTS_MAX:]
             if r["output_image_id"]
         ]
+        # The version's input images (one set per version; reuse needs rows).
+        in_ids = list({i for v in page for i in v["params"]["input_ids"]})
+        in_rows: dict[int, dict] = {}
+        if in_ids:
+            ph = ",".join("?" * len(in_ids))
+            in_rows = {
+                r["id"]: dict(r)
+                for r in conn.execute(f"SELECT * FROM images WHERE id IN ({ph})", in_ids).fetchall()
+            }
+        by_number = {v["version"]: v for v in versions}
         outputs: dict[int, dict] = {}
         if out_ids:
             ph = ",".join("?" * len(out_ids))
@@ -838,6 +849,16 @@ def series_versions(
                 "changed_params": v["changed_params"],
                 "prompt_changed": v["prompt_changed"],
                 "base_version": v["base_version"],
+                # The baseline itself, so a diff never waits for the next page.
+                "base_prompt": by_number[v["base_version"]]["prompt"] if v["base_version"] else None,
+                "base_params": by_number[v["base_version"]]["params"] if v["base_version"] else None,
+                # The filter hides every attempt of the baseline ("vs v4 (hidden)").
+                "base_hidden": bool(v["base_version"]) and wanted is not None and not any(
+                    r["status"] in wanted for r in by_number[v["base_version"]]["rows"]
+                ),
+                "inputs": [
+                    storage.public_image(in_rows[i]) for i in v["params"]["input_ids"] if i in in_rows
+                ],
                 "attempts": [_attempt(r, outputs) for r in match[-VERSION_ATTEMPTS_MAX:]],
                 "attempts_total": len(match),
                 "counts": _version_counts(v["rows"]),

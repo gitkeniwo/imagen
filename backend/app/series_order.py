@@ -215,3 +215,31 @@ def group_versions(rows: list[dict], inputs: dict[int, list[int]]) -> list[dict]
             "rows": [row],
         })
     return versions
+
+
+def version_numbers(conn, series_ids) -> dict[int, int]:
+    """``{generation_id: vK}`` for every non-note record of these series
+    (series-v2 B3: "#N · vK" in the info card). Grouped exactly like the
+    versions endpoint, over the full series order."""
+    out: dict[int, int] = {}
+    for sid in {s for s in series_ids if s}:
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                f"""SELECT id, prompt, model, aspect_ratio, resolution FROM generations
+                    WHERE series_id = ? AND status != 'note' ORDER BY {ORDER_SQL}""",
+                (sid,),
+            ).fetchall()
+        ]
+        inputs: dict[int, list[int]] = {}
+        for ir in conn.execute(
+            """SELECT gi.generation_id, gi.image_id FROM generation_inputs gi
+               JOIN generations g ON g.id = gi.generation_id
+               WHERE g.series_id = ? ORDER BY gi.generation_id, gi.position""",
+            (sid,),
+        ).fetchall():
+            inputs.setdefault(ir["generation_id"], []).append(ir["image_id"])
+        for v in group_versions(rows, inputs):
+            for r in v["rows"]:
+                out[r["id"]] = v["version"]
+    return out

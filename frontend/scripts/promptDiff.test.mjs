@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
-import { changedParams, compactEqual, diffWords, samePrompt, splitTrailingSpace, tokenize, versionKey } from "../src/promptDiff.ts";
+import { changedParams, compactEqual, diffWords, normalizePrompt, samePrompt, splitTrailingSpace, tokenize, versionKey } from "../src/promptDiff.ts";
 
 const join = (segs, skip) => segs.filter((s) => s.kind !== skip).map((s) => s.text).join("");
 const marks = (segs) => segs.filter((s) => s.kind !== "equal").map((s) => `${s.kind === "insert" ? "+" : "-"}${s.text.trim()}`);
@@ -104,5 +104,14 @@ test("versionKey groups exactly the shared same / different pairs", () => {
     if (JSON.stringify(restA) === JSON.stringify(restB)) {
       assert.equal(samePrompt(pa ?? "", pb ?? ""), c.same, `samePrompt: ${c.name}`);
     }
+  }
+});
+
+// series-v2 B3: the Changes view says "Prompt unchanged" from the backend's
+// normalized prompt; the frontend's normalizePrompt must produce exactly the
+// prompt the shared fixture's keys carry.
+test("normalizePrompt matches the shared fixture's normalized prompts", () => {
+  for (const c of versionCases.keys) {
+    assert.equal(normalizePrompt(c.attempt.prompt), JSON.parse(c.key)[0], c.name);
   }
 });

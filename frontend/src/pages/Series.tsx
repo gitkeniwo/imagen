@@ -35,6 +35,17 @@ import Sheet from "../components/ui/Sheet";
 import { type ContextMenuItem, openContextMenuFromEvent, useContextMenu } from "../components/ui/ContextMenu";
 
 const VIEW_KEY = "imagen-series-view";
+
+/** Hover preview of a series: its latest version (series-v2 B3). */
+interface PeekInfo {
+  prompt: string;
+  created_at: string | null;
+  tries: number;
+  model: string;
+  resolution: string | null;
+  aspect_ratio: string | null;
+  inputs: number;
+}
 const COLLAPSED_KEY = "imagen-series-collapsed";
 type View = "grid" | "list";
 
@@ -116,7 +127,7 @@ export default function Series({
   const [themeSheet, setThemeSheet] = useState<Group | null>(null);
   const [promptPeek, setPromptPeek] = useState<PromptPeek | null>(null);
   const [promptCache, setPromptCache] = useState<
-    Map<number, SeriesGeneration | null>
+    Map<number, PeekInfo | null>
   >(() => new Map());
   const peekShowTimer = useRef<number | undefined>(undefined);
   const peekHideTimer = useRef<number | undefined>(undefined);
@@ -146,13 +157,30 @@ export default function Series({
   useEffect(() => {
     if (!promptPeek || promptCache.has(promptPeek.series.id)) return;
     let cancelled = false;
+    // series-v2 B3: the latest *version* — "N tries" counts its attempts,
+    // not the API retries of one generation.
     void seriesApi
-      .timeline(promptPeek.series.id, { limit: 1 })
+      .versions(promptPeek.series.id, { limit: 1 })
       .then((res) => {
         if (cancelled) return;
+        const latest = res.versions[0];
+        const last = latest?.attempts[latest.attempts.length - 1];
         setPromptCache((current) => {
           const next = new Map(current);
-          next.set(promptPeek.series.id, res.generations[0] ?? null);
+          next.set(
+            promptPeek.series.id,
+            latest
+              ? {
+                  prompt: latest.prompt,
+                  created_at: last?.created_at ?? null,
+                  tries: latest.counts.all,
+                  model: latest.params.model ?? "",
+                  resolution: latest.params.resolution,
+                  aspect_ratio: latest.params.aspect_ratio,
+                  inputs: latest.params.input_ids.length,
+                }
+              : null,
+          );
           return next;
         });
       })
@@ -194,7 +222,7 @@ export default function Series({
 
   // Keep the tree fresh when the page is shown or generations finish.
   useEffect(() => {
-    void store.reload();
+    void store.reload([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
@@ -380,7 +408,6 @@ export default function Series({
       <SeriesDetail
         id={openId}
         phone={phone}
-        refreshKey={refreshKey}
         boundTo={bound.get(openId) ?? []}
         onBack={() => onOpenIdChange(null)}
         onOpenViewer={onOpenViewer}
@@ -457,7 +484,7 @@ export default function Series({
     ? promptCache.get(promptPeek.series.id)
     : undefined;
   const peekWhen = peekGen ? parseTime(peekGen.created_at) : null;
-  const peekTries = Math.max(1, peekGen?.attempts ?? 1);
+  const peekTries = Math.max(1, peekGen?.tries ?? 1);
   const peekStamp = peekWhen
     ? dayKey(peekWhen) === dayKey(now)
       ? clockTime(peekWhen, lang)
@@ -728,8 +755,8 @@ export default function Series({
                 peekGen.model.replace("-image", "").replace("-preview", ""),
                 peekGen.resolution,
                 peekGen.aspect_ratio,
-                peekGen.inputs?.length
-                  ? t("inputs_n", { n: peekGen.inputs.length })
+                peekGen.inputs
+                  ? t("inputs_n", { n: peekGen.inputs })
                   : null,
               ]
                 .filter(Boolean)

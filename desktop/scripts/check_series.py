@@ -458,6 +458,18 @@ if fresh:
           "paged by version via cursor")
     ok(c.get(f"/api/series/{vs}/versions?status=bogus"), "versions bad status", 400)
 
+    # series-v2 B3: what the Changes view needs without a second request.
+    check(v4["base_prompt"] == v3["prompt"] and v4["base_params"] == v3["params"]
+          and v1["base_prompt"] is None and v1["base_params"] is None,
+          "B3: base_prompt / base_params are the baseline's, null for v1")
+    check(fv[0]["base_hidden"] and not fv[1]["base_hidden"] and fv[2]["base_hidden"]
+          and not any(v["base_hidden"] for v in vv["versions"]),
+          "B3: base_hidden only when the filter hides the whole baseline")
+    check(all(v["inputs"] == [] for v in vv["versions"]) and "attempts" in v1["attempts"][0],
+          "B3: inputs (image rows) and per-attempt API retries are returned")
+    pos = c.get("/api/generations/series-position?ids=" + ",".join(map(str, v_ids))).json()["items"]
+    check([it["version"] for it in pos] == [1, 1, 2, 2, 3, 4], "B3: series-position reports vK")
+
     reorder(vs, [v_ids[4]], after=v_ids[1])
     check(shape(vs) == [[v_ids[0], v_ids[1], v_ids[4]], v_ids[2:4], v_ids[5:6]], "moving an attempt merges versions")
     reorder(vs, [v_ids[2]], after=v_ids[5])
