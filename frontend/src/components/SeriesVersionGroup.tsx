@@ -11,6 +11,7 @@ import {
   type ImageRow,
   imgThumbUrl,
   type ProviderId,
+  type SeriesMark,
   type SeriesVersion,
   type SeriesVersionAttempt,
   type SeriesVersionParam,
@@ -21,6 +22,7 @@ import { cardTime, clockTime, dayKey, parseTime } from "../historyTime";
 import { type DiffSegment, diffWords, splitTrailingSpace } from "../promptDiff";
 import type { GroupTag } from "../seriesOrder";
 import { useProviders } from "../useProviders";
+import SeriesMarkButtons from "./SeriesMarks";
 import { useToast } from "./Toast";
 import { IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
@@ -302,11 +304,13 @@ function StripTile({
   a,
   onOpen,
   reasonText,
+  onMark,
   reorder,
 }: {
   a: SeriesVersionAttempt;
   onOpen: (img: ImageRow) => void;
   reasonText: string;
+  onMark: (imageId: number, kind: SeriesMark | null) => void;
   reorder?: GroupReorder;
 }) {
   const { t } = useI18n();
@@ -343,18 +347,24 @@ function StripTile({
   }
   if (out) {
     return (
-      <button
-        type="button"
-        className={`series-vg-thumb${extra}`}
-        title={t("open_viewer")}
-        onClick={(e) => {
-          if (reorder && (e.metaKey || e.ctrlKey)) reorder.onModClick(a.id, e);
-          else onOpen(out);
-        }}
-      >
-        <img src={imgThumbUrl(out)} alt="" loading="lazy" draggable={false} />
-        {num}
-      </button>
+      <span className={`series-vg-thumb-wrap${a.mark === "reject" ? " rejected" : ""}`}>
+        <button
+          type="button"
+          className={`series-vg-thumb${extra}`}
+          title={t("open_viewer")}
+          onClick={(e) => {
+            if (reorder && (e.metaKey || e.ctrlKey)) reorder.onModClick(a.id, e);
+            else onOpen(out);
+          }}
+        >
+          <img src={imgThumbUrl(out)} alt="" loading="lazy" draggable={false} />
+          {num}
+        </button>
+        <SeriesMarkButtons
+          mark={a.mark}
+          onMark={(kind) => onMark(out.id, kind)}
+        />
+      </span>
     );
   }
   if (a.status === "running") {
@@ -392,6 +402,7 @@ export function VersionGroup({
   onOpen,
   reasonOf,
   menu,
+  onMark,
   renderAttempts,
   reorder,
 }: {
@@ -402,6 +413,7 @@ export function VersionGroup({
   onOpen: (img: ImageRow) => void;
   reasonOf: (a: SeriesVersionAttempt) => string;
   menu: MenuItem[];
+  onMark: (imageId: number, kind: SeriesMark | null) => void;
   /** The expanded rows (Attempts-view rows, newest first). */
   renderAttempts: () => ReactNode;
   /** series-v2 B4: grip, selection, drag state and renumber hints. */
@@ -538,7 +550,14 @@ export function VersionGroup({
       {attempts.length > 0 && (
         <div className="series-vg-strip">
           {attempts.map((a) => (
-            <StripTile key={a.id} a={a} onOpen={onOpen} reasonText={reasonOf(a)} reorder={reorder} />
+            <StripTile
+              key={a.id}
+              a={a}
+              onOpen={onOpen}
+              reasonText={reasonOf(a)}
+              onMark={onMark}
+              reorder={reorder}
+            />
           ))}
         </div>
       )}

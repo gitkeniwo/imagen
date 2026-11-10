@@ -447,9 +447,15 @@ export default function Series({
           </div>
           <StatusStrip strip={s.strip} max={phone ? 16 : 24} />
           <div className="series-card-meta">
-            <span>
+            <span className="series-card-metrics">
               {t("series_tries_n", { n: s.tries })}
               {rate !== null && ` · ${rate}%`}
+              {s.picks > 0 && (
+                <span className="series-picks-count" title={t("sv6_picks_title", { n: s.picks })}>
+                  <Icon name="favorite" size="sm" filled />
+                  {s.picks}
+                </span>
+              )}
             </span>
             <span>{lastText(s.last_at)}</span>
           </div>
@@ -648,6 +654,12 @@ export default function Series({
                           <Collage node={s} size="mini" />
                           <SeriesDot color={s.color} />
                           <span className="series-tr-label">{s.name}</span>
+                          {s.picks > 0 && (
+                            <span className="series-picks-count" title={t("sv6_picks_title", { n: s.picks })}>
+                              <Icon name="favorite" size="sm" filled />
+                              {s.picks}
+                            </span>
+                          )}
                           {ws && <span className="series-bound">{ws}</span>}
                         </span>
                         <span role="cell"><StatusStrip strip={s.strip} max={16} /></span>

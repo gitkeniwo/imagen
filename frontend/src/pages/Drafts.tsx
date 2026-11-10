@@ -17,6 +17,7 @@ import { useConfirm } from "../components/ConfirmDialog";
 import GenerationCard, { downloadImage } from "../components/GenerationCard";
 import { SeriesBadge } from "../components/SeriesBits";
 import { useSeriesActions } from "../components/SeriesMenu";
+import { fetchImageSeries } from "../seriesContext";
 import type { MenuItem } from "../components/ui/Menu";
 import { IconButton } from "../components/ui/Button";
 import { PopoverSection, ViewPopover } from "../components/ui/ToolbarPopover";
@@ -271,7 +272,7 @@ export default function Drafts({
     onChanged?.();
   });
 
-  const openDraftImageMenu = (
+  const openDraftImageMenu = async (
     draft: Draft,
     img: ImageRow,
     trigger: HTMLElement,
@@ -319,6 +320,7 @@ export default function Drafts({
         onSelect: () => downloadImage(img),
       },
     ];
+    const imgSeries = await fetchImageSeries(img.id);
     openContextMenu({
       x,
       y,
@@ -326,6 +328,7 @@ export default function Drafts({
       images: [img],
       prompt: draft.prompt,
       quickActions,
+      seriesMarks: series.markRow(imgSeries, img.id) ?? undefined,
       sections: [
         series.section([draft.series_id], { body: { draftIds: [draft.id] }, members: [draft.series_id ?? null] }),
       ],

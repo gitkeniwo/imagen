@@ -709,6 +709,7 @@ export default function Library({
       },
     ];
     const seriesTarget = img.source === "generated" ? await seriesTargetFor([img.id]) : null;
+    const imgSeries = !picker ? await fetchImageSeries(img.id) : [];
     const sections: ContextMenuSection[] = [
       [
         {
@@ -724,7 +725,7 @@ export default function Library({
         },
         ...(!picker
           ? series.section(
-              (await fetchImageSeries(img.id)).map((e) => e.seriesId),
+              imgSeries.map((e) => e.seriesId),
               seriesTarget,
             )
           : []),
@@ -752,6 +753,7 @@ export default function Library({
           ? () => api.generationByOutput(img.id).then((generation) => generation?.prompt)
           : undefined,
       quickActions: quickActionItems,
+      seriesMarks: series.markRow(imgSeries, img.id) ?? undefined,
       sections,
       ariaLabel: t("image_menu"),
     });

@@ -13,7 +13,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { type ImageRow, imgThumbUrl } from "../../api";
+import { type ImageRow, imgThumbUrl, type SeriesMark } from "../../api";
 import { displayName } from "../../displayName";
 import { useI18n } from "../../i18n";
 import Icon, { type IconName } from "./Icon";
@@ -51,6 +51,16 @@ export interface ContextMenuTagSubmenu {
 export interface ContextMenuListSubmenu {
   kind: "items";
   items: ContextMenuItem[];
+}
+
+/** series-v2 B6: the mark row for an image in one series. */
+export interface ContextMenuSeriesMarks {
+  seriesName: string;
+  mark: SeriesMark | null;
+  /** This image is the explicit cover of that series. */
+  cover: boolean;
+  onMark: (kind: SeriesMark | null) => void | Promise<void>;
+  onCover: () => void | Promise<void>;
 }
 
 // Arbitrary content (the series picker). `close` dismisses the whole menu;
@@ -92,6 +102,7 @@ export interface ContextMenuConfig {
   title?: string;
   subtitle?: string;
   quickActions?: ContextMenuQuickAction[];
+  seriesMarks?: ContextMenuSeriesMarks;
   sections: ContextMenuSection[];
   ariaLabel?: string;
 }
@@ -543,9 +554,78 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
               </div>
             )}
 
+            {menu.seriesMarks && (
+              <div
+                className="context-series-marks"
+                role="group"
+                aria-label={t("sv6_marks")}
+              >
+                <span className="context-series-marks-label">
+                  {t("sv6_in_series", { series: menu.seriesMarks.seriesName })}
+                </span>
+                <span className="context-series-marks-btns">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    data-context-focus
+                    className={`context-mark-btn pick${menu.seriesMarks.mark === "pick" ? " on" : ""}`}
+                    aria-label={menu.seriesMarks.mark === "pick" ? t("sv6_clear_pick") : t("sv6_pick")}
+                    aria-pressed={menu.seriesMarks.mark === "pick"}
+                    title={menu.seriesMarks.mark === "pick" ? t("sv6_clear_pick") : t("sv6_pick")}
+                    onClick={() => {
+                      close(false);
+                      run(() => menu.seriesMarks!.onMark(menu.seriesMarks!.mark === "pick" ? null : "pick"));
+                    }}
+                  >
+                    <Icon name="favorite" size="sm" filled={menu.seriesMarks.mark === "pick"} />
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    data-context-focus
+                    className={`context-mark-btn reject${menu.seriesMarks.mark === "reject" ? " on" : ""}`}
+                    aria-label={menu.seriesMarks.mark === "reject" ? t("sv6_clear_reject") : t("sv6_reject")}
+                    aria-pressed={menu.seriesMarks.mark === "reject"}
+                    title={menu.seriesMarks.mark === "reject" ? t("sv6_clear_reject") : t("sv6_reject")}
+                    onClick={() => {
+                      close(false);
+                      run(() => menu.seriesMarks!.onMark(menu.seriesMarks!.mark === "reject" ? null : "reject"));
+                    }}
+                  >
+                    <Icon name="close" size="sm" />
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    data-context-focus
+                    className={`context-mark-btn cover${menu.seriesMarks.cover ? " on" : ""}`}
+                    aria-label={menu.seriesMarks.cover ? t("sv6_clear_cover") : t("sv6_set_cover")}
+                    aria-pressed={menu.seriesMarks.cover}
+                    title={
+                      menu.seriesMarks.mark === "reject"
+                        ? t("sv6_cover_rejected")
+                        : menu.seriesMarks.cover
+                          ? t("sv6_clear_cover")
+                          : t("sv6_set_cover")
+                    }
+                    disabled={menu.seriesMarks.mark === "reject"}
+                    onClick={() => {
+                      close(false);
+                      run(() => menu.seriesMarks!.onCover());
+                    }}
+                  >
+                    <Icon name="cover" size="sm" filled={menu.seriesMarks.cover} />
+                  </button>
+                </span>
+              </div>
+            )}
+
             {displaySections.map((section, sectionIndex) => (
               <Fragment key={sectionIndex}>
-                {(showQuickActions || sectionIndex > 0) && (
+                {(showQuickActions || menu.seriesMarks || sectionIndex > 0) && (
                   <div className="context-menu-separator" role="separator" />
                 )}
                 {section.map((item) => {

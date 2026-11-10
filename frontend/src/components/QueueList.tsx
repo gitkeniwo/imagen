@@ -11,7 +11,7 @@ import { useToast } from "./Toast";
 import { MarkerSwatches, downloadImage, markerHex } from "./GenerationCard";
 import { SeriesBadge } from "./SeriesBits";
 import { useSeriesActions } from "./SeriesMenu";
-import { useSeriesNav } from "../seriesContext";
+import { fetchImageSeries, useSeriesNav } from "../seriesContext";
 import { FullTextButton, PromptClamp } from "./FullText";
 import Menu from "./ui/Menu";
 import { IconButton } from "./ui/Button";
@@ -327,7 +327,7 @@ const QueueItem = memo(function QueueItem({
     }
   };
 
-  const openQueueImageMenu = (trigger: HTMLElement, x: number, y: number) => {
+  const openQueueImageMenu = async (trigger: HTMLElement, x: number, y: number) => {
     if (!output) return;
     const quickActions: ContextMenuQuickAction[] = [
       {
@@ -362,6 +362,7 @@ const QueueItem = memo(function QueueItem({
       },
     ];
     const recordActions: ContextMenuSection = [];
+    const imgSeries = await fetchImageSeries(output.id);
     if (task.prompt) {
       recordActions.push({
         icon: "copy",
@@ -387,6 +388,7 @@ const QueueItem = memo(function QueueItem({
       images: [output],
       prompt: task.prompt,
       quickActions,
+      seriesMarks: series.markRow(imgSeries, output.id) ?? undefined,
       sections: [
         recordActions,
         series.section([task.seriesId], {

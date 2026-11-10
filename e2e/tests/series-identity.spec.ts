@@ -28,6 +28,11 @@ const FINAL_POSTER = "Final poster: combine all three iterations into a triptych
 
 const card = (page: Page) => page.locator(".sv2-popover");
 const historyRecord = (page: Page, text: string) => page.getByRole("article").filter({ hasText: text }).first();
+const seriesThumb = (page: Page, n: number) =>
+  page
+    .locator(".series-pick-frame")
+    .filter({ has: page.locator(".series-pick-num", { hasText: new RegExp(`^#${n}$`) }) })
+    .locator(".series-pick-item");
 
 /** Right-click after any scroll settled (menus close on scroll). */
 async function rightClickSettled(page: Page, target: Locator) {
@@ -176,7 +181,7 @@ test.describe("read-only", () => {
     const item = await openHistoryRecord(page, FINAL_POSTER);
     await item.getByRole("button", { name: PERFUME }).click();
     await card(page).getByRole("button", { name: "Open series" }).click();
-    await page.locator(".series-film-item").first().click();
+    await seriesThumb(page, 1).click();
     const strip = viewer(page).locator(".sv2-viewer-strip");
     await expect(strip).toHaveText("Perfume poster · #1 of 4");
     await expect(viewer(page).locator(".viewer-count")).toHaveText("1 / 4");
@@ -286,7 +291,7 @@ test.describe("changes data", () => {
     const item = await openHistoryRecord(page, FINAL_POSTER);
     await item.getByRole("button", { name: PERFUME }).click();
     await card(page).getByRole("button", { name: "Open series" }).click();
-    await page.locator(".series-film-item").nth(2).click();
+    await seriesThumb(page, 3).click();
     const strip = viewer(page).locator(".sv2-viewer-strip");
     const prompt = viewer(page).locator(".viewer-prompt-text");
     await expect(strip).toHaveText("Perfume poster · #3 of 4");

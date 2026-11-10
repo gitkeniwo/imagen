@@ -37,6 +37,7 @@ export function useSeriesNav(): SeriesNav {
 
 const BATCH = 200;
 let epochNow = "";
+let cacheRevision = 0;
 const cache = new Map<number, ImageSeriesEntry[]>();
 const pending = new Set<number>();
 const inflight = new Set<number>();
@@ -50,9 +51,23 @@ function notify() {
 function setEpoch(epoch: string) {
   if (epoch === epochNow) return;
   epochNow = epoch;
+  cacheRevision++;
   cache.clear();
   pending.clear();
   inflight.clear();
+  notify();
+}
+
+/** Drop the image → series cache after a mark/cover change. */
+export function invalidateImageSeriesCache() {
+  cacheRevision++;
+  cache.clear();
+  pending.clear();
+  inflight.clear();
+  if (timer !== null) {
+    window.clearTimeout(timer);
+    timer = null;
+  }
   notify();
 }
 
@@ -61,22 +76,23 @@ function flush() {
   const ids = [...pending];
   pending.clear();
   const epoch = epochNow;
+  const revision = cacheRevision;
   for (let i = 0; i < ids.length; i += BATCH) {
     const chunk = ids.slice(i, i + BATCH);
     for (const id of chunk) inflight.add(id);
     api
       .imageSeries(chunk)
       .then(({ items }) => {
-        if (epoch !== epochNow) return;
+        if (epoch !== epochNow || revision !== cacheRevision) return;
         for (const item of items) cache.set(item.imageId, item.series);
       })
       .catch(() => {
-        if (epoch !== epochNow) return;
+        if (epoch !== epochNow || revision !== cacheRevision) return;
         // Older backend: treat as "no series" instead of retrying forever.
         for (const id of chunk) if (!cache.has(id)) cache.set(id, []);
       })
       .finally(() => {
-        if (epoch !== epochNow) return;
+        if (epoch !== epochNow || revision !== cacheRevision) return;
         for (const id of chunk) inflight.delete(id);
         notify();
       });
@@ -111,18 +127,22 @@ export function useImageSeries(ids: number[]): (id: number) => ImageSeriesEntry[
   }, []);
   useEffect(() => {
     if (key) request(key.split(",").map(Number));
-  }, [key, epoch]);
-  return useMemo(() => (id: number) => cache.get(id), [epoch, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, epoch, cacheRevision]);
+  return useMemo(
+    () => (id: number) => cache.get(id),
+    [epoch, key, cacheRevision], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 }
 
 /** One-off read through the same cache (for menus opened on demand). */
 export async function fetchImageSeries(id: number): Promise<ImageSeriesEntry[]> {
   const hit = cache.get(id);
   if (hit) return hit;
+  const revision = cacheRevision;
   try {
     const { items } = await api.imageSeries([id]);
     const series = items[0]?.series ?? [];
-    cache.set(id, series);
+    if (revision === cacheRevision) cache.set(id, series);
     return series;
   } catch {
     return [];

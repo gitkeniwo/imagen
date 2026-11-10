@@ -557,7 +557,7 @@ def _series_positions(conn, gen_ids: list[int]) -> dict[int, dict]:
     ph = ",".join("?" * len(gen_ids))
     rows = conn.execute(
         f"""WITH seqd AS (
-                SELECT id, series_id,
+                SELECT id, series_id, output_image_id,
                        ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY {_SERIES_ORDER}) AS seq,
                        COUNT(*) OVER (PARTITION BY series_id) AS total
                 FROM generations
@@ -570,7 +570,12 @@ def _series_positions(conn, gen_ids: list[int]) -> dict[int, dict]:
         (*gen_ids, *gen_ids),
     ).fetchall()
     return {
-        r["id"]: {"series_id": r["series_id"], "seq": r["seq"], "total": r["total"]}
+        r["id"]: {
+            "series_id": r["series_id"],
+            "output_image_id": r["output_image_id"],
+            "seq": r["seq"],
+            "total": r["total"],
+        }
         for r in rows
     }
 
@@ -618,6 +623,19 @@ def series_position(ids: str = Query("")):
     with get_conn() as conn:
         pos = _series_positions(conn, gen_ids)
         versions = series_order.version_numbers(conn, [p["series_id"] for p in pos.values()])
+        output_ids = [p["output_image_id"] for p in pos.values() if p["output_image_id"]]
+        marks = (
+            {
+                (r["series_id"], r["image_id"]): r["kind"]
+                for r in conn.execute(
+                    "SELECT series_id, image_id, kind FROM series_marks "
+                    f"WHERE image_id IN ({','.join('?' * len(output_ids))})",
+                    output_ids,
+                ).fetchall()
+            }
+            if output_ids
+            else {}
+        )
     return {
         "items": [
             {
@@ -626,6 +644,11 @@ def series_position(ids: str = Query("")):
                 "seq": pos[gid]["seq"] if gid in pos else None,
                 "total": pos[gid]["total"] if gid in pos else None,
                 "version": versions.get(gid),
+                "mark": (
+                    marks.get((pos[gid]["series_id"], pos[gid]["output_image_id"]))
+                    if gid in pos and pos[gid]["output_image_id"]
+                    else None
+                ),
             }
             for gid in gen_ids
         ]
@@ -647,6 +670,18 @@ def image_series(ids: str = Query("")):
         uses = _image_uses(conn, image_ids, series_only=True)
         pos = _series_positions(conn, list({u["id"] for u in uses}))
         versions = series_order.version_numbers(conn, [p["series_id"] for p in pos.values()])
+        marks = (
+            {
+                (r["series_id"], r["image_id"]): r["kind"]
+                for r in conn.execute(
+                    "SELECT series_id, image_id, kind FROM series_marks "
+                    f"WHERE image_id IN ({','.join('?' * len(image_ids))})",
+                    image_ids,
+                ).fetchall()
+            }
+            if image_ids
+            else {}
+        )
     per_image: dict[int, dict[int, dict]] = {i: {} for i in image_ids}
     for u in uses:
         entries = per_image[u["image_ref"]]
@@ -669,7 +704,14 @@ def image_series(ids: str = Query("")):
             )
     return {
         "items": [
-            {"imageId": i, "series": list(per_image[i].values())} for i in image_ids
+            {
+                "imageId": i,
+                "series": [
+                    {**entry, "mark": marks.get((entry["seriesId"], i))}
+                    for entry in per_image[i].values()
+                ],
+            }
+            for i in image_ids
         ]
     }
 

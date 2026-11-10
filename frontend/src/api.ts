@@ -2,6 +2,8 @@ import { generatedDate, isDefaultGeneratedName } from "./displayName";
 
 // Thin fetch wrapper around the FastAPI backend.
 
+export type SeriesMark = "pick" | "reject";
+
 export interface TagRef {
   id: number;
   name: string;
@@ -31,6 +33,8 @@ export interface ImageRow {
   // Set on History output thumbnails so the viewer can restore the exact grid
   // page even when the page also contains records without output images.
   generation_offset?: number;
+  // Set on data scoped to one series (series-v2 marks).
+  mark?: SeriesMark | null;
 }
 
 export interface Generation {
@@ -58,6 +62,8 @@ export interface Generation {
   generation_offset?: number;
   // Position in the distinct live-output-image sequence used by the viewer.
   output_index?: number;
+  // Set when the API returns a record inside a series.
+  mark?: SeriesMark | null;
 }
 
 // A later generation that used an image as one of its inputs (reverse
@@ -844,10 +850,11 @@ export interface SeriesStats {
   running: number;
   records: number;
   drafts: number;
+  picks: number;
   last_at: string | null;
   // Most recent finished attempts, oldest first (status bar).
   strip: SeriesStatus[];
-  // Collage: best image first, then newest successful outputs.
+  // Collage: explicit cover, picks in series order, then newest successes.
   cover: ImageRow[];
 }
 
@@ -857,7 +864,8 @@ export interface SeriesNode extends SeriesStats {
   parent_id: number | null;
   name: string;
   color: string | null;
-  best_image_id: number | null;
+  /** Explicit cover; null = automatic fallback. */
+  cover_image_id: number | null;
   archived: number;
   created_at: string;
   updated_at: string;
@@ -876,7 +884,8 @@ export interface SeriesTree {
 export interface SeriesDetail extends SeriesNode {
   theme: { id: number; name: string; color: string | null; archived: number } | null;
   outputs: { generation_id: number; image: ImageRow }[];
-  best_image: ImageRow | null;
+  /** Resolved cover (explicit or automatic). */
+  cover_image: ImageRow | null;
 }
 
 export interface SeriesPrevious {
@@ -899,7 +908,10 @@ export interface SeriesGeneration extends Generation {
 export interface SeriesTimeline {
   generations: SeriesGeneration[];
   total: number;
-  counts: { all: number; success: number; blocked: number; error: number };
+  counts: {
+    all: number; success: number; blocked: number; error: number;
+    picks: number; rejects: number;
+  };
 }
 
 // series-v2 B3: versions = consecutive attempts with the same configuration.
@@ -924,6 +936,7 @@ export interface SeriesVersionAttempt {
   marker_color: MarkerColor | null;
   output_image_id: number | null;
   outputImage: ImageRow | null;
+  mark: SeriesMark | null;
 }
 
 export type SeriesVersionParam = "model" | "aspect_ratio" | "resolution" | "inputs";
@@ -1002,6 +1015,8 @@ export interface ImageSeriesEntry {
   total: number | null;
   /** vK of that record (series-v2 B3); missing on an older backend. */
   version?: number | null;
+  /** This image's mark in that series, when it is an output. */
+  mark?: SeriesMark | null;
 }
 
 /** A record's place in its series (#N · vK). */
@@ -1011,6 +1026,7 @@ export interface SeriesPosition {
   seq: number | null;
   total: number | null;
   version: number | null;
+  mark?: SeriesMark | null;
 }
 
 export interface ImageUse extends Omit<Generation, "inputs" | "outputImage"> {
@@ -1029,8 +1045,10 @@ export interface SeriesPatch {
   color?: string | null;
   parentId?: number | null;
   archived?: boolean;
-  bestImageId?: number | null;
+  coverImageId?: number | null;
 }
+
+export type SeriesRecordFilter = HistoryResult | SeriesMark;
 
 export const seriesApi = {
   async tree(archived: "0" | "1" | "all" = "all"): Promise<SeriesTree> {
@@ -1064,7 +1082,7 @@ export const seriesApi = {
   },
   async timeline(
     id: number,
-    params: { status?: HistoryResult; limit?: number; offset?: number } = {},
+    params: { status?: SeriesRecordFilter; limit?: number; offset?: number } = {},
   ): Promise<SeriesTimeline> {
     const q = new URLSearchParams();
     if (params.status) q.set("status", params.status);
@@ -1075,7 +1093,7 @@ export const seriesApi = {
   // series-v2 B3: the Changes view, paged by version (newest first).
   async versions(
     id: number,
-    params: { status?: HistoryResult; cursor?: number | null; limit?: number } = {},
+    params: { status?: SeriesRecordFilter; cursor?: number | null; limit?: number } = {},
   ): Promise<SeriesVersions> {
     const q = new URLSearchParams();
     if (params.status) q.set("status", params.status);
@@ -1098,6 +1116,21 @@ export const seriesApi = {
   },
   async reorderRestore(id: number, generationIds: number[]): Promise<SeriesReorderResult> {
     return handle(await fetch(`/api/series/${id}/reorder/restore`, jsonInit("POST", { generationIds })));
+  },
+  async setMark(
+    id: number,
+    imageId: number,
+    kind: SeriesMark | null,
+  ): Promise<{
+    series_id: number;
+    image_id: number;
+    kind: SeriesMark | null;
+    created_at: string | null;
+  }> {
+    return handle(await fetch(`/api/series/${id}/marks/${imageId}`, jsonInit("PUT", { kind })));
+  },
+  async clearPicks(id: number): Promise<{ cleared: number }> {
+    return handle(await fetch(`/api/series/${id}/marks/clear`, jsonInit("POST", { kind: "pick" })));
   },
   async membership(
     imageIds: number[],

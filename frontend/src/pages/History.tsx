@@ -37,6 +37,7 @@ import CustomSelect from "../components/CustomSelect";
 import Popover from "../components/ui/Popover";
 import { SeriesBadge } from "../components/SeriesBits";
 import { useSeriesActions } from "../components/SeriesMenu";
+import { fetchImageSeries } from "../seriesContext";
 import { seriesPathText, useSeries } from "../seriesStore";
 import PositionLine from "../components/PositionLine";
 import TimelineScrubber from "../components/LibraryScrubber";
@@ -405,7 +406,7 @@ export default function History({
     }
   };
 
-  const openHistoryMenu = (
+  const openHistoryMenu = async (
     generation: Generation,
     img: ImageRow,
     isOutput: boolean,
@@ -471,6 +472,7 @@ export default function History({
         });
       }
     }
+    const imgSeries = isOutput ? await fetchImageSeries(img.id) : [];
     const seriesSection: ContextMenuSection = isOutput
       ? series.section([generation.series_id], targetFor([generation]))
       : [];
@@ -482,6 +484,7 @@ export default function History({
       prompt: isOutput ? generation.prompt : undefined,
       sourceLabel: generation.source === "manual" ? t("imported_badge") : undefined,
       quickActions,
+      seriesMarks: series.markRow(imgSeries, img.id) ?? undefined,
       sections: [recordActions, seriesSection].filter((section) => section.length > 0),
       ariaLabel: t("image_menu"),
     });

@@ -720,11 +720,23 @@ def series_generations(
     regardless of the filter) and ``previous``: the attempt right before it in
     the order, so the client can diff prompts and parameters.
     """
-    status_sql, status_params = "", []
+    wanted = None
+    mark_filter = None
     if status:
-        if status not in _RESULT_FILTERS:
+        if status in series_marks.MARK_KINDS:
+            mark_filter = status
+        elif status not in _RESULT_FILTERS:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
-        wanted = _RESULT_FILTERS[status]
+        else:
+            wanted = _RESULT_FILTERS[status]
+    status_sql, status_params = "", []
+    if mark_filter is not None:
+        status_sql = (
+            "WHERE output_image_id IN ("
+            "SELECT image_id FROM series_marks WHERE series_id = ? AND kind = ?)"
+        )
+        status_params = [series_id, mark_filter]
+    elif wanted is not None:
         status_sql = f"WHERE status IN ({','.join('?' * len(wanted))})"
         status_params = list(wanted)
     with get_conn() as conn:
@@ -748,7 +760,10 @@ def series_generations(
             f"WITH seqd AS ({seqd}) SELECT COUNT(*) c FROM seqd {status_sql}",
             (series_id, *status_params),
         ).fetchone()["c"]
-        counts = {"all": 0, "success": 0, "blocked": 0, "error": 0}
+        counts = {
+            "all": 0, "success": 0, "blocked": 0, "error": 0,
+            "picks": 0, "rejects": 0,
+        }
         for r in conn.execute(
             "SELECT status, COUNT(*) c FROM generations WHERE series_id = ? AND status != 'note' GROUP BY status",
             (series_id,),
@@ -757,6 +772,14 @@ def series_generations(
             for key, statuses in _RESULT_FILTERS.items():
                 if r["status"] in statuses:
                     counts[key] += r["c"]
+        for r in conn.execute(
+            "SELECT kind, COUNT(*) c FROM series_marks WHERE series_id = ? GROUP BY kind",
+            (series_id,),
+        ).fetchall():
+            if r["kind"] == "pick":
+                counts["picks"] = r["c"]
+            elif r["kind"] == "reject":
+                counts["rejects"] = r["c"]
         prev_ids = [r["prev_id"] for r in rows if r["prev_id"]]
         previous: dict[int, dict] = {}
         if prev_ids:

@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { api, DerivedGeneration, Generation, ImageRow, imgFileUrl, imgThumbUrl, seriesApi, Tag } from "../api";
-import { useImageSeries, useSeriesNav } from "../seriesContext";
+import {
+  api,
+  DerivedGeneration,
+  Generation,
+  ImageRow,
+  imgFileUrl,
+  imgThumbUrl,
+  type SeriesMark,
+  seriesApi,
+  Tag,
+} from "../api";
+import { invalidateImageSeriesCache, useImageSeries, useSeriesNav } from "../seriesContext";
 import { useSeries } from "../seriesStore";
 import { BadgePopover, SeriesDot } from "./SeriesBits";
 import SeriesInfoCard, { entryPosition } from "./SeriesInfoCard";
 import { useSeriesActions } from "./SeriesMenu";
+import { SeriesMarkToggleRow } from "./SeriesMarks";
 import Sheet from "./ui/Sheet";
 import { useI18n } from "../i18n";
 import { copyImageToClipboard, copyText } from "../clipboard";
@@ -487,6 +498,7 @@ export default function ImageViewer({
   // From a series: that series only, numbered by the series order.
   const fixedSeriesId =
     seriesContext && seriesContext.seqByImage.has(current.id) ? seriesContext.seriesId : null;
+  const fixedGen = seriesContext?.genByImage.get(current.id);
   const seriesEntries = fixedSeriesId
     ? [
         {
@@ -495,16 +507,21 @@ export default function ImageViewer({
           seq: seriesContext!.seqByImage.get(current.id) ?? null,
           generationId: gen?.id ?? 0,
           total: seriesContext!.total,
+          mark: fixedGen?.mark ?? null,
         },
       ]
     : allSeries ?? [];
   const [seriesCard, setSeriesCard] = useState(false);
   const [seriesPicking, setSeriesPicking] = useState(false);
+  const [markState, setMarkState] = useState<{ key: string; mark: SeriesMark | null } | null>(null);
+  const [coverState, setCoverState] = useState<{ key: string; imageId: number | null } | null>(null);
   const seriesStripRef = useRef<HTMLButtonElement>(null);
   const seriesAddRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     setSeriesCard(false);
     setSeriesPicking(false);
+    setMarkState(null);
+    setCoverState(null);
   }, [current.id]);
   const outputSeries = (allSeries ?? []).filter((e) => e.role === "output").map((e) => e.seriesId);
   const imageTarget = gen
@@ -748,7 +765,8 @@ export default function ImageViewer({
       hint: (isCurrent ? tagIds.length : img.tags?.length ?? 0),
       submenu: tagSubmenuFor(img),
     });
-    const imgSeries = (lookupSeries(img.id) ?? []).map((e) => e.seriesId);
+    const imgSeriesEntries = lookupSeries(img.id) ?? [];
+    const imgSeries = imgSeriesEntries.map((e) => e.seriesId);
     const seriesRows = isInput
       ? [seriesActions.openItem(imgSeries)].filter((item): item is NonNullable<typeof item> => !!item)
       : seriesActions.section(imgSeries, isCurrent ? imageTarget : null);
@@ -761,6 +779,8 @@ export default function ImageViewer({
       sourceLabel:
         !isInput && gen?.source === "manual" ? t("imported_badge") : undefined,
       quickActions,
+      seriesMarks:
+        !isInput ? seriesActions.markRow(imgSeriesEntries, img.id) ?? undefined : undefined,
       sections: [records, ...(seriesRows.length ? [seriesRows] : []), [
         {
           icon: "delete",
@@ -827,6 +847,46 @@ export default function ImageViewer({
 
   // series-v2 B1a: context strip (opened from a series) and series block.
   const fixedPath = seriesStore.get(fixedSeriesId);
+  const markKey = fixedSeriesId ? `${fixedSeriesId}:${current.id}` : null;
+  const currentMark =
+    markKey && markState?.key === markKey
+      ? markState.mark
+      : seriesEntries[0]?.mark ?? null;
+  const currentCoverId =
+    markKey && coverState?.key === markKey
+      ? coverState.imageId
+      : fixedPath?.cover_image_id ?? null;
+  const setMark = async (kind: SeriesMark | null) => {
+    if (!fixedSeriesId || !markKey) return;
+    const previous = currentMark;
+    const rejectedCover = kind === "reject" && currentCoverId === current.id;
+    setMarkState({ key: markKey, mark: kind });
+    if (rejectedCover) setCoverState({ key: markKey, imageId: null });
+    try {
+      await seriesApi.setMark(fixedSeriesId, current.id, kind);
+      invalidateImageSeriesCache();
+      await seriesStore.reload([fixedSeriesId]);
+      onChanged?.();
+    } catch (e) {
+      setMarkState({ key: markKey, mark: previous });
+      if (rejectedCover) setCoverState({ key: markKey, imageId: current.id });
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    }
+  };
+  const setCover = async () => {
+    if (!fixedSeriesId || !markKey) return;
+    const previous = currentCoverId;
+    const next = previous === current.id ? null : current.id;
+    setCoverState({ key: markKey, imageId: next });
+    try {
+      await seriesApi.update(fixedSeriesId, { coverImageId: next });
+      await seriesStore.reload([fixedSeriesId]);
+      onChanged?.();
+    } catch (e) {
+      setCoverState({ key: markKey, imageId: previous });
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    }
+  };
   const seriesCardSubject = { kind: "image" as const, imageId: current.id, entries: allSeries };
   const seriesStrip = fixedPath && !inTrail && (() => {
     const pos = seriesEntries[0]?.seq;
@@ -929,6 +989,15 @@ export default function ImageViewer({
             );
           })}
         </div>
+      )}
+      {fixedSeriesId && seriesEntries[0]?.role === "output" && (
+        <SeriesMarkToggleRow
+          mark={currentMark}
+          cover={currentCoverId === current.id}
+          phone={phone}
+          onMark={(kind) => void setMark(kind)}
+          onCover={() => void setCover()}
+        />
       )}
     </section>
   );
