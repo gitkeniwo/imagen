@@ -2497,8 +2497,9 @@ body.manager-open { overflow: hidden; }
   position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: var(--space-1);
   padding: var(--space-5) var(--space-1_5) var(--space-1_5);
   background: linear-gradient(to top, rgba(2, 6, 23, 0.72), transparent);
-  opacity: 0; transition: opacity 0.12s;
+  opacity: 0; pointer-events: none; transition: opacity 0.12s;
 }
+.lib-actions .icon-button { pointer-events: auto; }
 .lib-actions .is-starred { color: var(--warning); }
 .lib-tile:focus-within .lib-actions, .lib-tile:focus-within .lib-tags { opacity: 1; }
 .lib-tile:focus-within .lib-starred { opacity: 0; }

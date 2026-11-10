@@ -1,10 +1,31 @@
 import { expect, openApp, test } from "../fixtures";
-import { libTile, shownLibTile, libTiles, openViewerOn, viewer, viewerTitle } from "../ui";
+import { boxOf, libTile, shownLibTile, libTiles, openViewerOn, viewer, viewerTitle } from "../ui";
 
 // Read-only.
 
 test.beforeEach(async ({ page }) => {
   await openApp(page);
+});
+
+test("thumbnail tags and action-row gaps open the viewer", async ({ page }) => {
+  const image = await shownLibTile(page, "poster-alps-4k.png");
+  const tile = image.locator("xpath=..");
+
+  await image.hover();
+  const tag = tile.locator(".lib-tags .card-tag").first();
+  await expect(tag).toBeVisible();
+  const tagBox = await boxOf(tag);
+  await page.mouse.click(tagBox.x + tagBox.width / 2, tagBox.y + tagBox.height / 2);
+  await expect(viewer(page)).toBeVisible();
+  await expect(viewerTitle(page)).toHaveText("poster-alps-4k.png");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".viewer-overlay")).toHaveCount(0);
+
+  await image.hover();
+  const gap = await boxOf(tile.locator(".lib-actions .spacer"));
+  await page.mouse.click(gap.x + gap.width / 2, gap.y + gap.height / 2);
+  await expect(viewer(page)).toBeVisible();
+  await expect(viewerTitle(page)).toHaveText("poster-alps-4k.png");
 });
 
 test("used-in (reverse lineage): drill both ways, Esc walks back one level at a time", async ({ page }) => {
