@@ -1,6 +1,7 @@
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -51,7 +52,7 @@ import SeriesMovePicker from "./SeriesMovePicker";
 import SeriesMarkButtons from "./SeriesMarks";
 import { HiddenVersionRow, VersionGroup, VersionSkeleton } from "./SeriesVersionGroup";
 import { type DropHit, useReorderDrag } from "./useReorderDrag";
-import { Button, IconButton } from "./ui/Button";
+import { IconButton } from "./ui/Button";
 import Icon from "./ui/Icon";
 import Menu, { type MenuItem } from "./ui/Menu";
 import Segmented from "./ui/Segmented";
@@ -169,6 +170,41 @@ function useNarrow(el: HTMLElement | null, below: number) {
     return () => ro.disconnect();
   }, [el, below]);
   return narrow;
+}
+
+/** Horizontal strip with no scrollbar: it still scrolls (wheel, trackpad,
+ *  touch) and fades out at whichever end has more to show. */
+function FadeStrip({ className, children }: { className?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ start: false, end: false });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const start = el.scrollLeft > 1;
+      const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setEdge((p) => (p.start === start && p.end === end ? p : { start, end }));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    el.addEventListener("scroll", update, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", update);
+    };
+  }, [children]);
+  return (
+    <div
+      ref={ref}
+      className={className}
+      data-fade-start={edge.start || undefined}
+      data-fade-end={edge.end || undefined}
+    >
+      {children}
+    </div>
+  );
 }
 
 const ratioOf = (img: Pick<ImageRow, "width" | "height">) =>
@@ -889,13 +925,13 @@ export default function SeriesDetail({
               <h2>{detail.name}</h2>
               {!!detail.archived && <span className="series-archived-flag">{t("series_archived")}</span>}
               <div className="series-detail-actions">
-                <Button size="sm" onClick={() => onOpenInWorkspace(id)}>{t("series_open_in_workspace")}</Button>
-                <Button size="sm" onClick={() => setDialog("rename")}>{t("series_rename")}</Button>
-                <Button size="sm" onClick={() => setDialog("move")}>{t("series_move_to_theme")}…</Button>
+                <IconButton icon="workspace" label={t("series_open_in_workspace")} onClick={() => onOpenInWorkspace(id)} />
+                <IconButton icon="edit" label={t("series_rename")} onClick={() => setDialog("rename")} />
+                <IconButton icon="moveToTheme" label={`${t("series_move_to_theme")}…`} onClick={() => setDialog("move")} />
                 <Menu
                   items={moreItems}
                   renderTrigger={({ open, toggle }) => (
-                    <IconButton icon="more" variant="outline" label={t("more_actions")} aria-expanded={open} onClick={toggle} />
+                    <IconButton icon="more" label={t("more_actions")} aria-expanded={open} onClick={toggle} />
                   )}
                 />
               </div>
@@ -947,7 +983,7 @@ export default function SeriesDetail({
             </figcaption>
           </figure>
           <div className="series-picks">
-            <div className="series-picks-strip">
+            <FadeStrip className="series-picks-strip">
               {topImages.map((img) => {
                 const h = compact ? COMPACT_PICK_HEIGHT : PICK_HEIGHT;
                 return (
@@ -971,7 +1007,7 @@ export default function SeriesDetail({
                   </span>
                 );
               })}
-            </div>
+            </FadeStrip>
             {picked.length > 0 ? (
               <span className="series-picks-caption">
                 <Icon name="favorite" size="sm" filled />
@@ -1034,23 +1070,19 @@ export default function SeriesDetail({
       </div>
 
       <div className="series-timeline-bar" ref={barRef}>
-        {compact ? (
-          <div className="series-filter-chips" role="group" aria-label={t("hist_filter_result")}>
-            {filterOptions.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                className={`tag-chip${filter === o.value ? " on" : ""}`}
-                aria-pressed={filter === o.value}
-                onClick={() => setFilter(o.value)}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <Segmented value={filter} onChange={setFilter} options={filterOptions} />
-        )}
+        <div className="series-filter-chips" role="group" aria-label={t("hist_filter_result")}>
+          {filterOptions.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              className={`tag-chip${filter === o.value ? " on" : ""}`}
+              aria-pressed={filter === o.value}
+              onClick={() => setFilter(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
         <div className="spacer" />
         {view === "attempts" && (
           <Switch checked={showChanges} onChange={setShowChanges} label={t("series_show_changes")} />

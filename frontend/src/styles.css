@@ -574,15 +574,26 @@ body.resizing-sidebar .side-panel {
   font-variant-numeric: tabular-nums;
 }
 .panel-tabs .tab.active .tab-count { background: var(--selected-bg); color: var(--selected-fg); }
-/* Narrow sidebar: drop counts first, then labels (tooltips keep the names). */
+/* Two looks, chosen by measurement in PanelTabs (.full-labels / .icons-only);
+   no breakpoints, so language, page zoom and sidebar width all just work. */
 .side-panel { container-type: inline-size; }
+.panel-tabs { position: relative; }
 .panel-tabs .tab { flex: 1 1 auto; }
 .panel-tabs .tab .icon, .tab-count { flex-shrink: 0; }
-/* The tabs share the title row with the app name, so they collapse earlier;
-   at the narrowest width the name goes too and only the icon stays. */
-@container (max-width: 670px) { .panel-tabs .tab-count { display: none; } }
-@container (max-width: 560px) { .panel-tabs .tab:not(.active) .tab-label { display: none; } }
-@container (max-width: 410px) { .panel-tabs .tab-label { display: none; } }
+.panel-tabs.icons-only > .tab { flex: 1 1 0; }
+.panel-tabs.icons-only > .tab.active { flex: 0 0 auto; }
+.panel-tabs.icons-only > .tab { padding-inline: var(--space-1_5); min-width: 0; }
+.panel-tabs.icons-only.bare > .tab.active { flex: 1 1 0; }
+.panel-tabs .tab-label { overflow: visible; text-overflow: clip; }
+.tabs-measure {
+  position: absolute; left: 3px; top: 0; display: flex; gap: 2px; width: max-content;
+  visibility: hidden; pointer-events: none; height: 0; overflow: hidden;
+}
+.tabs-measure .tab {
+  display: inline-flex; align-items: center; gap: var(--space-1_5); flex: none; white-space: nowrap;
+  padding: var(--space-1_5) var(--space-2); font-size: var(--fs-md); font-weight: 600;
+}
+/* The tabs share the title row with the app name; at the narrowest width the name goes too. */
 @container (max-width: 350px) { .side-brand-name { display: none; } }
 
 /* ===== dropdown menu (components/ui/Menu) ===== */
@@ -4775,28 +4786,38 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
 }
 
 /* --- detail --- */
-.series-detail { display: flex; flex-direction: column; gap: var(--space-6); max-width: 1080px; width: 100%; margin: 0 auto; padding-bottom: var(--space-6); }
-.series-detail-head { display: flex; flex-direction: column; gap: var(--space-2); }
+/* One left edge for everything in the detail (dot, stats, cover, bars, cards) and one
+   rhythm: --space-3 between blocks, --space-2 inside them. */
+.series-detail { display: flex; flex-direction: column; gap: var(--space-3); max-width: 1080px; width: 100%; margin: 0 auto; padding-bottom: var(--space-4); }
+.series-detail-head { display: flex; flex-direction: column; gap: var(--space-1_5); }
 .series-crumbs { display: flex; align-items: center; gap: var(--space-1_5); font-size: var(--fs-md); color: var(--muted); }
 .series-crumbs button { padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--muted); font-size: inherit; }
 .series-crumbs button:hover { color: var(--text); }
-.series-detail-title { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; min-width: 0; }
-.series-detail-title h2 { margin: 0; font-size: var(--fs-xl); line-height: 32px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.series-detail-title { display: flex; align-items: center; gap: var(--space-2_5); min-width: 0; }
+.series-detail-title h2 { margin: 0; font-size: var(--fs-xl); line-height: 30px; font-weight: 700; min-width: 0; flex: 0 1 auto; overflow-wrap: anywhere; }
 .series-archived-flag { font-size: var(--fs-sm); color: var(--muted); }
-.series-detail-actions { margin-left: auto; display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.series-detail-stats { margin: 0; padding-left: 22px; font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
-.series-outputs { display: flex; align-items: flex-end; gap: var(--space-6); padding-left: 22px; min-width: 0; }
-.series-cover { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); flex: none; }
+.series-detail-actions { margin-left: auto; display: flex; flex: none; gap: var(--space-0_5); }
+.series-detail-stats { margin: 0; font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
+.series-outputs { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); min-width: 0; }
+.series-cover { margin: 0; display: flex; flex-direction: column; gap: var(--space-1_5); min-width: 0; }
 .series-cover figcaption { font-size: var(--fs-sm); color: var(--muted); }
 .series-cover-img, .series-pick-item, .series-row-output {
   display: block; padding: 0; border: 0; overflow: hidden; background: var(--panel-2);
   box-shadow: none; border-radius: var(--radius-md); max-width: 100%;
 }
 .series-cover-img img, .series-pick-item img, .series-row-output img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.series-picks { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-.series-picks-strip { display: flex; align-items: flex-start; gap: var(--space-2); overflow-x: auto; padding: 4px 4px var(--space-1); margin: -4px; }
+.series-picks { display: flex; flex-direction: column; gap: var(--space-1_5); min-width: 0; }
+.series-picks-strip {
+  display: flex; align-items: flex-start; gap: var(--space-2); overflow-x: auto; scrollbar-width: none;
+  padding: 4px; margin: -4px;
+}
+.series-picks-strip::-webkit-scrollbar { display: none; }
+/* Fade the end(s) that still have more to scroll to (set by FadeStrip). */
+.series-picks-strip[data-fade-end] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+.series-picks-strip[data-fade-start] { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px); mask-image: linear-gradient(to right, transparent, #000 28px); }
+.series-picks-strip[data-fade-start][data-fade-end] { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 .series-picks-caption { font-size: var(--fs-sm); color: var(--muted); }
-.series-timeline-bar { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-2) 0 22px; flex-wrap: wrap; }
+.series-timeline-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .series-timeline-bar > .seg { flex-wrap: wrap; }
 .series-timeline-bar > .seg button { flex: 0 0 auto; }
 .series-order { font-size: var(--fs-md); color: var(--muted); }
@@ -4876,21 +4897,14 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
 .series-more { display: flex; justify-content: center; }
 /* Compact detail: chosen by the detail's own width (< 640px, see
    SeriesDetail useNarrow) — the phone layout and a narrow sidebar share it. */
-.series-detail.compact { gap: var(--space-3); }
 .series-detail-phonebar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .series-detail-phonetitle { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .series-detail-phonetitle span { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .series-detail-phonetitle h2 { margin: 0; font-size: var(--fs-lg); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .series-detail-phonebar .series-archived-flag { flex: none; }
-.series-detail.compact .series-detail-stats { padding-left: 0; font-size: var(--fs-sm); }
-.series-detail.compact .series-timeline-bar { padding: 0; gap: var(--space-2); }
+.series-detail.compact .series-detail-stats { font-size: var(--fs-sm); }
 .series-detail.compact .series-timeline { margin: 0; gap: var(--space-2); }
 /* best image above the strip of successful outputs */
-.series-outputs.compact { flex-direction: column; align-items: stretch; gap: var(--space-3); padding-left: 0; }
-.series-outputs.compact .series-cover { min-width: 0; }
-.series-outputs.compact :is(.series-cover figcaption, .series-picks-caption) {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 /* thumbnail on the left, text on the right */
 .series-row.compact {
   grid-template-columns: 56px minmax(0, 1fr); column-gap: var(--space-3); padding: var(--space-2_5);
@@ -5189,19 +5203,29 @@ button.rm-connpill.lost { background: var(--badge-blocked-bg); border-color: var
 }
 
 /* ===== series-v2 B3: Changes view (version groups) ===================== */
-.series-view-bar { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-2) 0 22px; margin-bottom: calc(-1 * var(--space-3)); }
+.series-view-bar { display: flex; align-items: center; gap: var(--space-3); }
 .series-view-bar .series-order { margin-left: auto; }
 .series-view-count { margin-left: 5px; font-size: 11px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
-.series-view-bar.compact { padding: 0; margin-bottom: 0; }
-.series-view-bar.compact .series-view-seg { display: flex; width: 100%; }
-.series-view-bar.compact .series-view-seg > button { flex: 1 1 0; justify-content: center; min-height: 38px; }
+.series-view-bar .series-view-seg { display: flex; flex: 1 1 auto; width: auto; }
+.series-view-bar .series-view-seg > button { flex: 1 1 0; justify-content: center; min-height: 28px; }
+/* Desktop controls stay ~28px; on touch / phone widths an invisible hit area
+   stretches each one to >= 44px without changing the look. */
+@media (pointer: coarse), (max-width: 639.98px) {
+  .series-view-seg > button, .series-filter-chips .tag-chip, .series-detail-actions .icon-button,
+  .series-detail-phonebar .icon-button { position: relative; }
+  .series-view-seg > button::after, .series-filter-chips .tag-chip::after,
+  .series-detail-actions .icon-button::after, .series-detail-phonebar .icon-button::after {
+    content: ""; position: absolute; inset: -8px 0;
+  }
+  .series-detail-actions .icon-button::after, .series-detail-phonebar .icon-button::after { inset: -8px; }
+  .series-filter-chips { row-gap: var(--space-2); }
+}
 
-.series-versions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.series-versions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .series-vg {
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
-  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); min-width: 0;
 }
-.series-vg.compact { padding: 12px; }
 .series-vg-head {
   display: flex; align-items: center; gap: 8px; min-height: 24px; font-size: 12px; color: var(--muted);
   white-space: nowrap; min-width: 0;
@@ -5373,8 +5397,7 @@ body.series-dragging, body.series-dragging * { cursor: grabbing !important; user
   text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap;
 }
 .series-order-reset:hover { color: var(--text); }
-.series-view-bar.compact .series-order.custom { flex: none; }
-.series-view-bar.compact .series-view-seg { flex: 1 1 auto; width: auto; }
+.series-view-bar .series-order.custom { flex: none; }
 
 /* Selection bar */
 .series-select-bar {
@@ -5475,7 +5498,7 @@ body.series-dragging, body.series-dragging * { cursor: grabbing !important; user
 .series-picks-caption { display: flex; align-items: flex-start; gap: 5px; line-height: 17px; }
 .series-picks-caption .icon { flex: none; margin-top: 2px; }
 .series-picks-caption:not(.fallback) .icon { color: var(--ui-accent); }
-.series-picks-caption.fallback { max-width: 300px; }
+.series-picks-caption { min-width: 0; }
 
 .series-mark-buttons {
   position: absolute; top: 4px; right: 4px; z-index: 3;

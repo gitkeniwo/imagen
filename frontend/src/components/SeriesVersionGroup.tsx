@@ -62,8 +62,11 @@ function timeRange(attempts: SeriesVersionAttempt[], lang: Parameters<typeof clo
   const now = new Date();
   const first = times[0];
   const last = times[times.length - 1];
-  const stamp = (d: Date) => `${cardTime(d, now, lang)} ${clockTime(d, lang)}`;
-  if (first.getTime() === last.getTime()) return stamp(first);
+  // Today shows the clock only (cardTime already is the clock then), like History cards.
+  const stamp = (d: Date) =>
+    dayKey(d) === dayKey(now) ? clockTime(d, lang) : `${cardTime(d, now, lang)} ${clockTime(d, lang)}`;
+  // Compare what is shown, not the raw time: 18:07:05 and 18:07:40 read the same.
+  if (stamp(first) === stamp(last)) return stamp(first);
   if (dayKey(first) === dayKey(last)) return `${stamp(first)}–${clockTime(last, lang)}`;
   return `${stamp(first)} – ${stamp(last)}`;
 }
