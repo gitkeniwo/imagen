@@ -10,13 +10,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  type HistoryResult,
   type ImageRow,
   imgThumbUrl,
   providerOf,
   type SeriesDetail as SeriesDetailRow,
   type SeriesGeneration,
+  type SeriesMark,
   type SeriesOrder,
+  type SeriesRecordFilter,
   type SeriesReorderResult,
   type SeriesVersion,
   type SeriesVersionAttempt,
@@ -28,6 +29,7 @@ import { cardTime, clockTime, dayKey, fullTime, parseTime } from "../historyTime
 import { generationRuntime } from "../generationMetrics";
 import { changedParams, compactEqual, diffWords, type ParamKey, samePrompt, splitTrailingSpace } from "../promptDiff";
 import { useProviders } from "../useProviders";
+import { invalidateImageSeriesCache } from "../seriesContext";
 import { useSeries } from "../seriesStore";
 import {
   currentRuns,
@@ -46,6 +48,7 @@ import { Switch } from "./ComposerControls";
 import { SeriesDot, successRate } from "./SeriesBits";
 import { MoveToThemeDialog, SeriesEditDialog } from "./SeriesDialogs";
 import SeriesMovePicker from "./SeriesMovePicker";
+import SeriesMarkButtons from "./SeriesMarks";
 import { HiddenVersionRow, VersionGroup, VersionSkeleton } from "./SeriesVersionGroup";
 import { type DropHit, useReorderDrag } from "./useReorderDrag";
 import { Button, IconButton } from "./ui/Button";
@@ -124,6 +127,7 @@ function attemptRow(v: SeriesVersion, a: SeriesVersionAttempt, seriesId: number)
     duration_ms: a.duration_ms,
     attempts: a.attempts,
     series_id: seriesId,
+    mark: a.mark,
     inputs: v.inputs,
     outputImage: a.outputImage,
     // Inside a version every earlier attempt has the same configuration.
@@ -143,11 +147,11 @@ function attemptRow(v: SeriesVersion, a: SeriesVersionAttempt, seriesId: number)
         : null,
   };
 }
-const FILM_HEIGHT = 96;
-const BEST_HEIGHT = 180;
+const COVER_HEIGHT = 170;
+const PICK_HEIGHT = 90;
 const OUTPUT_WIDTH = 88;
-const COMPACT_BEST_HEIGHT = 140;
-const COMPACT_FILM_HEIGHT = 64;
+const COMPACT_COVER_HEIGHT = 140;
+const COMPACT_PICK_HEIGHT = 64;
 const COMPACT_OUTPUT_WIDTH = 56;
 /** Below this width the detail switches to the compact (phone) timeline. */
 const COMPACT_BELOW = 640;
@@ -198,8 +202,10 @@ export default function SeriesDetail({
   const [detail, setDetail] = useState<SeriesDetailRow | null>(null);
   const [rows, setRows] = useState<SeriesGeneration[]>([]);
   const [total, setTotal] = useState(0);
-  const [counts, setCounts] = useState({ all: 0, success: 0, blocked: 0, error: 0 });
-  const [filter, setFilter] = useState<HistoryResult | "all">("all");
+  const [counts, setCounts] = useState({
+    all: 0, success: 0, blocked: 0, error: 0, picks: 0, rejects: 0,
+  });
+  const [filter, setFilter] = useState<SeriesRecordFilter | "all">("all");
   const [showChanges, setShowChanges] = useState(true);
   const [view, setView] = useState<DetailView>(initialDetailView);
   const [versions, setVersions] = useState<SeriesVersion[]>([]);
@@ -395,7 +401,10 @@ export default function SeriesDetail({
     const after = runsOf(move.order, (x) => kOf.get(x) ?? -1);
     const seqOf = new Map(move.order.map((x, i) => [x, i + 1]));
     if (view === "changes") {
-      const next = regroupVersions(order, move.order, versions, status, samePrompt);
+      const next =
+        status === "pick" || status === "reject"
+          ? null
+          : regroupVersions(order, move.order, versions, status, samePrompt);
       if (next) setVersions(next);
       else setPending(new Set(move.ids));
     } else {
@@ -550,10 +559,42 @@ export default function SeriesDetail({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const setBest = async (imageId: number | null) => {
+  const refreshAfterChange = async () => {
+    await Promise.all([load(true), store.reload([id])]);
+  };
+
+  const setMark = async (imageId: number, kind: SeriesMark | null) => {
     try {
-      await seriesApi.update(id, { bestImageId: imageId });
-      await store.reload([id]);
+      await seriesApi.setMark(id, imageId, kind);
+      invalidateImageSeriesCache();
+      await refreshAfterChange();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    }
+  };
+
+  const setCover = async (imageId: number | null) => {
+    try {
+      await seriesApi.update(id, { coverImageId: imageId });
+      await refreshAfterChange();
+    } catch (e) {
+      toast(t("op_failed", { msg: (e as Error).message }), "error");
+    }
+  };
+
+  const clearPicks = async () => {
+    if (!detail || detail.picks === 0) return;
+    const ok = await askConfirm({
+      title: t("sv6_clear_picks_title", { n: detail.picks }),
+      message: t("sv6_clear_picks_body"),
+      confirmLabel: t("sv6_clear_picks_confirm"),
+    });
+    if (!ok) return;
+    try {
+      const res = await seriesApi.clearPicks(id);
+      invalidateImageSeriesCache();
+      toast(t("sv6_cleared_toast", { n: res.cleared }), "info");
+      await refreshAfterChange();
     } catch (e) {
       toast(t("op_failed", { msg: (e as Error).message }), "error");
     }
@@ -588,12 +629,31 @@ export default function SeriesDetail({
   };
 
   const outputs = useMemo(() => (detail?.outputs ?? []).map((o) => o.image), [detail]);
-  const bestId = detail?.best_image?.id ?? null;
-  const best = detail?.best_image ?? outputs[outputs.length - 1] ?? null;
-  const bestSeq = useMemo(() => {
-    if (!detail?.best_image) return null;
-    return rows.find((r) => r.output_image_id === detail.best_image?.id)?.seq ?? null;
-  }, [detail, rows]);
+  const orderByImage = useMemo(() => {
+    const map = new Map<number, { seq: number; version: number }>();
+    for (const item of order?.items ?? []) {
+      if (!item.output_image_id) continue;
+      const current = map.get(item.output_image_id);
+      if (!current || item.seq > current.seq) {
+        map.set(item.output_image_id, { seq: item.seq, version: item.version });
+      }
+    }
+    return map;
+  }, [order]);
+  const cover = detail?.cover_image ?? outputs[outputs.length - 1] ?? null;
+  const coverSeq = cover ? orderByImage.get(cover.id)?.seq ?? null : null;
+  const picked = useMemo(
+    () =>
+      outputs
+        .filter((img) => img.mark === "pick")
+        .sort((a, b) => (orderByImage.get(a.id)?.seq ?? 0) - (orderByImage.get(b.id)?.seq ?? 0)),
+    [outputs, orderByImage],
+  );
+  const recentSuccesses = useMemo(
+    () => outputs.filter((img) => img.mark !== "reject").slice(-6).reverse(),
+    [outputs],
+  );
+  const topImages = picked.length ? picked : recentSuccesses;
 
   if (!detail) {
     return (
@@ -661,10 +721,17 @@ export default function SeriesDetail({
     ...(compact && orderCustom
       ? [{ label: t("sv4_reset_order"), icon: "restore" as const, onSelect: () => void resetOrder() }]
       : []),
+    ...(detail.picks > 0
+      ? [{
+          label: t("sv6_clear_picks"),
+          icon: "remove" as const,
+          hint: detail.picks,
+          onSelect: () => void clearPicks(),
+        }]
+      : []),
     detail.archived
       ? { label: t("series_unarchive"), icon: "unarchive", onSelect: () => void archive(false) }
       : { label: t("series_archive"), icon: "archive", onSelect: () => void archive(true) },
-    ...(bestId ? [{ label: t("series_clear_best"), icon: "best" as const, onSelect: () => void setBest(null) }] : []),
     { label: t("series_delete"), icon: "delete", danger: true, onSelect: () => void remove() },
   ];
 
@@ -687,11 +754,20 @@ export default function SeriesDetail({
         compact={compact}
         showChanges={v ? true : showChanges}
         firstOf={v && g.seq === v.first_seq ? v.version : undefined}
-        isBest={!!g.output_image_id && g.output_image_id === bestId}
+        isCover={!!g.output_image_id && g.output_image_id === detail.cover_image_id}
         onOpen={(img) => onOpenViewer(img, outputs.length ? outputs : [img])}
         onReuse={() => onReuse(g)}
         onRerun={onRerun && g.source !== "manual" && isReady(providerOf(g)) ? () => onRerun(g) : undefined}
-        onSetBest={g.outputImage && !g.outputImage.deleted_at ? () => void setBest(g.outputImage!.id) : undefined}
+        onMark={
+          g.outputImage && !g.outputImage.deleted_at
+            ? (kind) => void setMark(g.outputImage!.id, kind)
+            : undefined
+        }
+        onCover={
+          g.outputImage && !g.outputImage.deleted_at
+            ? () => void setCover(detail.cover_image_id === g.outputImage!.id ? null : g.outputImage!.id)
+            : undefined
+        }
         reasonText={reason(g.raw_finish, providerOf(g)) || g.error_message || t("no_output")}
         timeText={when.short}
         fullTimeText={when.full}
@@ -713,8 +789,29 @@ export default function SeriesDetail({
     const latest = v.attempts[v.attempts.length - 1];
     if (!latest) return [];
     const g = attemptRow(v, latest, id);
+    const image = latest.outputImage && !latest.outputImage.deleted_at ? latest.outputImage : null;
     return [
       ...moveItems(versionIds.get(v.version) ?? []),
+      ...(image
+        ? [
+            {
+              label: latest.mark === "pick" ? t("sv6_clear_pick") : t("sv6_pick"),
+              icon: "favorite" as const,
+              onSelect: () => void setMark(image.id, latest.mark === "pick" ? null : "pick"),
+            },
+            {
+              label: latest.mark === "reject" ? t("sv6_clear_reject") : t("sv6_reject"),
+              icon: "close" as const,
+              onSelect: () => void setMark(image.id, latest.mark === "reject" ? null : "reject"),
+            },
+            {
+              label: detail.cover_image_id === image.id ? t("sv6_clear_cover") : t("sv6_set_cover"),
+              icon: "cover" as const,
+              disabled: latest.mark === "reject",
+              onSelect: () => void setCover(detail.cover_image_id === image.id ? null : image.id),
+            },
+          ]
+        : []),
       { label: t("reuse"), icon: "reuse", onSelect: () => onReuse(g) },
       ...(onRerun && g.source !== "manual" && isReady(providerOf(g))
         ? [{ label: t("rerun_short"), icon: "rerun" as const, onSelect: () => onRerun(g) }]
@@ -732,6 +829,33 @@ export default function SeriesDetail({
     { value: "success" as const, label: `${t("hist_result_success")} ${counts.success}` },
     { value: "blocked" as const, label: `${t("hist_result_blocked")} ${counts.blocked}` },
     { value: "error" as const, label: `${t("hist_result_error")} ${counts.error}` },
+    { value: "pick" as const, label: `${t("sv6_filter_picks")} ${counts.picks}` },
+    { value: "reject" as const, label: `${t("sv6_filter_rejected")} ${counts.rejects}` },
+  ];
+  const coverLabel = (img: ImageRow) => {
+    const pos = orderByImage.get(img.id);
+    return pos ? t("sv6_cover_option", { n: pos.seq, k: pos.version }) : `#${img.id}`;
+  };
+  const coverChoices = (() => {
+    const seen = new Set<number>();
+    const out: ImageRow[] = [];
+    for (const img of [cover, ...picked, ...recentSuccesses]) {
+      if (!img || seen.has(img.id)) continue;
+      seen.add(img.id);
+      out.push(img);
+    }
+    return out.slice(0, 12);
+  })();
+  const coverItems: MenuItem[] = [
+    ...(detail.cover_image_id !== null
+      ? [{ label: t("sv6_auto_cover"), icon: "cover" as const, onSelect: () => void setCover(null) }]
+      : []),
+    ...coverChoices.map((img) => ({
+      label: coverLabel(img),
+      icon: "cover" as const,
+      hint: detail.cover_image_id === img.id ? t("sv6_cover_current") : undefined,
+      onSelect: () => void setCover(img.id),
+    })),
   ];
 
   return (
@@ -781,44 +905,84 @@ export default function SeriesDetail({
         <p className="series-detail-stats">{statLine}</p>
       </header>
 
-      {outputs.length > 0 && best && (
+      {outputs.length > 0 && cover && (
         <section className={`series-outputs${compact ? " compact" : ""}`} aria-label={t("series_outputs")}>
-          <figure className="series-best">
-            <button
-              type="button"
-              className="series-best-img"
-              style={{
-                height: compact ? COMPACT_BEST_HEIGHT : BEST_HEIGHT,
-                width: Math.round((compact ? COMPACT_BEST_HEIGHT : BEST_HEIGHT) * ratioOf(best)),
-              }}
-              onClick={() => onOpenViewer(best, outputs)}
-              title={t("open_viewer")}
-            >
-              <img src={imgThumbUrl(best)} alt="" draggable={false} />
-            </button>
+          <figure className="series-cover">
+            <div className="series-cover-frame">
+              <button
+                type="button"
+                className="series-cover-img"
+                style={{
+                  height: compact ? COMPACT_COVER_HEIGHT : COVER_HEIGHT,
+                  width: Math.round((compact ? COMPACT_COVER_HEIGHT : COVER_HEIGHT) * ratioOf(cover)),
+                }}
+                onClick={() => onOpenViewer(cover, outputs)}
+                title={t("open_viewer")}
+              >
+                <img src={imgThumbUrl(cover)} alt="" draggable={false} />
+              </button>
+              <SeriesMarkButtons
+                size="lg"
+                mark={cover.mark ?? null}
+                onMark={(kind) => void setMark(cover.id, kind)}
+              />
+              <Menu
+                className="series-cover-change"
+                items={coverItems}
+                renderTrigger={({ open, toggle }) => (
+                  <button
+                    type="button"
+                    className="series-cover-change-btn"
+                    aria-expanded={open}
+                    onClick={toggle}
+                  >
+                    <Icon name="cover" size="sm" />
+                    {t("sv6_change_cover")}
+                  </button>
+                )}
+              />
+            </div>
             <figcaption>
-              {bestId ? (bestSeq ? t("series_best_n", { n: bestSeq }) : t("series_best")) : t("series_latest")}
+              {coverSeq ? t("sv6_cover_n", { n: coverSeq }) : t("sv6_cover")}
             </figcaption>
           </figure>
-          <div className="series-film-wrap">
-            <div className="series-film">
-              {outputs.map((img) => {
-                const h = compact ? COMPACT_FILM_HEIGHT : FILM_HEIGHT;
+          <div className="series-picks">
+            <div className="series-picks-strip">
+              {topImages.map((img) => {
+                const h = compact ? COMPACT_PICK_HEIGHT : PICK_HEIGHT;
                 return (
-                  <button
-                    key={img.id}
-                    type="button"
-                    className={`series-film-item${img.id === bestId ? " best" : ""}`}
-                    style={{ height: h, width: Math.round(h * ratioOf(img)) }}
-                    title={t("open_viewer")}
-                    onClick={() => onOpenViewer(img, outputs)}
-                  >
-                    <img src={imgThumbUrl(img)} alt="" loading="lazy" draggable={false} />
-                  </button>
+                  <span key={img.id} className="series-pick-frame" style={{ height: h, width: Math.round(h * ratioOf(img)) }}>
+                    <button
+                      type="button"
+                      className={`series-pick-item${img.mark === "reject" ? " rejected" : ""}`}
+                      title={t("open_viewer")}
+                      onClick={() => onOpenViewer(img, outputs)}
+                    >
+                      <img src={imgThumbUrl(img)} alt="" loading="lazy" draggable={false} />
+                      {orderByImage.get(img.id) && (
+                        <span className="series-pick-num">#{orderByImage.get(img.id)!.seq}</span>
+                      )}
+                    </button>
+                    <SeriesMarkButtons
+                      size="lg"
+                      mark={img.mark ?? null}
+                      onMark={(kind) => void setMark(img.id, kind)}
+                    />
+                  </span>
                 );
               })}
             </div>
-            <span className="series-film-caption">{t("series_all_outputs", { n: outputs.length })}</span>
+            {picked.length > 0 ? (
+              <span className="series-picks-caption">
+                <Icon name="favorite" size="sm" filled />
+                {t("sv6_picks_in_order", { n: picked.length })}
+              </span>
+            ) : (
+              <span className="series-picks-caption fallback">
+                <Icon name="info" size="sm" />
+                {t("sv6_no_picks")}
+              </span>
+            )}
           </div>
         </section>
       )}
@@ -937,6 +1101,7 @@ export default function SeriesDetail({
                   onOpen={(img) => onOpenViewer(img, outputs.length ? outputs : [img])}
                   reasonOf={(a) => reason(a.raw_finish, a.provider) || a.error_message || t("no_output")}
                   menu={versionMenu(v)}
+                  onMark={(imageId, kind) => void setMark(imageId, kind)}
                   reorder={{
                     ids: versionIds.get(v.version) ?? v.attempts.map((a) => a.id),
                     selecting,
@@ -1032,11 +1197,12 @@ function TimelineRow({
   compact,
   showChanges,
   firstOf,
-  isBest,
+  isCover,
   onOpen,
   onReuse,
   onRerun,
-  onSetBest,
+  onMark,
+  onCover,
   reasonText,
   timeText,
   fullTimeText,
@@ -1047,11 +1213,12 @@ function TimelineRow({
   showChanges: boolean;
   /** First attempt of version K (inside an expanded version group). */
   firstOf?: number;
-  isBest: boolean;
+  isCover: boolean;
   onOpen: (img: ImageRow) => void;
   onReuse: () => void;
   onRerun?: () => void;
-  onSetBest?: () => void;
+  onMark?: (kind: SeriesMark | null) => void;
+  onCover?: () => void;
   reasonText: string;
   timeText: string;
   fullTimeText: string;
@@ -1098,8 +1265,33 @@ function TimelineRow({
   const actions: MenuItem[] = [
     { label: t("reuse"), icon: "reuse", onSelect: onReuse },
     ...(onRerun ? [{ label: t("rerun_short"), icon: "rerun" as const, onSelect: onRerun }] : []),
-    ...(onSetBest && !isBest ? [{ label: t("series_set_best"), icon: "best" as const, onSelect: onSetBest }] : []),
   ];
+  const markActions: MenuItem[] = output
+    ? [
+        ...(onMark
+          ? [
+              {
+                label: g.mark === "pick" ? t("sv6_clear_pick") : t("sv6_pick"),
+                icon: "favorite" as const,
+                onSelect: () => onMark(g.mark === "pick" ? null : "pick"),
+              },
+              {
+                label: g.mark === "reject" ? t("sv6_clear_reject") : t("sv6_reject"),
+                icon: "close" as const,
+                onSelect: () => onMark(g.mark === "reject" ? null : "reject"),
+              },
+            ]
+          : []),
+        ...(onCover
+          ? [{
+              label: isCover ? t("sv6_clear_cover") : t("sv6_set_cover"),
+              icon: "cover" as const,
+              disabled: g.mark === "reject",
+              onSelect: onCover,
+            }]
+          : []),
+      ]
+    : [];
 
   const prompt =
     firstOf !== undefined ? (
@@ -1124,15 +1316,20 @@ function TimelineRow({
     );
 
   const media = output ? (
-    <button
-      type="button"
-      className={`series-row-output${isBest ? " best" : ""}`}
-      style={{ aspectRatio: `${output.width} / ${output.height}` }}
-      onClick={() => onOpen(output)}
-      title={t("open_viewer")}
-    >
-      <img src={imgThumbUrl(output)} alt="" loading="lazy" draggable={false} />
-    </button>
+    <span className={`series-row-output-wrap${g.mark === "reject" ? " rejected" : ""}`}>
+      <button
+        type="button"
+        className="series-row-output"
+        style={{ aspectRatio: `${output.width} / ${output.height}` }}
+        onClick={() => onOpen(output)}
+        title={t("open_viewer")}
+      >
+        <img src={imgThumbUrl(output)} alt="" loading="lazy" draggable={false} />
+      </button>
+      {onMark && (
+        <SeriesMarkButtons mark={g.mark ?? null} onMark={onMark} />
+      )}
+    </span>
   ) : g.status === "running" ? (
     <div className="series-row-fail running"><span className="spinner" /></div>
   ) : g.status === "success" ? (
@@ -1216,11 +1413,10 @@ function TimelineRow({
               ))}
             </span>
           )}
-          {isBest && <span className="series-best-flag">{t("series_best")}</span>}
           {compact ? (
             <Menu
               className="series-row-more"
-              items={[...moves, ...actions]}
+              items={[...markActions, ...moves, ...actions]}
               renderTrigger={({ open, toggle }) => (
                 <IconButton icon="more" size="sm" label={t("more_actions")} aria-expanded={open} onClick={toggle} />
               )}
@@ -1232,9 +1428,9 @@ function TimelineRow({
                   {a.label}
                 </button>
               ))}
-              {moves.length > 0 && (
+              {(moves.length > 0 || markActions.length > 0) && (
                 <Menu
-                  items={[...moves, ...actions]}
+                  items={[...markActions, ...moves, ...actions]}
                   renderTrigger={({ open, toggle }) => (
                     <IconButton icon="more" size="sm" label={t("more_actions")} aria-expanded={open} onClick={toggle} />
                   )}

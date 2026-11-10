@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type ImageSeriesEntry, seriesApi } from "../api";
+import { api, type ImageSeriesEntry, type SeriesMark, seriesApi } from "../api";
 import { useI18n } from "../i18n";
 import { fetchImageSeries, useSeriesNav } from "../seriesContext";
 import { useSeries } from "../seriesStore";
@@ -26,6 +26,7 @@ interface Entry {
   generationId: number | null;
   /** vK (series-v2 B3), outputs only. */
   version?: number | null;
+  mark?: SeriesMark | null;
 }
 
 function initialEntries(subject: SeriesSubject, fixed?: number | null): Entry[] {
@@ -37,6 +38,7 @@ function initialEntries(subject: SeriesSubject, fixed?: number | null): Entry[] 
       seq: e.seq,
       generationId: e.generationId,
       version: e.version ?? null,
+      mark: e.mark ?? null,
     }));
   } else {
     list = [
@@ -45,6 +47,7 @@ function initialEntries(subject: SeriesSubject, fixed?: number | null): Entry[] 
         role: "output",
         seq: null,
         generationId: subject.kind === "record" ? subject.generationId : null,
+        mark: null,
       },
     ];
   }
@@ -96,7 +99,14 @@ export default function SeriesInfoCard({
         const p = items[0];
         if (alive && p?.seriesId) {
           setEntries([
-            { seriesId: p.seriesId, role: "output", seq: p.seq, generationId: subject.generationId, version: p.version },
+            {
+              seriesId: p.seriesId,
+              role: "output",
+              seq: p.seq,
+              generationId: subject.generationId,
+              version: p.version,
+              mark: p.mark ?? null,
+            },
           ]);
         }
       } else if (subject.kind === "image") {
@@ -109,11 +119,24 @@ export default function SeriesInfoCard({
         const { generations } = await api.generationsByImage(subject.imageId);
         const own = generations.find((g) => g.role === "output" && g.client_task_id === subject.clientTaskId);
         if (alive && own?.series_id) {
-          setEntries([{ seriesId: own.series_id, role: "output", seq: own.seq, generationId: own.id }]);
+          setEntries([{
+            seriesId: own.series_id,
+            role: "output",
+            seq: own.seq,
+            generationId: own.id,
+            mark: own.mark ?? null,
+          }]);
           const { items } = await api.seriesPositions([own.id]);
           const version = items[0]?.version ?? null;
           if (alive && version) {
-            setEntries([{ seriesId: own.series_id, role: "output", seq: own.seq, generationId: own.id, version }]);
+            setEntries([{
+              seriesId: own.series_id,
+              role: "output",
+              seq: own.seq,
+              generationId: own.id,
+              version,
+              mark: items[0]?.mark ?? own.mark ?? null,
+            }]);
           }
         }
       }
@@ -270,6 +293,17 @@ export default function SeriesInfoCard({
             ? t("sv2_stats_tries", { n: node.tries })
             : t("sv2_stats", { n: node.tries, p: rate })}
         </span>
+        {node.picks > 0 && (
+          <span className="sv6-pick-count" title={t("sv6_picks_title", { n: node.picks })}>
+            <Icon name="favorite" size="sm" filled />
+            {node.picks}
+          </span>
+        )}
+        {entry.mark === "pick" && (
+          <span className="sv6-pick-mark" title={t("sv6_picked")}>
+            <Icon name="favorite" size="sm" filled />
+          </span>
+        )}
         {multi && position && <span className="sv2-pos">{position}</span>}
       </div>
       {!multi && node.strip.length > 0 && <StatusStrip strip={node.strip} />}

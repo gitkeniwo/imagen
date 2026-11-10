@@ -323,6 +323,7 @@ export default function Favorites({
       prompt: isOutput ? generation.prompt : undefined,
       sourceLabel: generation.source === "manual" ? t("imported_badge") : undefined,
       quickActions,
+      seriesMarks: series.markRow(imgSeries, img.id) ?? undefined,
       sections: [recordActions, seriesRows].filter((section) => section.length > 0),
       ariaLabel: t("image_menu"),
     });

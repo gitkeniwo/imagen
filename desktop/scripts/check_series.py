@@ -595,6 +595,24 @@ if fresh:
     check({g["id"]: g["mark"] for g in tl}[marked[2]] == "reject"
           and {g["id"]: g["outputImage"]["mark"] for g in tl}[marked[0]] == "pick",
           "attempts timeline carries mark on each output")
+    tl_pick = c.get(f"/api/series/{marks_id}/generations?limit=100&status=pick").json()
+    tl_reject = c.get(f"/api/series/{marks_id}/generations?limit=100&status=reject").json()
+    check(
+        [g["id"] for g in tl_pick["generations"]] == [marked[0]]
+        and {g["id"] for g in tl_reject["generations"]} == {marked[2], marked[3]}
+        and tl_pick["counts"]["picks"] == 1
+        and tl_pick["counts"]["rejects"] == 2,
+        "attempts timeline filters and counts by mark",
+    )
+    pos = c.get(f"/api/generations/series-position?ids={marked[0]},{marked[2]}").json()["items"]
+    check([p["mark"] for p in pos] == ["pick", "reject"],
+          "series-position carries the output mark")
+    by_image = c.get("/api/generations/image-series?ids=1,5").json()["items"]
+    check(
+        next(e for e in by_image[0]["series"] if e["seriesId"] == marks_id)["mark"] == "pick"
+        and next(e for e in by_image[1]["series"] if e["seriesId"] == marks_id)["mark"] == "reject",
+        "image-series carries each image's mark",
+    )
     picked = c.get(f"/api/series/{marks_id}/versions?limit=100&status=pick").json()["versions"]
     visible = [a["id"] for v in picked for a in v["attempts"]]
     check(visible == [marked[0]] and any(v["hidden"] for v in picked),

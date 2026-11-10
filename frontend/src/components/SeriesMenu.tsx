@@ -1,9 +1,15 @@
 import { useCallback, useState } from "react";
-import { api, seriesApi, type SeriesAssignBody } from "../api";
+import {
+  api,
+  type ImageSeriesEntry,
+  type SeriesAssignBody,
+  type SeriesMark,
+  seriesApi,
+} from "../api";
 import { useConfirm } from "./ConfirmDialog";
 import { useI18n } from "../i18n";
 import { seriesPathText, useSeries } from "../seriesStore";
-import { useSeriesNav } from "../seriesContext";
+import { invalidateImageSeriesCache, useSeriesNav } from "../seriesContext";
 import { SeriesDot } from "./SeriesBits";
 
 // Menu rows: an <i> dot (rows read their label from the first <span>).
@@ -11,7 +17,7 @@ const menuDot = (color: string | null | undefined) => (
   <i className="series-dot" style={{ background: color ?? undefined }} aria-hidden="true" />
 );
 import Icon from "./ui/Icon";
-import type { ContextMenuItem } from "./ui/ContextMenu";
+import type { ContextMenuItem, ContextMenuSeriesMarks } from "./ui/ContextMenu";
 import SeriesPicker from "./SeriesPicker";
 import { SeriesEditDialog } from "./SeriesDialogs";
 import { useToast } from "./Toast";
@@ -117,6 +123,33 @@ export function useSeriesActions(onChanged?: () => void) {
       }
     },
     [confirmImageMove, onChanged, store, t, toast],
+  );
+
+  const setMark = useCallback(
+    async (seriesId: number, imageId: number, kind: SeriesMark | null) => {
+      try {
+        await seriesApi.setMark(seriesId, imageId, kind);
+        invalidateImageSeriesCache();
+        await store.reload([seriesId]);
+        onChanged?.();
+      } catch (e) {
+        toast(t("op_failed", { msg: (e as Error).message }), "error");
+      }
+    },
+    [onChanged, store, t, toast],
+  );
+
+  const setCover = useCallback(
+    async (seriesId: number, imageId: number | null) => {
+      try {
+        await seriesApi.update(seriesId, { coverImageId: imageId });
+        await store.reload([seriesId]);
+        onChanged?.();
+      } catch (e) {
+        toast(t("op_failed", { msg: (e as Error).message }), "error");
+      }
+    },
+    [onChanged, store, t, toast],
   );
 
   const picker = useCallback(
@@ -226,6 +259,26 @@ export function useSeriesActions(onChanged?: () => void) {
     [menuItem, openItem],
   );
 
+  /** series-v2 B6: the mark row for an image that is an output of a series. */
+  const markRow = useCallback(
+    (entries: ImageSeriesEntry[], imageId: number): ContextMenuSeriesMarks | null => {
+      const entry = entries.find((e) => e.role === "output");
+      const node = entry ? store.node(entry.seriesId) : null;
+      if (!entry || !node) return null;
+      return {
+        seriesName: node.name,
+        mark: entry.mark ?? null,
+        cover: node.cover_image_id === imageId,
+        onMark: (kind) => setMark(entry.seriesId, imageId, kind),
+        onCover: () => setCover(
+          entry.seriesId,
+          node.cover_image_id === imageId ? null : imageId,
+        ),
+      };
+    },
+    [setCover, setMark, store],
+  );
+
   const dialog = newFor ? (
     <SeriesEditDialog
       mode="new-series"
@@ -235,5 +288,5 @@ export function useSeriesActions(onChanged?: () => void) {
     />
   ) : null;
 
-  return { menuItem, openItem, section, picker, assign, dialog };
+  return { menuItem, openItem, section, markRow, picker, assign, dialog };
 }

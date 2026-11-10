@@ -36,7 +36,7 @@ export function successRate(s: Pick<SeriesStats, "success" | "blocked" | "error"
 export function sumStats(items: SeriesStats[]): SeriesStats {
   const out: SeriesStats = {
     tries: 0, success: 0, blocked: 0, error: 0, aborted: 0, running: 0,
-    records: 0, drafts: 0, last_at: null, strip: [], cover: [],
+    records: 0, drafts: 0, picks: 0, last_at: null, strip: [], cover: [],
   };
   for (const s of items) {
     out.tries += s.tries;
@@ -47,6 +47,7 @@ export function sumStats(items: SeriesStats[]): SeriesStats {
     out.running += s.running;
     out.records += s.records;
     out.drafts += s.drafts;
+    out.picks += s.picks;
     if (s.last_at && (!out.last_at || s.last_at > out.last_at)) out.last_at = s.last_at;
   }
   out.cover = items.flatMap((s) => s.cover.slice(0, 1)).slice(0, 3);

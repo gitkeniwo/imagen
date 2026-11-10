@@ -31,6 +31,7 @@ export interface SeriesPath {
   color: string | null;
   theme: { id: number; name: string } | null;
   archived: boolean;
+  cover_image_id: number | null;
 }
 
 export interface SeriesStore {
@@ -194,6 +195,7 @@ export function useSeriesState(libraryKey: string | null, refreshKey: unknown): 
         color: leaf.color,
         theme: theme ? { id: theme.id, name: theme.name } : null,
         archived: !!leaf.archived || !!theme?.archived,
+        cover_image_id: leaf.cover_image_id,
       };
     },
     [byId, themeById],
