@@ -117,6 +117,19 @@ class SeriesAssign(BaseModel):
     imageIds: list[int] = Field(default_factory=list)
 
 
+class SeriesReorder(BaseModel):
+    """Move these records, as one block in their current relative order,
+    right before or right after a target record of the same series."""
+    generationIds: list[int]
+    before: Optional[int] = None
+    after: Optional[int] = None
+
+
+class SeriesRestore(BaseModel):
+    """A complete order to write back (undo of "reset to time order")."""
+    generationIds: list[int]
+
+
 class SeriesImport(BaseModel):
     tagId: int
     name: str

@@ -1,7 +1,8 @@
 // Run: npm test   (node --test, no extra dependencies; Node strips the types)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { changedParams, compactEqual, diffWords, samePrompt, splitTrailingSpace, tokenize } from "../src/promptDiff.ts";
+import { readFileSync } from "node:fs";
+import { changedParams, compactEqual, diffWords, samePrompt, splitTrailingSpace, tokenize, versionKey } from "../src/promptDiff.ts";
 
 const join = (segs, skip) => segs.filter((s) => s.kind !== skip).map((s) => s.text).join("");
 const marks = (segs) => segs.filter((s) => s.kind !== "equal").map((s) => `${s.kind === "insert" ? "+" : "-"}${s.text.trim()}`);
@@ -82,4 +83,26 @@ test("compactEqual keeps the edges of long unchanged runs", () => {
   assert.deepEqual(marks(out), ["+side"]);
   const same = diffWords("a b", "a b");
   assert.deepEqual(compactEqual(same), same);
+});
+
+// series-v2 B2: the same cases run against backend/app/series_order.py in
+// desktop/scripts/check_series.py.
+const versionCases = JSON.parse(
+  readFileSync(new URL("./fixtures/version-key.json", import.meta.url), "utf8"),
+);
+
+test("versionKey matches the shared fixture byte for byte", () => {
+  for (const c of versionCases.keys) assert.equal(versionKey(c.attempt), c.key, c.name);
+});
+
+test("versionKey groups exactly the shared same / different pairs", () => {
+  for (const c of versionCases.pairs) {
+    assert.equal(versionKey(c.a) === versionKey(c.b), c.same, c.name);
+    // When only the prompt differs, the key agrees with samePrompt.
+    const { prompt: pa, ...restA } = c.a;
+    const { prompt: pb, ...restB } = c.b;
+    if (JSON.stringify(restA) === JSON.stringify(restB)) {
+      assert.equal(samePrompt(pa ?? "", pb ?? ""), c.same, `samePrompt: ${c.name}`);
+    }
+  }
 });

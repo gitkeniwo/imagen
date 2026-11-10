@@ -1,0 +1,378 @@
+{
+  "_comment": "Shared by frontend/scripts/promptDiff.test.mjs (versionKey) and desktop/scripts/check_series.py (version_key). Edit both implementations together.",
+  "keys": [
+    {
+      "name": "plain",
+      "attempt": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "key": "[\"Warm poster of an amber perfume bottle\",\"gemini-3-pro-image\",\"1K\",\"2:3\",[3,7]]"
+    },
+    {
+      "name": "null params",
+      "attempt": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": null,
+        "aspect_ratio": null,
+        "input_ids": []
+      },
+      "key": "[\"Warm poster of an amber perfume bottle\",\"gemini-3-pro-image\",\"\",\"\",[]]"
+    },
+    {
+      "name": "cjk prompt",
+      "attempt": {
+        "prompt": "\u79cb\u5929\u7684\u7425\u73c0\u8272\u9999\u6c34\u6d77\u62a5\uff0c\u6a61\u6728\u684c",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "key": "[\"\u79cb\u5929\u7684\u7425\u73c0\u8272\u9999\u6c34\u6d77\u62a5\uff0c\u6a61\u6728\u684c\",\"gemini-3-pro-image\",\"1K\",\"2:3\",[3,7]]"
+    },
+    {
+      "name": "quotes and newline",
+      "attempt": {
+        "prompt": "a \"quoted\" word\nsecond line\\",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "key": "[\"a \\\"quoted\\\" word\\nsecond line\\\\\",\"gemini-3-pro-image\",\"1K\",\"2:3\",[3,7]]"
+    },
+    {
+      "name": "edge whitespace incl. U+3000 / U+FEFF / NBSP",
+      "attempt": {
+        "prompt": "\ufeff\u3000\u00a0 Warm poster of an amber perfume bottle \t\n",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "key": "[\"Warm poster of an amber perfume bottle\",\"gemini-3-pro-image\",\"1K\",\"2:3\",[3,7]]"
+    },
+    {
+      "name": "null prompt",
+      "attempt": {
+        "prompt": null,
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "key": "[\"\",\"gemini-3-pro-image\",\"1K\",\"2:3\",[3,7]]"
+    }
+  ],
+  "pairs": [
+    {
+      "name": "edge whitespace only",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "  Warm poster of an amber perfume bottle\n",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": true
+    },
+    {
+      "name": "ideographic space at the edge",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "\u3000Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": true
+    },
+    {
+      "name": "inner whitespace differs",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "Warm  poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": false
+    },
+    {
+      "name": "case differs",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": false
+    },
+    {
+      "name": "input order differs",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          7,
+          3
+        ]
+      },
+      "same": false
+    },
+    {
+      "name": "resolution differs",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "2K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": false
+    },
+    {
+      "name": "ratio differs",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "1:1",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": false
+    },
+    {
+      "name": "model differs",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-2.5-flash-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": false
+    },
+    {
+      "name": "provider is not part of the key",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ],
+        "provider": "vertex"
+      },
+      "b": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ],
+        "provider": "gemini"
+      },
+      "same": true
+    },
+    {
+      "name": "null vs empty prompt",
+      "a": {
+        "prompt": null,
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": true
+    },
+    {
+      "name": "null vs empty resolution",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": null,
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": true
+    },
+    {
+      "name": "U+001F is not trimmed",
+      "a": {
+        "prompt": "Warm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "b": {
+        "prompt": "\u001fWarm poster of an amber perfume bottle",
+        "model": "gemini-3-pro-image",
+        "resolution": "1K",
+        "aspect_ratio": "2:3",
+        "input_ids": [
+          3,
+          7
+        ]
+      },
+      "same": false
+    }
+  ]
+}
