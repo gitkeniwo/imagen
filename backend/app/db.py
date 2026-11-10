@@ -126,10 +126,21 @@ CREATE TABLE IF NOT EXISTS series (
     parent_id      INTEGER REFERENCES series(id) ON DELETE SET NULL,
     name           TEXT NOT NULL,
     color          TEXT,
-    best_image_id  INTEGER REFERENCES images(id) ON DELETE SET NULL,
+    best_image_id  INTEGER REFERENCES images(id) ON DELETE SET NULL, -- explicit cover
     archived       INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
+);
+
+-- One pick/reject mark per (series, image). Marks are scoped to the series and
+-- are not global favorites. Images are cleaned up explicitly on purge because
+-- the table intentionally has no cascade (the image may belong to other data).
+CREATE TABLE IF NOT EXISTS series_marks (
+    series_id  INTEGER REFERENCES series(id) ON DELETE CASCADE,
+    image_id   INTEGER REFERENCES images(id),
+    kind       TEXT CHECK (kind IN ('pick', 'reject')),
+    created_at TEXT,
+    PRIMARY KEY (series_id, image_id)
 );
 """
 
@@ -230,6 +241,7 @@ CREATE INDEX IF NOT EXISTS idx_draft_tags_tag_id ON draft_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_generations_series_id ON generations(series_id);
 CREATE INDEX IF NOT EXISTS idx_drafts_series_id ON drafts(series_id);
 CREATE INDEX IF NOT EXISTS idx_series_parent_id ON series(parent_id);
+CREATE INDEX IF NOT EXISTS idx_series_marks_image_id ON series_marks(image_id);
 -- Names are unique per parent (case-insensitive). Themes and unthemed series
 -- both have a NULL parent but live in separate namespaces, hence `kind`.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_series_unique_name
@@ -347,6 +359,29 @@ def _migrate(conn) -> None:
         conn.execute(
             "ALTER TABLE drafts ADD COLUMN series_id INTEGER "
             "REFERENCES series(id) ON DELETE SET NULL"
+        )
+
+    # The old best image becomes one pick; the explicit cover starts empty so
+    # the normal fallback (latest pick, then latest success) keeps the same
+    # displayed image. A settings marker makes this a one-time migration:
+    # covers chosen through the new API must never turn into picks on restart.
+    if not conn.execute(
+        "SELECT 1 FROM settings WHERE key = 'series_marks_best_migrated'"
+    ).fetchone():
+        for row in conn.execute(
+            "SELECT id, best_image_id, updated_at FROM series "
+            "WHERE best_image_id IS NOT NULL ORDER BY id"
+        ).fetchall():
+            conn.execute(
+                """INSERT OR IGNORE INTO series_marks
+                   (series_id, image_id, kind, created_at) VALUES (?, ?, 'pick', ?)""",
+                (row["id"], row["best_image_id"], row["updated_at"] or now_timestamp()),
+            )
+        conn.execute("UPDATE series SET best_image_id = NULL WHERE best_image_id IS NOT NULL")
+        conn.execute(
+            """INSERT INTO settings (key, value)
+               VALUES ('series_marks_best_migrated', '1')
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value"""
         )
 
     # History sorts by created_at as text. Older rows may lack microseconds

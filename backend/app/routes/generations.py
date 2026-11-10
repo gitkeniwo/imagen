@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import providers, series_order, storage, tagging
+from .. import providers, series_marks, series_order, storage, tagging
 from ..db import GENERATION_SORT_AT, canonical_timestamp, get_conn, now_timestamp
 from ..models import ManualGenerationRequest, MarkerPatch
 from ..timeline import MAX_IDS_LIMIT, query_timeline
@@ -275,6 +275,7 @@ def update_generation(gen_id: int, body: ManualGenerationRequest):
 
         _check_images_exist(conn, body)
         created_at = body.createdAt or existing["created_at"]
+        old_output = (existing["series_id"], existing["output_image_id"])
 
         conn.execute(
             """UPDATE generations
@@ -290,6 +291,7 @@ def update_generation(gen_id: int, body: ManualGenerationRequest):
             conn.execute(
                 "UPDATE generations SET series_id = ? WHERE id = ?", (body.seriesId, gen_id)
             )
+        series_marks.cleanup_detached_outputs(conn, [old_output])
         _mark_output_generated(conn, body.outputImageId)
         conn.execute("DELETE FROM generation_inputs WHERE generation_id = ?", (gen_id,))
         for pos, img_id in enumerate(body.inputImageIds):
