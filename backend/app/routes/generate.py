@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import threading
 import time
 
 from fastapi import APIRouter, HTTPException, Request
@@ -38,12 +39,28 @@ PROGRESS: dict[str, dict] = {}
 # keeps reading this (via should_abort) and stops retrying cooperatively, then
 # returns its real final result — so the request stays open and the frontend
 # learns the true outcome (success-kept / aborted) instead of a closed socket.
-CANCELLED: set[str] = set()
+#
+# A cancel can reach the server before its generation request has finished
+# validation and registered itself. Keep it for a short grace period so that
+# an immediate cancel is not lost. Client task ids are uuid4, so a delayed
+# signal cannot affect another request.
+CANCELLED: dict[str, float] = {}
+CANCEL_GRACE_S = 60.0
+_CANCEL_LOCK = threading.Lock()
 
-# Client task ids with an open /api/generate request. Cancel signals are only
-# accepted for these — otherwise a cancel for an already-finished (or never
-# started) task would sit in CANCELLED forever.
-INFLIGHT: set[str] = set()
+
+def _is_cancelled(cid: str | None) -> bool:
+    if not cid:
+        return False
+    with _CANCEL_LOCK:
+        return cid in CANCELLED
+
+
+def _clear_cancelled(cid: str | None) -> None:
+    if not cid:
+        return
+    with _CANCEL_LOCK:
+        CANCELLED.pop(cid, None)
 
 
 def _now() -> str:
@@ -59,9 +76,11 @@ def generate_progress(cid: str):
 @router.post("/generate/cancel/{cid}")
 def cancel_generate(cid: str):
     """Signal a running generation to stop retrying (cooperative cancel)."""
-    if cid not in INFLIGHT:
-        return {"ok": False}
-    CANCELLED.add(cid)
+    now = time.monotonic()
+    with _CANCEL_LOCK:
+        for stale in [key for key, at in CANCELLED.items() if now - at > CANCEL_GRACE_S]:
+            CANCELLED.pop(stale, None)
+        CANCELLED[cid] = now
     return {"ok": True}
 
 
@@ -213,7 +232,7 @@ async def generate(body: GenerateRequest, request: Request):
             attempts_seen = max(attempts_seen, sent_attempt)
 
     def _should_abort() -> bool:
-        return disconnected["v"] or bool(cid and cid in CANCELLED)
+        return disconnected["v"] or _is_cancelled(cid)
 
     # Persist in a worker thread (Pillow decode + thumbnail are CPU-bound and
     # would otherwise stall the event loop). The thread opens its own
@@ -298,7 +317,7 @@ async def generate(body: GenerateRequest, request: Request):
             )
         duration_ms = max(0, round((time.monotonic() - started) * 1000))
 
-        explicitly_cancelled = bool(cid and cid in CANCELLED)
+        explicitly_cancelled = _is_cancelled(cid)
         try:
             status, message, generation, output_image = await asyncio.to_thread(
                 _persist, result, explicitly_cancelled, duration_ms, attempts_seen
@@ -340,16 +359,13 @@ async def generate(body: GenerateRequest, request: Request):
             if owner is not None:
                 remote.session_finished(owner)
             if cid:
-                INFLIGHT.discard(cid)
                 PROGRESS.pop(cid, None)
-                CANCELLED.discard(cid)
+                _clear_cancelled(cid)
 
     # Counted only here: every earlier return is a 4xx validation failure that
     # never reaches Vertex. Paired with generation_finished() in _run's finally,
     # so success, error, block and cancel all decrement exactly once.
     remote.generation_started()
-    if cid:
-        INFLIGHT.add(cid)
     task = asyncio.create_task(_run())
     _ACTIVE_TASKS.add(task)
     task.add_done_callback(_ACTIVE_TASKS.discard)
@@ -385,6 +401,6 @@ async def generate(body: GenerateRequest, request: Request):
                 )
         yield json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
 
-    # No `finally` cleanup here: the work task owns INFLIGHT/PROGRESS/CANCELLED
-    # so they stay accurate even when this response is cancelled mid-stream.
+    # No `finally` cleanup here: the work task owns PROGRESS/CANCELLED so they
+    # stay accurate even when this response is cancelled mid-stream.
     return StreamingResponse(_stream(), media_type="application/json")

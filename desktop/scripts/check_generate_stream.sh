@@ -268,7 +268,37 @@ print(
     f"abort_seen=true observations={state['count']}"
 )
 
-# --- d. no Vertex project -> plain 400 JSON -------------------------------
+# --- d. cancel arrives before the generate request ------------------------
+# The frontend can cancel as soon as the queue card says "running", while the
+# backend may still be validating and preparing inputs. The signal must be
+# remembered instead of being rejected as "not in flight yet".
+cid = f"stream-early-cancel-{time.time_ns()}"
+httpx.post(f"{base}/__test/fake-reset", timeout=5)
+early = httpx.post(f"{base}/api/generate/cancel/{cid}", timeout=5)
+if early.status_code != 200 or early.json() != {"ok": True}:
+    fail(f"early cancel: endpoint returned {early.status_code} {early.text[:200]}")
+started = time.monotonic()
+response = httpx.post(f"{base}/api/generate", json=payload(cid), timeout=30)
+elapsed = time.monotonic() - started
+if response.status_code != 200:
+    fail(f"early cancel: generate returned HTTP {response.status_code} {response.text[:200]}")
+result = response.json()
+if result.get("status") != "aborted":
+    fail(f"early cancel: status={result.get('status')} message={result.get('message')}")
+with httpx.Client(base_url=base, timeout=10) as client:
+    row = generation_for(client, cid)
+    state = client.get("/__test/fake-state", timeout=5).json()
+if not row or row.get("status") != "aborted" or row.get("raw_finish") != "ABORTED":
+    fail(f"early cancel: row={row}")
+first = state.get("first_abort")
+if not first or first.get("elapsed", 99) > 1:
+    fail(f"early cancel: first abort check={first!r}")
+print(
+    f"PASS early cancel: signal accepted before generate; "
+    f"first check at {first['elapsed']:.3f}s, response after {elapsed:.3f}s"
+)
+
+# --- e. no Vertex project -> plain 400 JSON -------------------------------
 with httpx.Client(base_url=base, timeout=10) as client:
     client.put("/api/settings/vertex", json={"project": "", "location": "global"}).raise_for_status()
     response = client.post("/api/generate", json=payload(f"stream-noproject-{time.time_ns()}"))
