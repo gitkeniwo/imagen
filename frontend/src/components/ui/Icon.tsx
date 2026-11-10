@@ -1,5 +1,7 @@
 import {
+  AppWindow,
   Archive,
+  ArrowLeftRight,
   ArchiveRestore,
   Award,
   ArrowRightFromLine,
@@ -66,6 +68,7 @@ import {
   Shield,
   SlidersHorizontal,
   Smartphone,
+  SquareArrowOutUpRight,
   Sparkles,
   Square,
   SquareCheck,
@@ -95,6 +98,10 @@ const ICONS = {
   view: Eye,
   drafts: StickyNote,
   series: Layers,
+  // series-v2 B1a
+  openSeries: SquareArrowOutUpRight,
+  changeSeries: ArrowLeftRight,
+  workspace: AppWindow,
   bin: Trash2,
   fullscreen: Maximize2,
   fullscreenExit: Minimize2,

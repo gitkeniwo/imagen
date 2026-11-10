@@ -68,6 +68,8 @@ export default function GenerationCard({
   extra,
   menuItems,
   menuFooter,
+  footerBadge,
+  metaBadge,
   fixed = false,
 }: {
   media: CardMedia;
@@ -97,6 +99,10 @@ export default function GenerationCard({
   extra?: ReactNode;
   menuItems: MenuItem[];
   menuFooter?: (close: () => void) => ReactNode;
+  // series-v2 B1a: series badge after the actions (Drafts) or at the end of
+  // the params row (Queue). Both live in existing rows: the card never grows.
+  footerBadge?: ReactNode;
+  metaBadge?: ReactNode;
   // Fixed-height card for a virtual list: media and body never expand.
   fixed?: boolean;
 }) {
@@ -181,6 +187,7 @@ export default function GenerationCard({
           {provider && <ProviderBadge provider={provider} />}
           {meta.filter(Boolean).join(" · ")}
           {runtime && <span className="gcard-runtime"> · {runtime}</span>}
+          {metaBadge}
         </div>
         {substatus && <div className="q-substatus">{substatus}</div>}
         {error && <ErrorLine kind={error.kind} message={error.message} />}
@@ -241,6 +248,7 @@ export default function GenerationCard({
               <span className="gcard-action-label">{a.label}</span>
             </Button>
           ))}
+          {footerBadge}
           <div className="spacer" />
           {extra}
           {menuItems.length > 0 && (

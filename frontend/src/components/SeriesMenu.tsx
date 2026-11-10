@@ -1,7 +1,16 @@
 import { useCallback, useState } from "react";
-import { seriesApi, type SeriesAssignBody } from "../api";
+import { api, seriesApi, type SeriesAssignBody } from "../api";
+import { useConfirm } from "./ConfirmDialog";
 import { useI18n } from "../i18n";
-import { useSeries } from "../seriesStore";
+import { seriesPathText, useSeries } from "../seriesStore";
+import { useSeriesNav } from "../seriesContext";
+import { SeriesDot } from "./SeriesBits";
+
+// Menu rows: an <i> dot (rows read their label from the first <span>).
+const menuDot = (color: string | null | undefined) => (
+  <i className="series-dot" style={{ background: color ?? undefined }} aria-hidden="true" />
+);
+import Icon from "./ui/Icon";
 import type { ContextMenuItem } from "./ui/ContextMenu";
 import SeriesPicker from "./SeriesPicker";
 import { SeriesEditDialog } from "./SeriesDialogs";
@@ -24,10 +33,68 @@ export function useSeriesActions(onChanged?: () => void) {
   const toast = useToast();
   const store = useSeries();
   const [newFor, setNewFor] = useState<SeriesTarget | null>(null);
+  const askConfirm = useConfirm();
+
+  /**
+   * series-v2 B1a: filing images moves their records out of other series.
+   * Count that up front (membership → each record's series) and ask first;
+   * pure additions stay instant.
+   */
+  const confirmImageMove = useCallback(
+    async (imageIds: number[], id: number): Promise<boolean> => {
+      const genIds: number[] = [];
+      for (let i = 0; i < imageIds.length; i += 500) {
+        const { items } = await seriesApi.membership(imageIds.slice(i, i + 500));
+        for (const item of items) genIds.push(...item.generationIds);
+      }
+      const unique = [...new Set(genIds)];
+      const from = new Map<number, number>();
+      let unfiled = 0;
+      for (let i = 0; i < unique.length; i += 500) {
+        const { items } = await api.seriesPositions(unique.slice(i, i + 500));
+        for (const p of items) {
+          if (p.seriesId === null) unfiled++;
+          else if (p.seriesId !== id) from.set(p.seriesId, (from.get(p.seriesId) ?? 0) + 1);
+        }
+      }
+      const moved = [...from.values()].reduce((a, b) => a + b, 0);
+      if (moved === 0) return true;
+      const name = store.get(id)?.name ?? "";
+      return askConfirm({
+        title: t("sv2_move_title", { n: moved, series: name }),
+        message: t("sv2_move_body"),
+        aboveViewer: true,
+        confirmLabel: t("sv2_move_confirm", { n: moved }),
+        details: (
+          <ul className="sv2-move-list">
+            {[...from.entries()].map(([sid, n]) => {
+              const path = store.get(sid);
+              return (
+                <li key={sid}>
+                  <SeriesDot color={path?.color} />
+                  <span>{t("sv2_move_from", { n, series: path?.name ?? "?" })}</span>
+                </li>
+              );
+            })}
+            {unfiled > 0 && (
+              <li className="muted">
+                <SeriesDot color={null} />
+                <span>{t("sv2_move_unfiled", { n: unfiled })}</span>
+              </li>
+            )}
+          </ul>
+        ),
+      });
+    },
+    [askConfirm, store, t],
+  );
 
   const assign = useCallback(
     async (target: SeriesTarget, id: number | null) => {
       try {
+        if (id !== null && target.body.imageIds?.length) {
+          if (!(await confirmImageMove(target.body.imageIds, id))) return;
+        }
         if (id === null) {
           await seriesApi.unassign(target.body);
           toast(t("series_removed_toast", { n: target.members.length }));
@@ -47,7 +114,7 @@ export function useSeriesActions(onChanged?: () => void) {
         toast(t("op_failed", { msg: (e as Error).message }), "error");
       }
     },
-    [onChanged, store, t, toast],
+    [confirmImageMove, onChanged, store, t, toast],
   );
 
   const picker = useCallback(
@@ -61,7 +128,11 @@ export function useSeriesActions(onChanged?: () => void) {
           value={single}
           autoFocus={focus}
           onClose={close}
-          onPick={(id) => assign(target, id)}
+          onPick={(id) => {
+            // Close the menu first: a move confirmation must not sit under it.
+            close();
+            return assign(target, id);
+          }}
           hint={(s) => {
             const n = target.members.filter((m) => m === s.id).length;
             return total > 1 && n > 0 ? t("series_n_of_m", { n, m: total }) : null;
@@ -101,6 +172,58 @@ export function useSeriesActions(onChanged?: () => void) {
     [picker, store, t],
   );
 
+  const nav = useSeriesNav();
+  /**
+   * series-v2 B1a: "Open “X”" for items already in a series (History,
+   * Favorites, Drafts, Queue, Viewer, Library). `seriesIds` most recent first;
+   * several become "Open series ›" with the full paths. Null when none.
+   */
+  const openItem = useCallback(
+    (seriesIds: (number | null | undefined)[]): ContextMenuItem | null => {
+      const ids = [...new Set(seriesIds.filter((id): id is number => !!id))].filter((id) => store.get(id));
+      if (ids.length === 0) return null;
+      if (ids.length === 1) {
+        const path = store.get(ids[0])!;
+        const name = path.name.length > 22 ? `${path.name.slice(0, 21)}…` : path.name;
+        return {
+          id: "open-series",
+          leading: menuDot(path.color),
+          label: t("sv2_menu_open", { series: name }),
+          hint: <Icon name="openSeries" size="sm" />,
+          onSelect: () => nav.openSeries(ids[0]),
+        };
+      }
+      return {
+        id: "open-series",
+        leading: menuDot(store.get(ids[0])?.color),
+        label: t("sv2_menu_open_multi"),
+        hint: ids.length,
+        submenu: {
+          kind: "items",
+          items: ids.map((id) => {
+            const path = store.get(id)!;
+            return {
+              id: `open-series-${id}`,
+              leading: menuDot(path.color),
+              label: seriesPathText(path, t("series_no_theme")),
+              onSelect: () => nav.openSeries(id),
+            };
+          }),
+        },
+      };
+    },
+    [nav, store, t],
+  );
+
+  /** The series rows of a context menu: [Open “X”], Add to series ›. */
+  const section = useCallback(
+    (openIds: (number | null | undefined)[], target: SeriesTarget | null): ContextMenuItem[] => {
+      const open = openItem(openIds);
+      return open ? [open, menuItem(target)] : [menuItem(target)];
+    },
+    [menuItem, openItem],
+  );
+
   const dialog = newFor ? (
     <SeriesEditDialog
       mode="new-series"
@@ -110,5 +233,5 @@ export function useSeriesActions(onChanged?: () => void) {
     />
   ) : null;
 
-  return { menuItem, picker, assign, dialog };
+  return { menuItem, openItem, section, picker, assign, dialog };
 }
