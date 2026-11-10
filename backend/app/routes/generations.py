@@ -530,10 +530,10 @@ def list_generation_ids(
 # Read-only helpers for the series badge, info card and Viewer. Membership is
 # derived: an image belongs to every series whose records use it, as the output
 # or as an input. The record's position (#N) lives in one function so the
-# custom order (generations.series_pos, B2) only has to change `_SERIES_ORDER`.
+# custom order (generations.series_pos, B2) lives in `_SERIES_ORDER`.
 
 _MAX_CONTEXT_IDS = 500
-_SERIES_ORDER = f"{_SORT_AT} ASC, id ASC"
+_SERIES_ORDER = "series_pos ASC, id ASC"
 
 
 def _parse_ids(raw: str) -> list[int]:
