@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, type MouseEvent, useState } from "react";
 import { api, type Tag } from "../api";
 import { useConfirm } from "./ConfirmDialog";
 import { useToast } from "./Toast";
@@ -53,6 +53,15 @@ export default function TagFilterRow({
     } catch {
       // Storage may be unavailable; the toggle still works for this session.
     }
+  };
+
+  // Blank space anywhere in the row toggles the list too; chips and the
+  // chevron keep their own clicks. The chevron stays the keyboard control.
+  const toggleFromRow = (e: MouseEvent<HTMLDivElement>) => {
+    if (tags.length === 0) return;
+    if (!(e.target instanceof Element)) return;
+    if (e.target.closest("button, a, input, select, textarea")) return;
+    toggle();
   };
 
   const removeTag = async (tag: Tag) => {
@@ -184,7 +193,12 @@ export default function TagFilterRow({
   }
 
   return (
-    <div className={`tag-filter-row${collapsed ? " collapsed" : ""}`}>
+    <div
+      className={`tag-filter-row${collapsed ? " collapsed" : ""}${
+        tags.length > 0 ? " toggleable" : ""
+      }`}
+      onClick={toggleFromRow}
+    >
       <div className="tag-filter-chips">
         {collapsed ? (
           <>

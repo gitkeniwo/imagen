@@ -72,6 +72,28 @@ test("clicking the active tag clears the filter, expanded or collapsed", async (
   await expect(row.locator(".tag-chip.on")).toHaveText("All");
 });
 
+test("blank space in the tag row expands and collapses it", async ({ page }) => {
+  const row = page.locator(".tag-filter-row");
+  const chips = row.locator(".tag-filter-chips");
+  const hide = row.getByRole("button", { name: "Hide tags" });
+  const show = row.getByRole("button", { name: "Show tags" });
+
+  await expect(hide).toBeVisible();
+  const clickBlank = async () => {
+    const box = await chips.boundingBox();
+    expect(box).toBeTruthy();
+    await chips.click({ position: { x: box!.width - 4, y: box!.height / 2 } });
+  };
+
+  await clickBlank();
+  await expect(show).toBeVisible();
+  await expect(row.getByText(/tags hidden/)).toBeVisible();
+
+  await clickBlank();
+  await expect(hide).toBeVisible();
+  await expect(row.getByText(/tags hidden/)).toHaveCount(0);
+});
+
 test("batch remove-tag lists only tags the selected images carry", async ({ page }) => {
   // The long-named upload has no tags; product-mug.webp carries only 产品.
   await page.getByRole("button", { name: "Select", exact: true }).click();
